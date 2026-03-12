@@ -378,8 +378,8 @@ export default function LeadDetailPage() {
     setContactSaving(false);
   };
 
-  const inputClass = "w-full bg-white text-slate-900 px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm";
-  const labelClass = "text-xs text-slate-500 block mb-1";
+  const inputClass = "w-full bg-white text-slate-900 px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-base";
+  const labelClass = "text-sm text-slate-500 block mb-1";
   const sectionClass = "bg-white rounded-xl p-6 border border-slate-200 shadow-sm mb-6";
 
   if (authLoading || loading) return <div className="min-h-screen bg-[#F8FAFC] text-slate-900 p-8">Loading...</div>;

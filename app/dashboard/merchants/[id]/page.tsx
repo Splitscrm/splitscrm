@@ -194,7 +194,7 @@ export default function MerchantDetailPage() {
   }
 
   const inputClass = 'w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'
-  const labelClass = 'text-sm text-slate-500 block mb-1'
+  const labelClass = 'text-sm text-slate-600 block mb-1'
   const sectionClass = 'bg-white rounded-xl p-6 border border-slate-200 shadow-sm mb-4'
 
   const chargebackRatio = parseFloat(merchant?.chargeback_ratio) || 0

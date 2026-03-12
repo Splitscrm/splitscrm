@@ -126,7 +126,7 @@ export default function WelcomeWizard({ onComplete }: WelcomeWizardProps) {
                   type="text"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm placeholder:text-slate-400"
+                  className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-base placeholder:text-slate-400"
                   placeholder="John Smith"
                 />
               </div>
@@ -136,7 +136,7 @@ export default function WelcomeWizard({ onComplete }: WelcomeWizardProps) {
                   type="text"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
-                  className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm placeholder:text-slate-400"
+                  className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-base placeholder:text-slate-400"
                   placeholder="ABC Payments LLC"
                 />
               </div>
@@ -146,7 +146,7 @@ export default function WelcomeWizard({ onComplete }: WelcomeWizardProps) {
                   type="text"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm placeholder:text-slate-400"
+                  className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-base placeholder:text-slate-400"
                   placeholder="(555) 123-4567"
                 />
               </div>

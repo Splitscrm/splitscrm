@@ -83,7 +83,7 @@ export default function PartnersPage() {
     return result;
   }, [partners, search, statusFilter, sort]);
 
-  const inputClass = "bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-slate-900";
+  const inputClass = "bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-slate-900";
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
