@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -36,7 +36,7 @@ async function acceptInviteIfPresent(token: string | null, userId: string) {
   await supabase.from('org_invitations').update({ status: 'accepted' }).eq('id', inv.id)
 }
 
-export default function SignupPage() {
+function SignupContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const inviteToken = searchParams.get('invite')
@@ -194,5 +194,13 @@ export default function SignupPage() {
         <p className="text-center text-slate-400 text-xs mt-8">&copy; 2026 Splits CRM</p>
       </div>
     </main>
+  )
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center"><p className="text-slate-400">Loading...</p></div>}>
+      <SignupContent />
+    </Suspense>
   )
 }
