@@ -6,7 +6,7 @@ interface SplitsLogoProps {
 
 const sizeConfig = {
   sm: { icon: 20, textClass: "text-base", gap: "gap-2" },
-  md: { icon: 28, textClass: "text-xl", gap: "gap-2.5" },
+  md: { icon: 36, textClass: "text-2xl", gap: "gap-2.5" },
   lg: { icon: 36, textClass: "text-2xl", gap: "gap-3" },
   xl: { icon: 48, textClass: "text-3xl", gap: "gap-3.5" },
 }

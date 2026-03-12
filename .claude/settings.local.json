@@ -101,7 +101,9 @@
       "Bash(git commit:*)",
       "Bash(git config:*)",
       "Bash(gh repo:*)",
-      "Bash(git remote:*)"
+      "Bash(git remote:*)",
+      "Bash(npm run:*)",
+      "Bash(find .next/static -name \"*.css\" 2>/dev/null | head -5)"
     ]
   }
 }
