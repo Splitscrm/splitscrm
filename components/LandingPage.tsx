@@ -100,11 +100,11 @@ export default function LandingPage() {
 
             {/* Desktop nav */}
             <div className="hidden md:flex items-center gap-8">
-              <button onClick={() => scrollTo('features')} className="text-slate-600 hover:text-slate-900 text-sm transition duration-150">Features</button>
-              <button onClick={() => scrollTo('pricing')} className="text-slate-600 hover:text-slate-900 text-sm transition duration-150">Pricing</button>
-              <button onClick={() => scrollTo('faq')} className="text-slate-600 hover:text-slate-900 text-sm transition duration-150">FAQ</button>
-              <Link href="/login" className="text-slate-600 hover:text-slate-900 border border-slate-200 px-4 py-2 rounded-lg text-sm transition duration-150">Log In</Link>
-              <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition duration-150">Start Free Trial</Link>
+              <button onClick={() => scrollTo('features')} className="text-slate-600 hover:text-slate-900 text-base transition duration-150">Features</button>
+              <button onClick={() => scrollTo('pricing')} className="text-slate-600 hover:text-slate-900 text-base transition duration-150">Pricing</button>
+              <button onClick={() => scrollTo('faq')} className="text-slate-600 hover:text-slate-900 text-base transition duration-150">FAQ</button>
+              <Link href="/login" className="text-slate-600 hover:text-slate-900 border border-slate-200 px-5 py-2.5 rounded-lg text-base transition duration-150">Log In</Link>
+              <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg text-base font-medium transition duration-150">Start Free Trial</Link>
             </div>
 
             {/* Mobile hamburger */}
@@ -122,12 +122,12 @@ export default function LandingPage() {
           {/* Mobile menu */}
           {mobileOpen && (
             <div className="md:hidden pb-4 space-y-2 bg-white">
-              <button onClick={() => scrollTo('features')} className="block w-full text-left px-4 py-3 min-h-[48px] text-slate-600 hover:text-slate-900 text-sm">Features</button>
-              <button onClick={() => scrollTo('pricing')} className="block w-full text-left px-4 py-3 min-h-[48px] text-slate-600 hover:text-slate-900 text-sm">Pricing</button>
-              <button onClick={() => scrollTo('faq')} className="block w-full text-left px-4 py-3 min-h-[48px] text-slate-600 hover:text-slate-900 text-sm">FAQ</button>
+              <button onClick={() => scrollTo('features')} className="block w-full text-left px-4 py-3 min-h-[48px] text-slate-600 hover:text-slate-900 text-base">Features</button>
+              <button onClick={() => scrollTo('pricing')} className="block w-full text-left px-4 py-3 min-h-[48px] text-slate-600 hover:text-slate-900 text-base">Pricing</button>
+              <button onClick={() => scrollTo('faq')} className="block w-full text-left px-4 py-3 min-h-[48px] text-slate-600 hover:text-slate-900 text-base">FAQ</button>
               <div className="flex gap-3 px-4 pt-2">
-                <Link href="/login" className="text-slate-600 hover:text-slate-900 border border-slate-200 px-4 py-2 rounded-lg text-sm transition duration-150">Log In</Link>
-                <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition duration-150">Start Free Trial</Link>
+                <Link href="/login" className="text-slate-600 hover:text-slate-900 border border-slate-200 px-5 py-2.5 rounded-lg text-base transition duration-150">Log In</Link>
+                <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg text-base font-medium transition duration-150">Start Free Trial</Link>
               </div>
             </div>
           )}
@@ -139,18 +139,18 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 sm:pt-24 pb-20">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div className="text-center lg:text-left flex flex-col items-center lg:items-start">
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight tracking-tight text-slate-900">
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-tight text-slate-900">
                 Never Touch a Residual<br />
                 <span className="text-emerald-600">Spreadsheet</span> Again
               </h1>
-              <p className="mt-6 text-lg text-slate-500 leading-relaxed lg:max-w-lg">
+              <p className="mt-6 text-xl text-slate-500 leading-relaxed lg:max-w-lg">
                 Upload your processor files. See every agent&apos;s split in seconds. Track your entire portfolio from one dashboard. Purpose-built for ISOs — starting at $99/mo.
               </p>
               <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-                <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-4 rounded-lg font-semibold text-lg transition duration-150 shadow-lg shadow-emerald-600/20">
+                <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-4.5 rounded-lg font-semibold text-xl transition duration-150 shadow-lg shadow-emerald-600/20">
                   Start Free Trial
                 </Link>
-                <button onClick={() => scrollTo('how-it-works')} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-8 py-4 rounded-lg font-semibold text-lg transition duration-150">
+                <button onClick={() => scrollTo('how-it-works')} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-10 py-4.5 rounded-lg font-semibold text-xl transition duration-150">
                   Watch Demo
                 </button>
               </div>
@@ -251,8 +251,8 @@ export default function LandingPage() {
               { stat: '40-60%', desc: 'Of ISOs still use spreadsheets' },
             ].map((p, i) => (
               <div key={p.stat} className={`${i < 2 ? 'border-b border-slate-700 pb-8 sm:border-b-0 sm:pb-0' : ''}`}>
-                <p className="text-3xl sm:text-4xl font-bold text-emerald-400">{p.stat}</p>
-                <p className="text-slate-400 text-sm mt-2">{p.desc}</p>
+                <p className="text-4xl sm:text-5xl font-bold text-emerald-400">{p.stat}</p>
+                <p className="text-slate-400 text-base mt-2">{p.desc}</p>
               </div>
             ))}
           </div>
@@ -265,11 +265,11 @@ export default function LandingPage() {
           <p className="text-slate-500 text-sm uppercase tracking-wide mb-6">Works with any processor</p>
           <div className="flex flex-wrap justify-center gap-3 mb-8">
             {processors.map((p) => (
-              <span key={p} className="bg-slate-100 border border-slate-200 rounded-full px-4 py-2 text-sm text-slate-600">{p}</span>
+              <span key={p} className="bg-slate-100 border border-slate-200 rounded-full px-4 py-2 text-base text-slate-600">{p}</span>
             ))}
           </div>
           <p className="text-slate-600 text-lg mb-4">Join the beta — founding members get <span className="text-emerald-600 font-semibold">$49/mo locked in for life</span></p>
-          <Link href="/signup" className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-medium transition duration-150">Claim Founding Pricing</Link>
+          <Link href="/signup" className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3.5 rounded-lg text-lg font-medium transition duration-150">Claim Founding Pricing</Link>
         </div>
       </section>
 
@@ -286,8 +286,8 @@ export default function LandingPage() {
                 <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center mb-4">
                   <span className="text-2xl">{f.emoji}</span>
                 </div>
-                <h3 className="text-xl font-semibold text-slate-900 mb-2">{f.title}</h3>
-                <p className="text-slate-500 leading-relaxed">{f.desc}</p>
+                <h3 className="text-2xl font-semibold text-slate-900 mb-2">{f.title}</h3>
+                <p className="text-base text-slate-500 leading-relaxed">{f.desc}</p>
               </div>
             ))}
           </div>
@@ -306,26 +306,26 @@ export default function LandingPage() {
             <table className="w-full border border-slate-200 rounded-xl overflow-hidden">
               <thead>
                 <tr className="bg-slate-50">
-                  <th className="text-left py-4 px-4 text-slate-500 text-sm font-medium"></th>
-                  <th className="hidden sm:table-cell text-center py-4 px-4 text-slate-500 text-sm font-medium">Spreadsheets</th>
-                  <th className="text-center py-4 px-4 text-slate-500 text-sm font-medium">IRIS CRM</th>
-                  <th className="text-center py-4 px-4 text-sm font-semibold text-emerald-600 border-t-4 border-emerald-500 bg-emerald-50">Splits</th>
+                  <th className="text-left py-4 px-4 text-slate-500 text-base font-medium"></th>
+                  <th className="hidden sm:table-cell text-center py-4 px-4 text-slate-500 text-base font-medium">Spreadsheets</th>
+                  <th className="text-center py-4 px-4 text-slate-500 text-base font-medium">IRIS CRM</th>
+                  <th className="text-center py-4 px-4 text-base font-semibold text-emerald-600 border-t-4 border-emerald-500 bg-emerald-50">Splits</th>
                 </tr>
               </thead>
               <tbody>
                 {comparisonRows.map((row, i) => (
                   <tr key={i} className="border-t border-slate-200">
-                    <td className="py-3.5 px-4 text-sm text-slate-700 font-medium">{row.label}</td>
-                    <td className="hidden sm:table-cell py-3.5 px-4 text-sm text-slate-500 text-center">{row.spreadsheet}</td>
-                    <td className="py-3.5 px-4 text-sm text-slate-500 text-center">{row.iris}</td>
-                    <td className={`py-3.5 px-4 text-sm text-center bg-emerald-50 ${row.isoGreen ? 'text-emerald-600 font-semibold' : 'text-slate-700'}`}>{row.iso}</td>
+                    <td className="py-3.5 px-4 text-base text-slate-700 font-medium">{row.label}</td>
+                    <td className="hidden sm:table-cell py-3.5 px-4 text-base text-slate-500 text-center">{row.spreadsheet}</td>
+                    <td className="py-3.5 px-4 text-base text-slate-500 text-center">{row.iris}</td>
+                    <td className={`py-3.5 px-4 text-base text-center bg-emerald-50 ${row.isoGreen ? 'text-emerald-600 font-semibold' : 'text-slate-700'}`}>{row.iso}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <div className="text-center mt-10">
-            <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-lg font-medium transition duration-150">Start Free Trial</Link>
+            <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-3.5 rounded-lg text-lg font-medium transition duration-150">Start Free Trial</Link>
           </div>
         </div>
       </section>
@@ -345,8 +345,8 @@ export default function LandingPage() {
                 <div className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center text-lg font-bold mx-auto mb-5 relative z-10">
                   {s.num}
                 </div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-2">{s.title}</h3>
-                <p className="text-slate-500 text-sm max-w-xs mx-auto">{s.desc}</p>
+                <h3 className="text-xl font-semibold text-slate-900 mb-2">{s.title}</h3>
+                <p className="text-slate-500 text-base max-w-xs mx-auto">{s.desc}</p>
                 {i < steps.length - 1 && <div className="sm:hidden h-8 w-0.5 bg-emerald-200 mx-auto mt-4"></div>}
               </div>
             ))}
@@ -365,12 +365,12 @@ export default function LandingPage() {
           <div className="grid sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
             {/* Starter */}
             <div className="bg-white rounded-xl p-8 border border-slate-200 shadow-sm">
-              <h3 className="text-lg font-semibold text-slate-900">Starter</h3>
+              <h3 className="text-xl font-semibold text-slate-900">Starter</h3>
               <div className="mt-4 mb-6" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                <span className="text-5xl font-bold text-slate-900">$99</span>
-                <span className="text-slate-400">/mo</span>
+                <span className="text-6xl font-bold text-slate-900">$99</span>
+                <span className="text-slate-400 text-lg">/mo</span>
               </div>
-              <ul className="space-y-3 text-sm text-slate-600 mb-8">
+              <ul className="space-y-3 text-base text-slate-600 mb-8">
                 <li className="flex items-start gap-2"><span className="text-emerald-600 mt-0.5">&#10003;</span>Up to 200 merchants</li>
                 <li className="flex items-start gap-2"><span className="text-emerald-600 mt-0.5">&#10003;</span>1 user</li>
                 <li className="flex items-start gap-2"><span className="text-emerald-600 mt-0.5">&#10003;</span>50 AI extractions/mo</li>
@@ -379,18 +379,18 @@ export default function LandingPage() {
                 <li className="flex items-start gap-2"><span className="text-emerald-600 mt-0.5">&#10003;</span>Partner management</li>
                 <li className="flex items-start gap-2"><span className="text-emerald-600 mt-0.5">&#10003;</span>Email support</li>
               </ul>
-              <Link href="/signup" className="block text-center bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 py-3 rounded-lg font-medium transition duration-150">Start Free Trial</Link>
+              <Link href="/signup" className="block text-center bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 py-3.5 rounded-lg text-lg font-medium transition duration-150">Start Free Trial</Link>
             </div>
 
             {/* Growth */}
             <div className="bg-white rounded-xl p-8 border-2 border-emerald-500 shadow-sm relative">
               <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-emerald-600 text-white text-xs font-semibold px-3 py-1 rounded-full">Popular</span>
-              <h3 className="text-lg font-semibold text-slate-900">Growth</h3>
+              <h3 className="text-xl font-semibold text-slate-900">Growth</h3>
               <div className="mt-4 mb-6" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                <span className="text-5xl font-bold text-slate-900">$149</span>
-                <span className="text-slate-400">/mo</span>
+                <span className="text-6xl font-bold text-slate-900">$149</span>
+                <span className="text-slate-400 text-lg">/mo</span>
               </div>
-              <ul className="space-y-3 text-sm text-slate-600 mb-8">
+              <ul className="space-y-3 text-base text-slate-600 mb-8">
                 <li className="flex items-start gap-2"><span className="text-emerald-600 mt-0.5">&#10003;</span>Up to 1,000 merchants</li>
                 <li className="flex items-start gap-2"><span className="text-emerald-600 mt-0.5">&#10003;</span>Up to 5 users</li>
                 <li className="flex items-start gap-2"><span className="text-emerald-600 mt-0.5">&#10003;</span>200 AI extractions/mo</li>
@@ -398,7 +398,7 @@ export default function LandingPage() {
                 <li className="flex items-start gap-2"><span className="text-emerald-600 mt-0.5">&#10003;</span>Agent self-service portal</li>
                 <li className="flex items-start gap-2"><span className="text-emerald-600 mt-0.5">&#10003;</span>Priority support</li>
               </ul>
-              <Link href="/signup" className="block text-center bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-lg font-medium transition duration-150">Start Free Trial</Link>
+              <Link href="/signup" className="block text-center bg-emerald-600 hover:bg-emerald-700 text-white py-3.5 rounded-lg text-lg font-medium transition duration-150">Start Free Trial</Link>
             </div>
           </div>
 
@@ -424,14 +424,14 @@ export default function LandingPage() {
                   onClick={() => setOpenFaq(openFaq === i ? null : i)}
                   className="w-full flex items-center justify-between px-4 sm:px-6 py-4 text-left hover:bg-slate-50 transition duration-150"
                 >
-                  <span className="font-medium text-slate-900 pr-4">{f.q}</span>
+                  <span className="font-medium text-lg text-slate-900 pr-4">{f.q}</span>
                   <span className={`text-slate-400 transition-transform duration-150 shrink-0 ${openFaq === i ? 'rotate-180' : ''}`}>&#9660;</span>
                 </button>
                 <div
                   className="overflow-hidden transition-all duration-150 ease-in-out"
                   style={{ maxHeight: openFaq === i ? '300px' : '0px', opacity: openFaq === i ? 1 : 0 }}
                 >
-                  <p className="px-4 sm:px-6 pb-4 text-slate-500 leading-relaxed">{f.a}</p>
+                  <p className="px-4 sm:px-6 pb-4 text-base text-slate-500 leading-relaxed">{f.a}</p>
                 </div>
               </div>
             ))}
@@ -445,7 +445,7 @@ export default function LandingPage() {
           <h2 className="text-3xl sm:text-4xl font-bold text-white">Ready to Ditch the Spreadsheets?</h2>
           <p className="text-slate-400 mt-4 text-lg max-w-lg mx-auto">Join ISOs who are saving 20+ hours per month on residual management.</p>
           <div className="mt-8">
-            <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-4 rounded-lg font-semibold text-lg transition duration-150 inline-block shadow-lg shadow-emerald-600/20 w-full sm:w-auto">Start Your Free Trial</Link>
+            <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-700 text-white px-12 py-4.5 rounded-lg font-semibold text-xl transition duration-150 inline-block shadow-lg shadow-emerald-600/20 w-full sm:w-auto">Start Your Free Trial</Link>
           </div>
           <p className="mt-4 text-sm text-slate-500">No credit card required · Cancel anytime · Set up in 5 minutes</p>
         </div>
