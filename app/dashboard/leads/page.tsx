@@ -216,14 +216,14 @@ export default function LeadsPage() {
                 {filtered.map((lead) => (
                   <tr key={lead.id} onClick={() => router.push(`/dashboard/leads/${lead.id}`)} className="border-b border-slate-100 hover:bg-slate-50 transition cursor-pointer">
                     <td className="px-6 py-4">
-                      <p className="font-medium">{lead.business_name}</p>
+                      <p className="font-medium text-base">{lead.business_name}</p>
                       <p className="text-slate-500 text-sm">{lead.email}</p>
                     </td>
                     <td className="px-6 py-4">
-                      <p>{lead.contact_name}</p>
+                      <p className="text-base">{lead.contact_name}</p>
                       <p className="text-slate-500 text-sm">{lead.phone}</p>
                     </td>
-                    <td className="px-6 py-4 text-slate-600">
+                    <td className="px-6 py-4 text-slate-600 text-base">
                       {lead.monthly_volume ? `$${lead.monthly_volume.toLocaleString()}` : '—'}
                     </td>
                     <td className="px-6 py-4">

@@ -95,7 +95,7 @@ export default function Sidebar() {
             key={item.href}
             href={item.href}
             onClick={() => setMobileOpen(false)}
-            className={`block px-4 py-2.5 rounded-lg text-sm transition-colors duration-150 ${
+            className={`block px-4 py-2.5 rounded-lg text-[15px] transition-colors duration-150 ${
               isActive(item.href)
                 ? "text-white bg-white/10 font-medium"
                 : "text-slate-400 hover:text-white hover:bg-white/5"

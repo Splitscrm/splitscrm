@@ -1116,15 +1116,15 @@ export default function ResidualsPage() {
                       <tbody>
                         {filtered.map((rec) => (
                           <tr key={rec.id} className="border-b border-slate-100 hover:bg-slate-50 text-sm">
-                            <td className="px-4 py-2.5 text-slate-700 font-mono text-xs">{rec.merchant_id_external || '—'}</td>
+                            <td className="px-4 py-2.5 text-slate-700 font-mono text-sm">{rec.merchant_id_external || '—'}</td>
                             <td className="px-4 py-2.5">
                               <div className="flex items-center gap-2">
                                 {rec.merchant_id ? (
-                                  <a href={`/dashboard/merchants/${rec.merchant_id}`} className="text-emerald-600 hover:underline">
+                                  <a href={`/dashboard/merchants/${rec.merchant_id}`} className="text-emerald-600 hover:underline text-base">
                                     {rec.dba_name || '—'}
                                   </a>
                                 ) : (
-                                  <span className="text-slate-700">{rec.dba_name || '—'}</span>
+                                  <span className="text-slate-700 text-base">{rec.dba_name || '—'}</span>
                                 )}
                                 {!rec.merchant_id && rec.merchant_id_external && (
                                   <span
