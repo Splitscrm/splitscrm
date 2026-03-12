@@ -574,7 +574,7 @@ export default function SettingsPage() {
   const atLimit = maxUsers ? currentMemberCount >= maxUsers : false
 
   const inputClass = 'w-full bg-white text-slate-900 px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-base'
-  const labelClass = 'text-sm text-slate-600 font-medium block mb-1.5'
+  const labelClass = 'text-base text-slate-600 font-medium block mb-1.5'
   const cardClass = 'bg-white rounded-xl border border-slate-200 shadow-sm p-6'
 
   if (loading) return (
@@ -954,7 +954,7 @@ export default function SettingsPage() {
                       <div key={tm.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm font-semibold text-slate-900 truncate">{displayName}</span>
+                            <span className="text-base font-semibold text-slate-900 truncate">{displayName}</span>
                             {isMe && <span className="text-xs text-slate-400">(you)</span>}
                             {tm.status === 'invited' && (
                               <span className="bg-amber-50 text-amber-700 text-xs px-2 py-0.5 rounded-full font-medium">Pending invite</span>

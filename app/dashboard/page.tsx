@@ -562,21 +562,21 @@ export default function Dashboard() {
             <div className={`grid grid-cols-2 ${isOwnerOrManager ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-6`}>
               {/* Active Merchants */}
               <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-                <p className="text-slate-500 text-sm">{isOwnerOrManager ? 'Active Merchants' : 'My Merchants'}</p>
+                <p className="text-slate-500 text-base">{isOwnerOrManager ? 'Active Merchants' : 'My Merchants'}</p>
                 <p className="text-3xl font-bold tabular-nums mt-2">{data.activeMerchants.toLocaleString()}</p>
                 <p className="text-slate-400 text-sm mt-1">{data.pendingMerchants.toLocaleString()} pending</p>
               </div>
 
               {/* Pipeline Value */}
               <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-                <p className="text-slate-500 text-sm">Pipeline Value</p>
+                <p className="text-slate-500 text-base">Pipeline Value</p>
                 <p className="text-3xl font-bold tabular-nums mt-2">${data.pipelineValue.toLocaleString()}</p>
                 <p className="text-slate-400 text-sm mt-1">{data.activeDeals.toLocaleString()} active deals</p>
               </div>
 
               {/* Leads This Month */}
               <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-                <p className="text-slate-500 text-sm">{isOwnerOrManager ? 'Leads This Month' : 'My Leads'}</p>
+                <p className="text-slate-500 text-base">{isOwnerOrManager ? 'Leads This Month' : 'My Leads'}</p>
                 <p className="text-3xl font-bold tabular-nums mt-2">{data.leadsThisMonth.toLocaleString()}</p>
                 <p className="text-slate-400 text-sm mt-1">{data.conversionRate.toFixed(1)}% lifetime conversion</p>
               </div>
@@ -584,7 +584,7 @@ export default function Dashboard() {
               {/* Active Partners — owner/manager only */}
               {isOwnerOrManager && (
                 <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-                  <p className="text-slate-500 text-sm">Active Partners</p>
+                  <p className="text-slate-500 text-base">Active Partners</p>
                   <p className="text-3xl font-bold tabular-nums mt-2">{data.activePartners.toLocaleString()}</p>
                   <p className="text-slate-400 text-sm mt-1">{data.totalPartners.toLocaleString()} total partners</p>
                 </div>
@@ -621,12 +621,12 @@ export default function Dashboard() {
                 <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
                   <h3 className="font-semibold mb-4">Sales Pipeline</h3>
                   {data.pipelineByStatus.length === 0 ? (
-                    <p className="text-slate-400 text-sm">No leads yet</p>
+                    <p className="text-slate-400 text-base">No leads yet</p>
                   ) : (
                     <div className="space-y-3">
                       {data.pipelineByStatus.map(({ status, count }) => (
                         <div key={status} className="flex items-center gap-3">
-                          <span className="text-sm text-slate-500 w-40 shrink-0 truncate">
+                          <span className="text-base text-slate-500 w-40 shrink-0 truncate">
                             {STATUS_LABELS[status] || status}
                           </span>
                           <div className="flex-1 bg-slate-200 rounded-full h-5 overflow-hidden">
@@ -635,7 +635,7 @@ export default function Dashboard() {
                               style={{ width: `${(count / maxPipelineCount) * 100}%` }}
                             ></div>
                           </div>
-                          <span className="text-sm text-slate-600 w-8 text-right">{count}</span>
+                          <span className="text-base text-slate-600 w-8 text-right">{count}</span>
                         </div>
                       ))}
                     </div>
@@ -657,7 +657,7 @@ export default function Dashboard() {
                     </button>
                   </div>
                   {data.tasks.length === 0 && data.followUps.length === 0 ? (
-                    <p className="text-slate-400 text-sm">No pending tasks or follow-ups</p>
+                    <p className="text-slate-400 text-base">No pending tasks or follow-ups</p>
                   ) : (
                     <div className="space-y-2">
                       {/* Tasks from tasks table */}
@@ -689,7 +689,7 @@ export default function Dashboard() {
                               title="Mark complete"
                             />
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate">{task.title}</p>
+                              <p className="text-base font-medium truncate">{task.title}</p>
                               {task.due_date && (
                                 <p className="text-xs text-slate-500">
                                   {new Date(task.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -714,7 +714,7 @@ export default function Dashboard() {
                             <div className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{fu.business_name}</p>
+                            <p className="text-base font-medium truncate">{fu.business_name}</p>
                             <p className="text-xs text-slate-500">{fu.contact_name}</p>
                           </div>
                           <span className="text-xs text-slate-500">
@@ -728,7 +728,7 @@ export default function Dashboard() {
 
                 {/* Top 5 Merchants by Profitability */}
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                  <h3 className="text-sm font-semibold text-slate-900 mb-3">Top 5 Merchants by Profitability</h3>
+                  <h3 className="text-base font-semibold text-slate-900 mb-3">Top 5 Merchants by Profitability</h3>
                   {data.topMerchants.length === 0 ? (
                     <p className="text-slate-400 text-xs">Import a <a href="/dashboard/residuals" className="text-emerald-600 hover:text-emerald-700">residual report</a> to see top merchants</p>
                   ) : (
@@ -758,19 +758,19 @@ export default function Dashboard() {
                 <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
                   <h3 className="font-semibold mb-4">Merchants by Processor</h3>
                   {data.merchantsByProcessor.length === 0 ? (
-                    <p className="text-slate-400 text-sm">No merchants yet</p>
+                    <p className="text-slate-400 text-base">No merchants yet</p>
                   ) : (
                     <div className="space-y-3">
                       {data.merchantsByProcessor.map(({ processor, count }, i) => (
                         <div key={processor} className="flex items-center gap-3">
-                          <span className="text-sm text-slate-500 w-28 shrink-0 truncate">{processor}</span>
+                          <span className="text-base text-slate-500 w-28 shrink-0 truncate">{processor}</span>
                           <div className="flex-1 bg-slate-200 rounded-full h-5 overflow-hidden">
                             <div
                               className={`h-full rounded-full ${PROCESSOR_COLORS[i % PROCESSOR_COLORS.length]}`}
                               style={{ width: `${(count / maxProcessorCount) * 100}%` }}
                             ></div>
                           </div>
-                          <span className="text-sm text-slate-600 w-8 text-right">{count}</span>
+                          <span className="text-base text-slate-600 w-8 text-right">{count}</span>
                         </div>
                       ))}
                     </div>
@@ -785,7 +785,7 @@ export default function Dashboard() {
                     <p className={`text-2xl font-bold ${data.residualNetRevenue >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                       {data.residualNetRevenue.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 })}
                     </p>
-                    <p className="text-sm text-slate-500 mt-1">
+                    <p className="text-base text-slate-500 mt-1">
                       From {data.latestImport.processor_name || 'Unknown processor'} — {data.latestImport.report_month || 'No month'}
                     </p>
                     <p className="text-xs text-slate-400 mt-1">
@@ -803,7 +803,7 @@ export default function Dashboard() {
                       </svg>
                       <h3 className="font-semibold text-slate-700">Residual Revenue</h3>
                     </div>
-                    <p className="text-slate-500 text-sm mb-4">
+                    <p className="text-slate-500 text-base mb-4">
                       Upload your first residual report to see revenue tracking, processor breakdowns, and agent splits.
                     </p>
                     <a
@@ -820,19 +820,19 @@ export default function Dashboard() {
                 <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
                   <h3 className="font-semibold mb-4">Merchants by Agent</h3>
                   {data.agentBreakdown.length === 0 ? (
-                    <p className="text-slate-400 text-sm">Import a residual report to see agent breakdown</p>
+                    <p className="text-slate-400 text-base">Import a residual report to see agent breakdown</p>
                   ) : (
                     <div className="space-y-3">
                       {data.agentBreakdown.map(({ agent, merchantCount }) => (
                         <div key={agent} className="flex items-center gap-3">
-                          <span className="text-sm text-slate-500 w-28 shrink-0 truncate">{agent}</span>
+                          <span className="text-base text-slate-500 w-28 shrink-0 truncate">{agent}</span>
                           <div className="flex-1 bg-slate-200 rounded-full h-5 overflow-hidden">
                             <div
                               className="h-full rounded-full bg-emerald-500"
                               style={{ width: `${(merchantCount / Math.max(...data.agentBreakdown.map(a => a.merchantCount), 1)) * 100}%` }}
                             ></div>
                           </div>
-                          <span className="text-sm text-slate-600 w-8 text-right">{merchantCount}</span>
+                          <span className="text-base text-slate-600 w-8 text-right">{merchantCount}</span>
                         </div>
                       ))}
                     </div>
@@ -844,7 +844,7 @@ export default function Dashboard() {
 
             {/* Full Width Bottom — Recent Activity */}
             <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-              <h3 className="text-sm font-semibold mb-3">Recent Activity</h3>
+              <h3 className="text-base font-semibold mb-3">Recent Activity</h3>
               {data.recentActivity.length === 0 ? (
                 <p className="text-slate-400 text-xs">No recent activity</p>
               ) : (

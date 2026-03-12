@@ -639,7 +639,7 @@ export default function ResidualsPage() {
 
       <div className="space-y-4">
         <div>
-          <label className="text-sm text-slate-500 block mb-1">Processor / Partner (optional)</label>
+          <label className="text-base text-slate-500 block mb-1">Processor / Partner (optional)</label>
           <select
             value={selectedPartnerId}
             onChange={(e) => {
@@ -658,7 +658,7 @@ export default function ResidualsPage() {
 
         {!selectedPartnerId && (
           <div>
-            <label className="text-sm text-slate-500 block mb-1">Or type processor name</label>
+            <label className="text-base text-slate-500 block mb-1">Or type processor name</label>
             <input
               type="text"
               value={processorName}
@@ -670,7 +670,7 @@ export default function ResidualsPage() {
         )}
 
         <div>
-          <label className="text-sm text-slate-500 block mb-1">Report Month</label>
+          <label className="text-base text-slate-500 block mb-1">Report Month</label>
           <input
             type="month"
             value={reportMonth}
@@ -736,7 +736,7 @@ export default function ResidualsPage() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="font-semibold text-slate-900">Column Mapping</h3>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-base text-slate-500 mt-1">
             {getMappedCount()} of {headers.length} columns mapped
           </p>
         </div>
@@ -1021,9 +1021,9 @@ export default function ResidualsPage() {
           <div>
             <h2 className="text-xl lg:text-2xl font-bold text-slate-900">{imp.file_name}</h2>
             <div className="flex flex-wrap items-center gap-3 mt-1">
-              {imp.processor_name && <span className="text-sm text-slate-500">{imp.processor_name}</span>}
-              {imp.report_month && <span className="text-sm text-slate-500">{imp.report_month}</span>}
-              {imp.row_count != null && <span className="text-sm text-slate-500">{imp.row_count.toLocaleString()} rows</span>}
+              {imp.processor_name && <span className="text-base text-slate-500">{imp.processor_name}</span>}
+              {imp.report_month && <span className="text-base text-slate-500">{imp.report_month}</span>}
+              {imp.row_count != null && <span className="text-base text-slate-500">{imp.row_count.toLocaleString()} rows</span>}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -1058,19 +1058,19 @@ export default function ResidualsPage() {
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                <p className="text-sm text-slate-500">Total Volume</p>
+                <p className="text-base text-slate-500">Total Volume</p>
                 <p className="text-2xl font-bold text-slate-900 mt-1">{fmtDollar(totalVolume)}</p>
               </div>
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                <p className="text-sm text-slate-500">Total Revenue</p>
+                <p className="text-base text-slate-500">Total Revenue</p>
                 <p className="text-2xl font-bold text-slate-900 mt-1">{fmtDollar(totalRevenue)}</p>
               </div>
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                <p className="text-sm text-slate-500">Total Expenses</p>
+                <p className="text-base text-slate-500">Total Expenses</p>
                 <p className="text-2xl font-bold text-red-600 mt-1">{fmtDollar(totalExpenses)}</p>
               </div>
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                <p className="text-sm text-slate-500">Net Revenue</p>
+                <p className="text-base text-slate-500">Net Revenue</p>
                 <p className={`text-2xl font-bold mt-1 ${netRevenue >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                   {fmtDollar(netRevenue)}
                 </p>
@@ -1085,7 +1085,7 @@ export default function ResidualsPage() {
                 placeholder="Search by MID, DBA name, or agent code..."
                 className="flex-1 bg-white text-slate-900 px-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm"
               />
-              <span className="text-sm text-slate-500 whitespace-nowrap">
+              <span className="text-base text-slate-500 whitespace-nowrap">
                 {filtered.length} of {detailRecords.length} records
               </span>
             </div>
@@ -1151,7 +1151,7 @@ export default function ResidualsPage() {
                 </div>
                 </div>
 
-                <p className="text-sm text-slate-500 mt-3">
+                <p className="text-base text-slate-500 mt-3">
                   Matched: {matchedMids.size} of {uniqueMidExternal.size} merchants
                 </p>
               </>
@@ -1167,7 +1167,7 @@ export default function ResidualsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 mb-6">
         <div>
           <h2 className="text-xl lg:text-2xl font-bold text-slate-900">Residuals</h2>
-          <p className="text-slate-500 text-sm mt-1">Import and track residual reports from your processors</p>
+          <p className="text-slate-500 text-base mt-1">Import and track residual reports from your processors</p>
         </div>
         <button
           onClick={startWizard}
@@ -1183,7 +1183,7 @@ export default function ResidualsPage() {
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
           <p className="text-4xl mb-3">📊</p>
           <h3 className="text-lg font-semibold text-slate-900 mb-2">No residual reports yet</h3>
-          <p className="text-slate-500 text-sm max-w-md mx-auto mb-6">
+          <p className="text-slate-500 text-base max-w-md mx-auto mb-6">
             Upload your first residual report to get started. Our AI will automatically map columns from any processor format.
           </p>
           <button
@@ -1205,10 +1205,10 @@ export default function ResidualsPage() {
                 <p className="font-semibold text-slate-900 truncate">{imp.file_name}</p>
                 <div className="flex flex-wrap items-center gap-3 mt-1">
                   {imp.processor_name && (
-                    <span className="text-sm text-slate-500">{imp.processor_name}</span>
+                    <span className="text-base text-slate-500">{imp.processor_name}</span>
                   )}
                   {imp.report_month && (
-                    <span className="text-sm text-slate-400">{imp.report_month}</span>
+                    <span className="text-base text-slate-400">{imp.report_month}</span>
                   )}
                 </div>
               </div>
@@ -1299,7 +1299,7 @@ export default function ResidualsPage() {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl border border-slate-200 shadow-xl p-6 w-full max-w-3xl mx-4 max-h-[80vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-slate-900">Match Merchants</h3>
-            <p className="text-sm text-slate-500 mt-1 mb-4">
+            <p className="text-base text-slate-500 mt-1 mb-4">
               Link residual records to your existing merchants. A single merchant can have multiple MIDs.
             </p>
 
@@ -1322,7 +1322,7 @@ export default function ResidualsPage() {
               const unmatchedEntries = Array.from(unmatchedMap.entries())
 
               if (unmatchedEntries.length === 0) {
-                return <p className="text-slate-500 text-sm py-4">All records are already matched.</p>
+                return <p className="text-slate-500 text-base py-4">All records are already matched.</p>
               }
 
               return (
@@ -1355,7 +1355,7 @@ export default function ResidualsPage() {
                       <div key={midExt} className="border-b border-slate-100 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div className="min-w-0">
                           <p className="font-mono text-sm text-slate-900">{midExt}</p>
-                          {dbaName && <p className="text-sm text-slate-500 truncate">{dbaName}</p>}
+                          {dbaName && <p className="text-base text-slate-500 truncate">{dbaName}</p>}
                         </div>
                         <select
                           value={matchSelections[midExt] || ''}
@@ -1399,7 +1399,7 @@ export default function ResidualsPage() {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl border border-slate-200 shadow-xl p-6 w-full max-w-md mx-4">
             <h3 className="text-lg font-semibold text-slate-900">Delete Import?</h3>
-            <p className="text-sm text-slate-500 mt-2">
+            <p className="text-base text-slate-500 mt-2">
               This will permanently delete this import and all {deleteTargetImport.row_count?.toLocaleString() ?? 0} residual records. This action cannot be undone.
             </p>
             <div className="flex flex-col sm:flex-row justify-end gap-3 mt-6">

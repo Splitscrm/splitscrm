@@ -194,7 +194,7 @@ export default function MerchantDetailPage() {
   }
 
   const inputClass = 'w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'
-  const labelClass = 'text-sm text-slate-600 block mb-1'
+  const labelClass = 'text-base text-slate-600 block mb-1'
   const sectionClass = 'bg-white rounded-xl p-6 border border-slate-200 shadow-sm mb-4'
 
   const chargebackRatio = parseFloat(merchant?.chargeback_ratio) || 0
@@ -286,7 +286,7 @@ export default function MerchantDetailPage() {
             <div className="max-w-4xl bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
               <div className="flex justify-between items-center mb-3">
                 <div className="flex items-center">
-                  <span className="text-sm font-semibold text-slate-900">Upcoming Tasks</span>
+                  <span className="text-base font-semibold text-slate-900">Upcoming Tasks</span>
                   <span className="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full ml-2">{merchantTasks.length}</span>
                 </div>
                 <button onClick={() => setShowTaskModal(true)} className="text-emerald-600 hover:text-emerald-700 text-xs font-medium">+ Add</button>
@@ -516,7 +516,7 @@ export default function MerchantDetailPage() {
             <div className="overflow-hidden transition-all duration-300 ease-in-out" style={{ maxHeight: showFullFees ? '5000px' : '0px', opacity: showFullFees ? 1 : 0 }}>
               {/* Rate Details */}
               <div className={sectionClass}>
-                <h4 className="text-sm font-semibold text-slate-700 mb-4">Rate Details</h4>
+                <h4 className="text-base font-semibold text-slate-700 mb-4">Rate Details</h4>
                 {merchant.pricing_type === 'interchange_plus' && (
                   <div className="space-y-6">
                     <div>
@@ -605,7 +605,7 @@ export default function MerchantDetailPage() {
 
               {/* Misc Fees */}
               <div className={sectionClass}>
-                <h4 className="text-sm font-semibold text-slate-700 mb-4">Misc Fees ($)</h4>
+                <h4 className="text-base font-semibold text-slate-700 mb-4">Misc Fees ($)</h4>
                 <div className="space-y-6">
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
                     <div>
@@ -648,7 +648,7 @@ export default function MerchantDetailPage() {
 
               {/* Monthly Fees */}
               <div className={sectionClass}>
-                <h4 className="text-sm font-semibold text-slate-700 mb-4">Monthly Fees</h4>
+                <h4 className="text-base font-semibold text-slate-700 mb-4">Monthly Fees</h4>
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                     <div>

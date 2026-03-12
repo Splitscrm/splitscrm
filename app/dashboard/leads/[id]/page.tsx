@@ -379,7 +379,7 @@ export default function LeadDetailPage() {
   };
 
   const inputClass = "w-full bg-white text-slate-900 px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-base";
-  const labelClass = "text-sm text-slate-500 block mb-1";
+  const labelClass = "text-base text-slate-500 block mb-1";
   const sectionClass = "bg-white rounded-xl p-6 border border-slate-200 shadow-sm mb-6";
 
   if (authLoading || loading) return <div className="min-h-screen bg-[#F8FAFC] text-slate-900 p-8">Loading...</div>;
@@ -515,7 +515,7 @@ export default function LeadDetailPage() {
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
               <div className="flex justify-between items-center mb-3">
                 <div className="flex items-center">
-                  <span className="text-sm font-semibold text-slate-900">Upcoming Tasks</span>
+                  <span className="text-base font-semibold text-slate-900">Upcoming Tasks</span>
                   <span className="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full ml-2">{leadTasks.length}</span>
                 </div>
                 <button onClick={() => setShowTaskModal(true)} className="text-emerald-600 hover:text-emerald-700 text-xs font-medium">+ Add</button>

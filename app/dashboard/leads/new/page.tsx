@@ -112,37 +112,37 @@ export default function NewLeadPage() {
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
-                <label className="text-sm text-slate-500 block mb-1">Business Name *</label>
+                <label className="text-base text-slate-500 block mb-1">Business Name *</label>
                 <input type="text" value={form.business_name} onChange={(e) => updateField("business_name", e.target.value)} className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" placeholder="ABC Coffee Shop" />
               </div>
               <div>
-                <label className="text-sm text-slate-500 block mb-1">Contact Name</label>
+                <label className="text-base text-slate-500 block mb-1">Contact Name</label>
                 <input type="text" value={form.contact_name} onChange={(e) => updateField("contact_name", e.target.value)} className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" placeholder="John Smith" />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
-                <label className="text-sm text-slate-500 block mb-1">Email</label>
+                <label className="text-base text-slate-500 block mb-1">Email</label>
                 <input type="email" value={form.email} onChange={(e) => updateField("email", e.target.value)} className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" placeholder="john@example.com" />
               </div>
               <div>
-                <label className="text-sm text-slate-500 block mb-1">Phone</label>
+                <label className="text-base text-slate-500 block mb-1">Phone</label>
                 <input type="tel" value={form.phone} onChange={(e) => updateField("phone", e.target.value)} className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" placeholder="(555) 123-4567" />
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
-                <label className="text-sm text-slate-500 block mb-1">Website</label>
+                <label className="text-base text-slate-500 block mb-1">Website</label>
                 <input type="text" value={form.website} onChange={(e) => updateField("website", e.target.value)} className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" placeholder="https://example.com" />
               </div>
               <div>
-                <label className="text-sm text-slate-500 block mb-1">Est. Monthly Volume</label>
+                <label className="text-base text-slate-500 block mb-1">Est. Monthly Volume</label>
                 <input type="number" value={form.monthly_volume} onChange={(e) => updateField("monthly_volume", e.target.value)} className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" placeholder="25000" />
               </div>
               <div>
-                <label className="text-sm text-slate-500 block mb-1">Status</label>
+                <label className="text-base text-slate-500 block mb-1">Status</label>
                 <select value={form.status} onChange={(e) => updateField("status", e.target.value)} className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
                   <option value="new_prospect">New Prospect</option>
                   <option value="contact_pending">Contact Pending</option>
@@ -159,7 +159,7 @@ export default function NewLeadPage() {
 
             {isOwnerOrManager && orgMembers.length > 0 && (
               <div>
-                <label className="text-sm text-slate-500 block mb-1">Assign To</label>
+                <label className="text-base text-slate-500 block mb-1">Assign To</label>
                 <select
                   value={assignTo}
                   onChange={(e) => setAssignTo(e.target.value)}
@@ -176,7 +176,7 @@ export default function NewLeadPage() {
             )}
 
             <div>
-              <label className="text-sm text-slate-500 block mb-1">Notes</label>
+              <label className="text-base text-slate-500 block mb-1">Notes</label>
               <textarea value={form.notes} onChange={(e) => updateField("notes", e.target.value)} className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 h-32 resize-none" placeholder="Additional details about this lead..." />
             </div>
 

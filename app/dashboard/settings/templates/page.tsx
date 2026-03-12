@@ -162,7 +162,7 @@ export default function TemplatesPage() {
   };
 
   const inputClass = "w-full bg-white text-slate-900 px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-base";
-  const labelClass = "text-sm text-slate-600 font-medium block mb-1.5";
+  const labelClass = "text-base text-slate-600 font-medium block mb-1.5";
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">

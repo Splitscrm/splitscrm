@@ -182,7 +182,7 @@ export default function LeadsPage() {
             <option value="name_az">Business Name A-Z</option>
             <option value="name_za">Business Name Z-A</option>
           </select>
-          <span className="text-sm text-slate-500 ml-auto">{filtered.length} result{filtered.length !== 1 ? 's' : ''}</span>
+          <span className="text-base text-slate-500 ml-auto">{filtered.length} result{filtered.length !== 1 ? 's' : ''}</span>
           <ExportCSV data={filtered} filename="leads-export" columns={LEAD_EXPORT_COLUMNS} />
         </div>
 
@@ -204,12 +204,12 @@ export default function LeadsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className="text-left px-6 py-4 text-slate-500 text-sm font-medium">Business</th>
-                  <th className="text-left px-6 py-4 text-slate-500 text-sm font-medium">Contact</th>
-                  <th className="text-left px-6 py-4 text-slate-500 text-sm font-medium">Volume/mo</th>
-                  <th className="text-left px-6 py-4 text-slate-500 text-sm font-medium">Status</th>
-                  <th className="text-left px-6 py-4 text-slate-500 text-sm font-medium">Last Modified</th>
-                  <th className="text-left px-6 py-4 text-slate-500 text-sm font-medium">Actions</th>
+                  <th className="text-left px-6 py-4 text-slate-500 text-base font-medium">Business</th>
+                  <th className="text-left px-6 py-4 text-slate-500 text-base font-medium">Contact</th>
+                  <th className="text-left px-6 py-4 text-slate-500 text-base font-medium">Volume/mo</th>
+                  <th className="text-left px-6 py-4 text-slate-500 text-base font-medium">Status</th>
+                  <th className="text-left px-6 py-4 text-slate-500 text-base font-medium">Last Modified</th>
+                  <th className="text-left px-6 py-4 text-slate-500 text-base font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>

@@ -154,7 +154,7 @@ export default function AddMerchantPage() {
   }
 
   const inputClass = 'w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'
-  const labelClass = 'text-sm text-slate-500 block mb-1'
+  const labelClass = 'text-base text-slate-500 block mb-1'
   const sectionClass = 'bg-white rounded-xl p-6 border border-slate-200 shadow-sm mb-6'
 
   return (
@@ -295,7 +295,7 @@ export default function AddMerchantPage() {
           <div className="overflow-hidden transition-all duration-300 ease-in-out" style={{ maxHeight: showFullFees ? '5000px' : '0px', opacity: showFullFees ? 1 : 0 }}>
             {/* Rate Details */}
             <div className={sectionClass}>
-              <h4 className="text-sm font-semibold text-slate-700 mb-4">Rate Details</h4>
+              <h4 className="text-base font-semibold text-slate-700 mb-4">Rate Details</h4>
               {form.pricing_type === 'interchange_plus' && (
                 <div className="space-y-6">
                   <div>
@@ -384,7 +384,7 @@ export default function AddMerchantPage() {
 
             {/* Misc Fees */}
             <div className={sectionClass}>
-              <h4 className="text-sm font-semibold text-slate-700 mb-4">Misc Fees ($)</h4>
+              <h4 className="text-base font-semibold text-slate-700 mb-4">Misc Fees ($)</h4>
               <div className="space-y-6">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
                   <div>
@@ -427,7 +427,7 @@ export default function AddMerchantPage() {
 
             {/* Monthly Fees */}
             <div className={sectionClass}>
-              <h4 className="text-sm font-semibold text-slate-700 mb-4">Monthly Fees</h4>
+              <h4 className="text-base font-semibold text-slate-700 mb-4">Monthly Fees</h4>
               <div className="space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                   <div>
