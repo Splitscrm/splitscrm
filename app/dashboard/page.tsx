@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
@@ -52,6 +52,48 @@ const ACTIVITY_DOT_COLORS: Record<string, string> = {
   task_completed: 'bg-emerald-500',
 }
 
+const WIDGET_REGISTRY = [
+  { id: 'stats', label: 'Key Metrics', description: '4 KPI cards at the top', section: 'top', alwaysVisible: true },
+  { id: 'quick_actions', label: 'Quick Actions', description: 'Add Lead, Add Merchant, etc.', section: 'top', alwaysVisible: false },
+  { id: 'pipeline', label: 'Sales Pipeline', description: 'Leads by status', section: 'left', alwaysVisible: false },
+  { id: 'tasks', label: 'Tasks & Follow-ups', description: 'Upcoming tasks and reminders', section: 'left', alwaysVisible: false },
+  { id: 'top_merchants', label: 'Top Merchants', description: 'Most profitable merchants', section: 'left', alwaysVisible: false },
+  { id: 'merchants_by_processor', label: 'Merchants by Processor', description: 'Processor distribution', section: 'right', alwaysVisible: false },
+  { id: 'residual_revenue', label: 'Residual Revenue', description: 'Latest import revenue', section: 'right', alwaysVisible: false },
+  { id: 'merchants_by_agent', label: 'Merchants by Agent', description: 'Agent distribution', section: 'right', alwaysVisible: false },
+  { id: 'recent_activity', label: 'Recent Activity', description: 'Latest actions', section: 'bottom', alwaysVisible: false },
+]
+
+const DEFAULT_ORDER = WIDGET_REGISTRY.map(w => w.id)
+const DEFAULT_WIDGETS = WIDGET_REGISTRY.map(w => w.id)
+
+interface DashboardConfig {
+  widgets: string[]
+  order: string[]
+}
+
+function buildConfig(saved: DashboardConfig | null): DashboardConfig {
+  if (!saved) return { widgets: [...DEFAULT_WIDGETS], order: [...DEFAULT_ORDER] }
+  // Filter out IDs that no longer exist in registry
+  const validIds = new Set(WIDGET_REGISTRY.map(w => w.id))
+  const widgets = saved.widgets.filter(id => validIds.has(id))
+  const order = saved.order.filter(id => validIds.has(id))
+  // Add any new widgets from registry that aren't in saved config
+  for (const w of WIDGET_REGISTRY) {
+    if (!order.includes(w.id)) {
+      order.push(w.id)
+      widgets.push(w.id)
+    }
+  }
+  // Ensure alwaysVisible widgets are always in widgets list
+  for (const w of WIDGET_REGISTRY) {
+    if (w.alwaysVisible && !widgets.includes(w.id)) {
+      widgets.push(w.id)
+    }
+  }
+  return { widgets, order }
+}
+
 function relativeTime(dateStr: string): string {
   const now = new Date()
   const date = new Date(dateStr)
@@ -101,6 +143,10 @@ export default function Dashboard() {
   const [showWizard, setShowWizard] = useState(false)
   const [onboarding, setOnboarding] = useState<any>(null)
   const [showTaskModal, setShowTaskModal] = useState(false)
+  const [isCustomizing, setIsCustomizing] = useState(false)
+  const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig>({ widgets: [...DEFAULT_WIDGETS], order: [...DEFAULT_ORDER] })
+  const [savedConfig, setSavedConfig] = useState<DashboardConfig>({ widgets: [...DEFAULT_WIDGETS], order: [...DEFAULT_ORDER] })
+  const [configToast, setConfigToast] = useState(false)
   const [data, setData] = useState<DashboardData>({
     activeMerchants: 0,
     pendingMerchants: 0,
@@ -130,6 +176,16 @@ export default function Dashboard() {
         return
       }
       setUser(user)
+
+      // Load dashboard config
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('dashboard_config')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      const config = buildConfig(profile?.dashboard_config || null)
+      setDashboardConfig(config)
+      setSavedConfig(config)
 
       // Check onboarding status
       const { data: onboardingData } = await supabase
@@ -481,6 +537,389 @@ export default function Dashboard() {
     return () => clearInterval(interval)
   }, [loading, data.tasks])
 
+  // --- Customization helpers ---
+  const isWidgetEnabled = useCallback((id: string) => dashboardConfig.widgets.includes(id), [dashboardConfig.widgets])
+
+  const toggleWidget = useCallback((id: string) => {
+    const reg = WIDGET_REGISTRY.find(w => w.id === id)
+    if (reg?.alwaysVisible) return
+    setDashboardConfig(prev => ({
+      ...prev,
+      widgets: prev.widgets.includes(id)
+        ? prev.widgets.filter(w => w !== id)
+        : [...prev.widgets, id],
+    }))
+  }, [])
+
+  const moveWidget = useCallback((id: string, direction: 'up' | 'down') => {
+    setDashboardConfig(prev => {
+      const order = [...prev.order]
+      const idx = order.indexOf(id)
+      if (idx === -1) return prev
+      const swapIdx = direction === 'up' ? idx - 1 : idx + 1
+      if (swapIdx < 0 || swapIdx >= order.length) return prev
+      ;[order[idx], order[swapIdx]] = [order[swapIdx], order[idx]]
+      return { ...prev, order }
+    })
+  }, [])
+
+  const saveConfig = useCallback(async () => {
+    if (!user) return
+    await supabase
+      .from('user_profiles')
+      .update({ dashboard_config: dashboardConfig })
+      .eq('user_id', user.id)
+    setSavedConfig(dashboardConfig)
+    setIsCustomizing(false)
+    setConfigToast(true)
+    setTimeout(() => setConfigToast(false), 2000)
+  }, [user, dashboardConfig])
+
+  const cancelCustomize = useCallback(() => {
+    setDashboardConfig(savedConfig)
+    setIsCustomizing(false)
+  }, [savedConfig])
+
+  const resetConfig = useCallback(() => {
+    setDashboardConfig({ widgets: [...DEFAULT_WIDGETS], order: [...DEFAULT_ORDER] })
+  }, [])
+
+  // --- Role-based widget visibility ---
+  const isWidgetAllowedByRole = useCallback((id: string) => {
+    if (id === 'merchants_by_processor' || id === 'merchants_by_agent') return isOwnerOrManager
+    return true
+  }, [isOwnerOrManager])
+
+  // Ordered list of enabled widgets, filtered by role
+  const enabledWidgets = useMemo(() => {
+    return dashboardConfig.order.filter(id =>
+      dashboardConfig.widgets.includes(id) && isWidgetAllowedByRole(id)
+    )
+  }, [dashboardConfig, isWidgetAllowedByRole])
+
+  // --- Widget renderer ---
+  const renderWidget = (widgetId: string) => {
+    switch (widgetId) {
+      case 'stats':
+        return (
+          <div key="stats" className={`grid grid-cols-2 ${isOwnerOrManager ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-6`}>
+            <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+              <p className="text-slate-500 text-base">{isOwnerOrManager ? 'Active Merchants' : 'My Merchants'}</p>
+              <p className="text-3xl font-bold tabular-nums mt-2">{data.activeMerchants.toLocaleString()}</p>
+              <p className="text-slate-400 text-sm mt-1">{data.pendingMerchants.toLocaleString()} pending</p>
+            </div>
+            <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+              <p className="text-slate-500 text-base">Pipeline Value</p>
+              <p className="text-3xl font-bold tabular-nums mt-2">${data.pipelineValue.toLocaleString()}</p>
+              <p className="text-slate-400 text-sm mt-1">{data.activeDeals.toLocaleString()} active deals</p>
+            </div>
+            <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+              <p className="text-slate-500 text-base">{isOwnerOrManager ? 'Leads This Month' : 'My Leads'}</p>
+              <p className="text-3xl font-bold tabular-nums mt-2">{data.leadsThisMonth.toLocaleString()}</p>
+              <p className="text-slate-400 text-sm mt-1">{data.conversionRate.toFixed(1)}% lifetime conversion</p>
+            </div>
+            {isOwnerOrManager && (
+              <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+                <p className="text-slate-500 text-base">Active Partners</p>
+                <p className="text-3xl font-bold tabular-nums mt-2">{data.activePartners.toLocaleString()}</p>
+                <p className="text-slate-400 text-sm mt-1">{data.totalPartners.toLocaleString()} total partners</p>
+              </div>
+            )}
+          </div>
+        )
+
+      case 'quick_actions':
+        return (
+          <div key="quick_actions" className="flex flex-wrap flex-col sm:flex-row gap-3 sm:gap-4">
+            <a href="/dashboard/leads/new" className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition">
+              + Add Lead
+            </a>
+            {(isOwnerOrManager || role === 'master_agent' || role === 'agent') && (
+              <a href="/dashboard/merchants/new" className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition">
+                + Add Merchant
+              </a>
+            )}
+            {isOwnerOrManager && (
+              <a href="/dashboard/partners/new" className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm transition">
+                + Add Partner
+              </a>
+            )}
+            {isOwnerOrManager && (
+              <a href="/dashboard/statements" className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">
+                Analyze Statement
+              </a>
+            )}
+          </div>
+        )
+
+      case 'pipeline':
+        return (
+          <div key="pipeline" className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+            <h3 className="font-semibold mb-4">Sales Pipeline</h3>
+            {data.pipelineByStatus.length === 0 ? (
+              <p className="text-slate-400 text-base">No leads yet</p>
+            ) : (
+              <div className="space-y-3">
+                {data.pipelineByStatus.map(({ status, count }) => (
+                  <div key={status} className="flex items-center gap-3">
+                    <span className="text-base text-slate-500 w-40 shrink-0 truncate">
+                      {STATUS_LABELS[status] || status}
+                    </span>
+                    <div className="flex-1 bg-slate-200 rounded-full h-5 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${STATUS_COLORS[status] || 'bg-slate-400'}`}
+                        style={{ width: `${(count / maxPipelineCount) * 100}%` }}
+                      ></div>
+                    </div>
+                    <span className="text-base text-slate-600 w-8 text-right">{count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+
+      case 'tasks':
+        return (
+          <div key="tasks" className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold">Tasks & Follow-ups</h3>
+                {overdueCount > 0 && <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
+              </div>
+              <button
+                onClick={() => setShowTaskModal(true)}
+                className="text-emerald-600 hover:text-emerald-700 text-sm font-medium"
+              >
+                + Add
+              </button>
+            </div>
+            {data.tasks.length === 0 && data.followUps.length === 0 ? (
+              <p className="text-slate-400 text-base">No pending tasks or follow-ups</p>
+            ) : (
+              <div className="space-y-2">
+                {data.tasks.map((task) => {
+                  const priorityColors: Record<string, string> = {
+                    low: 'bg-slate-100 text-slate-600',
+                    medium: 'bg-blue-50 text-blue-700',
+                    high: 'bg-amber-50 text-amber-700',
+                    urgent: 'bg-red-50 text-red-700',
+                  }
+                  return (
+                    <div key={`task-${task.id}`} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-50 transition group">
+                      <button
+                        onClick={async () => {
+                          await supabase.from('tasks').update({ status: 'completed' }).eq('id', task.id)
+                          const { data: { user: u } } = await supabase.auth.getUser()
+                          if (u) {
+                            supabase.from('activity_log').insert({
+                              user_id: u.id,
+                              lead_id: task.lead_id,
+                              merchant_id: task.merchant_id,
+                              action_type: 'task_completed',
+                              description: `Task completed: ${task.title}`,
+                            })
+                          }
+                          setData(prev => ({ ...prev, tasks: prev.tasks.filter(t => t.id !== task.id) }))
+                        }}
+                        className="w-4 h-4 rounded border-2 border-slate-300 hover:border-emerald-500 shrink-0 flex items-center justify-center transition"
+                        title="Mark complete"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-base font-medium truncate">{task.title}</p>
+                        {task.due_date && (
+                          <p className="text-xs text-slate-500">
+                            {new Date(task.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            {task.due_time && ` at ${task.due_time}`}
+                          </p>
+                        )}
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${priorityColors[task.priority] || 'bg-slate-100 text-slate-600'}`}>
+                        {task.priority}
+                      </span>
+                    </div>
+                  )
+                })}
+                {data.followUps.map((fu) => (
+                  <a
+                    key={`fu-${fu.id}`}
+                    href={`/dashboard/leads/${fu.id}`}
+                    className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-50 transition"
+                  >
+                    <div className="w-4 h-4 rounded-full bg-cyan-100 flex items-center justify-center shrink-0">
+                      <div className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-base font-medium truncate">{fu.business_name}</p>
+                      <p className="text-xs text-slate-500">{fu.contact_name}</p>
+                    </div>
+                    <span className="text-xs text-slate-500">
+                      {new Date(fu.follow_up_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </span>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+
+      case 'top_merchants':
+        return (
+          <div key="top_merchants" className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <h3 className="text-base font-semibold text-slate-900 mb-3">Top 5 Merchants by Profitability</h3>
+            {data.topMerchants.length === 0 ? (
+              <p className="text-slate-400 text-xs">Import a <a href="/dashboard/residuals" className="text-emerald-600 hover:text-emerald-700">residual report</a> to see top merchants</p>
+            ) : (
+              <div>
+                {data.topMerchants.map((m, i) => (
+                  <div key={m.merchantIdExternal} className={`flex items-center py-2 text-xs ${i < data.topMerchants.length - 1 ? 'border-b border-slate-50' : ''} ${i < 3 ? 'bg-emerald-50/50 rounded' : ''}`}>
+                    <span className="w-6 text-slate-400 font-medium">{i + 1}</span>
+                    {m.merchantId ? (
+                      <a href={`/dashboard/merchants/${m.merchantId}`} className="flex-1 text-emerald-600 font-medium truncate hover:text-emerald-700">{m.dbaName}</a>
+                    ) : (
+                      <span className="flex-1 text-slate-700 font-medium truncate">{m.dbaName}</span>
+                    )}
+                    <span className={`text-right font-medium tabular-nums ${m.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {m.netProfit.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+
+      case 'merchants_by_processor':
+        return (
+          <div key="merchants_by_processor" className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+            <h3 className="font-semibold mb-4">Merchants by Processor</h3>
+            {data.merchantsByProcessor.length === 0 ? (
+              <p className="text-slate-400 text-base">No merchants yet</p>
+            ) : (
+              <div className="space-y-3">
+                {data.merchantsByProcessor.map(({ processor, count }, i) => (
+                  <div key={processor} className="flex items-center gap-3">
+                    <span className="text-base text-slate-500 w-28 shrink-0 truncate">{processor}</span>
+                    <div className="flex-1 bg-slate-200 rounded-full h-5 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${PROCESSOR_COLORS[i % PROCESSOR_COLORS.length]}`}
+                        style={{ width: `${(count / maxProcessorCount) * 100}%` }}
+                      ></div>
+                    </div>
+                    <span className="text-base text-slate-600 w-8 text-right">{count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+
+      case 'residual_revenue':
+        return data.latestImport ? (
+          <div key="residual_revenue" className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+            <h3 className="font-semibold mb-3">Residual Revenue</h3>
+            <p className={`text-2xl font-bold ${data.residualNetRevenue >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+              {data.residualNetRevenue.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 })}
+            </p>
+            <p className="text-base text-slate-500 mt-1">
+              From {data.latestImport.processor_name || 'Unknown processor'} — {data.latestImport.report_month || 'No month'}
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              Total volume: {data.residualTotalVolume.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 })}
+            </p>
+            <a href="/dashboard/residuals" className="text-emerald-600 text-sm mt-3 inline-block hover:underline">
+              View Details →
+            </a>
+          </div>
+        ) : (
+          <div key="residual_revenue" className="bg-emerald-50/50 rounded-xl p-6 border border-dashed border-emerald-200">
+            <div className="flex items-center gap-2 mb-3">
+              <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              <h3 className="font-semibold text-slate-700">Residual Revenue</h3>
+            </div>
+            <p className="text-slate-500 text-base mb-4">
+              Upload your first residual report to see revenue tracking, processor breakdowns, and agent splits.
+            </p>
+            <a
+              href="/dashboard/residuals"
+              className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-4 py-2 text-sm transition"
+            >
+              Get Started
+            </a>
+          </div>
+        )
+
+      case 'merchants_by_agent':
+        return (
+          <div key="merchants_by_agent" className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+            <h3 className="font-semibold mb-4">Merchants by Agent</h3>
+            {data.agentBreakdown.length === 0 ? (
+              <p className="text-slate-400 text-base">Import a residual report to see agent breakdown</p>
+            ) : (
+              <div className="space-y-3">
+                {data.agentBreakdown.map(({ agent, merchantCount }) => (
+                  <div key={agent} className="flex items-center gap-3">
+                    <span className="text-base text-slate-500 w-28 shrink-0 truncate">{agent}</span>
+                    <div className="flex-1 bg-slate-200 rounded-full h-5 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-emerald-500"
+                        style={{ width: `${(merchantCount / Math.max(...data.agentBreakdown.map(a => a.merchantCount), 1)) * 100}%` }}
+                      ></div>
+                    </div>
+                    <span className="text-base text-slate-600 w-8 text-right">{merchantCount}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+
+      case 'recent_activity':
+        return (
+          <div key="recent_activity" className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+            <h3 className="text-base font-semibold mb-3">Recent Activity</h3>
+            {data.recentActivity.length === 0 ? (
+              <p className="text-slate-400 text-xs">No recent activity</p>
+            ) : (
+              <div>
+                {data.recentActivity.map((activity) => (
+                  <div key={activity.id} className="flex items-center gap-2 py-2">
+                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${ACTIVITY_DOT_COLORS[activity.action_type] || 'bg-gray-500'}`}></div>
+                    <p className="text-xs text-slate-600 flex-1 truncate">{activity.description}</p>
+                    <span className="text-xs text-slate-400 shrink-0 ml-auto">{relativeTime(activity.created_at)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <a href="#" className="text-emerald-600 text-xs hover:text-emerald-700 mt-2 inline-block">View All &rarr;</a>
+          </div>
+        )
+
+      default:
+        return null
+    }
+  }
+
+  // Group enabled widgets by section for layout
+  const topWidgets = enabledWidgets.filter(id => {
+    const reg = WIDGET_REGISTRY.find(w => w.id === id)
+    return reg?.section === 'top'
+  })
+  const leftWidgets = enabledWidgets.filter(id => {
+    const reg = WIDGET_REGISTRY.find(w => w.id === id)
+    return reg?.section === 'left'
+  })
+  const rightWidgets = enabledWidgets.filter(id => {
+    const reg = WIDGET_REGISTRY.find(w => w.id === id)
+    return reg?.section === 'right'
+  })
+  const bottomWidgets = enabledWidgets.filter(id => {
+    const reg = WIDGET_REGISTRY.find(w => w.id === id)
+    return reg?.section === 'bottom'
+  })
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
       {/* Sidebar */}
@@ -500,13 +939,101 @@ export default function Dashboard() {
         />
       )}
 
+      {/* Config saved toast */}
+      {configToast && (
+        <div className="fixed top-4 right-4 z-50 bg-emerald-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm font-medium animate-fade-in">
+          Layout saved
+        </div>
+      )}
+
       {/* Main Content */}
       <div className="lg:ml-64 p-4 lg:p-8 pt-16 lg:pt-8">
         {/* Header */}
-        <div className="mb-6">
-          <h2 className="text-xl lg:text-2xl font-bold">Welcome back</h2>
-          <p className="text-slate-500 mt-1">{user?.email}</p>
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl lg:text-2xl font-bold">Welcome back</h2>
+            <p className="text-slate-500 mt-1">{user?.email}</p>
+          </div>
+          {!loading && (
+            <button
+              onClick={() => setIsCustomizing(!isCustomizing)}
+              className="text-slate-400 hover:text-slate-600 text-sm transition flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Customize
+            </button>
+          )}
         </div>
+
+        {/* Customize Panel */}
+        {isCustomizing && (
+          <div className="bg-white rounded-xl border border-emerald-200 shadow-sm p-5 mb-6">
+            <div className="mb-4">
+              <h3 className="text-base font-semibold text-slate-900">Customize Dashboard</h3>
+              <p className="text-sm text-slate-500">Toggle widgets on or off. Use arrows to reorder.</p>
+            </div>
+            <div className="divide-y divide-slate-50">
+              {dashboardConfig.order.map((id, idx) => {
+                const reg = WIDGET_REGISTRY.find(w => w.id === id)
+                if (!reg) return null
+                if (!isWidgetAllowedByRole(id)) return null
+                const enabled = isWidgetEnabled(id)
+                return (
+                  <div key={id} className="flex items-center justify-between py-3">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="flex flex-col gap-0.5">
+                        <button
+                          onClick={() => moveWidget(id, 'up')}
+                          disabled={idx === 0}
+                          className="text-slate-400 hover:text-slate-600 text-xs disabled:opacity-30 disabled:cursor-not-allowed leading-none"
+                        >
+                          &#9650;
+                        </button>
+                        <button
+                          onClick={() => moveWidget(id, 'down')}
+                          disabled={idx === dashboardConfig.order.length - 1}
+                          className="text-slate-400 hover:text-slate-600 text-xs disabled:opacity-30 disabled:cursor-not-allowed leading-none"
+                        >
+                          &#9660;
+                        </button>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-700">{reg.label}</p>
+                        <p className="text-xs text-slate-400">{reg.description}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {reg.alwaysVisible ? (
+                        <span className="text-xs text-slate-400">Required</span>
+                      ) : (
+                        <button
+                          onClick={() => toggleWidget(id)}
+                          className={`relative w-10 h-5 rounded-full transition-colors ${enabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                        >
+                          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex items-center gap-3 mt-4 pt-4 border-t border-slate-100">
+              <button onClick={saveConfig} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+                Save Layout
+              </button>
+              <button onClick={cancelCustomize} className="text-slate-500 text-sm hover:text-slate-700 transition">
+                Cancel
+              </button>
+              <button onClick={resetConfig} className="text-slate-400 text-xs hover:text-slate-600 transition ml-auto">
+                Reset to Default
+              </button>
+            </div>
+          </div>
+        )}
 
         {loading ? (
           /* Loading Skeleton */
@@ -558,308 +1085,27 @@ export default function Dashboard() {
               />
             )}
 
-            {/* Top Row — Key Metric Cards */}
-            <div className={`grid grid-cols-2 ${isOwnerOrManager ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-6`}>
-              {/* Active Merchants */}
-              <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-                <p className="text-slate-500 text-base">{isOwnerOrManager ? 'Active Merchants' : 'My Merchants'}</p>
-                <p className="text-3xl font-bold tabular-nums mt-2">{data.activeMerchants.toLocaleString()}</p>
-                <p className="text-slate-400 text-sm mt-1">{data.pendingMerchants.toLocaleString()} pending</p>
-              </div>
-
-              {/* Pipeline Value */}
-              <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-                <p className="text-slate-500 text-base">Pipeline Value</p>
-                <p className="text-3xl font-bold tabular-nums mt-2">${data.pipelineValue.toLocaleString()}</p>
-                <p className="text-slate-400 text-sm mt-1">{data.activeDeals.toLocaleString()} active deals</p>
-              </div>
-
-              {/* Leads This Month */}
-              <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-                <p className="text-slate-500 text-base">{isOwnerOrManager ? 'Leads This Month' : 'My Leads'}</p>
-                <p className="text-3xl font-bold tabular-nums mt-2">{data.leadsThisMonth.toLocaleString()}</p>
-                <p className="text-slate-400 text-sm mt-1">{data.conversionRate.toFixed(1)}% lifetime conversion</p>
-              </div>
-
-              {/* Active Partners — owner/manager only */}
-              {isOwnerOrManager && (
-                <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-                  <p className="text-slate-500 text-base">Active Partners</p>
-                  <p className="text-3xl font-bold tabular-nums mt-2">{data.activePartners.toLocaleString()}</p>
-                  <p className="text-slate-400 text-sm mt-1">{data.totalPartners.toLocaleString()} total partners</p>
-                </div>
-              )}
-            </div>
-
-            {/* Quick Actions */}
-            <div className="flex flex-wrap flex-col sm:flex-row gap-3 sm:gap-4">
-              <a href="/dashboard/leads/new" className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition">
-                + Add Lead
-              </a>
-              {(isOwnerOrManager || role === 'master_agent' || role === 'agent') && (
-                <a href="/dashboard/merchants/new" className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition">
-                  + Add Merchant
-                </a>
-              )}
-              {isOwnerOrManager && (
-                <a href="/dashboard/partners/new" className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm transition">
-                  + Add Partner
-                </a>
-              )}
-              {isOwnerOrManager && (
-                <a href="/dashboard/statements" className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">
-                  Analyze Statement
-                </a>
-              )}
-            </div>
+            {/* Top section widgets */}
+            {topWidgets.map(id => renderWidget(id))}
 
             {/* Middle Row — 2 Column Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Left Column */}
-              <div className="space-y-6">
-                {/* Sales Pipeline */}
-                <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-                  <h3 className="font-semibold mb-4">Sales Pipeline</h3>
-                  {data.pipelineByStatus.length === 0 ? (
-                    <p className="text-slate-400 text-base">No leads yet</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {data.pipelineByStatus.map(({ status, count }) => (
-                        <div key={status} className="flex items-center gap-3">
-                          <span className="text-base text-slate-500 w-40 shrink-0 truncate">
-                            {STATUS_LABELS[status] || status}
-                          </span>
-                          <div className="flex-1 bg-slate-200 rounded-full h-5 overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${STATUS_COLORS[status] || 'bg-slate-400'}`}
-                              style={{ width: `${(count / maxPipelineCount) * 100}%` }}
-                            ></div>
-                          </div>
-                          <span className="text-base text-slate-600 w-8 text-right">{count}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Tasks & Follow-ups */}
-                <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold">Tasks & Follow-ups</h3>
-                      {overdueCount > 0 && <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
-                    </div>
-                    <button
-                      onClick={() => setShowTaskModal(true)}
-                      className="text-emerald-600 hover:text-emerald-700 text-sm font-medium"
-                    >
-                      + Add
-                    </button>
-                  </div>
-                  {data.tasks.length === 0 && data.followUps.length === 0 ? (
-                    <p className="text-slate-400 text-base">No pending tasks or follow-ups</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {/* Tasks from tasks table */}
-                      {data.tasks.map((task) => {
-                        const priorityColors: Record<string, string> = {
-                          low: 'bg-slate-100 text-slate-600',
-                          medium: 'bg-blue-50 text-blue-700',
-                          high: 'bg-amber-50 text-amber-700',
-                          urgent: 'bg-red-50 text-red-700',
-                        }
-                        return (
-                          <div key={`task-${task.id}`} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-50 transition group">
-                            <button
-                              onClick={async () => {
-                                await supabase.from('tasks').update({ status: 'completed' }).eq('id', task.id)
-                                const { data: { user: u } } = await supabase.auth.getUser()
-                                if (u) {
-                                  supabase.from('activity_log').insert({
-                                    user_id: u.id,
-                                    lead_id: task.lead_id,
-                                    merchant_id: task.merchant_id,
-                                    action_type: 'task_completed',
-                                    description: `Task completed: ${task.title}`,
-                                  })
-                                }
-                                setData(prev => ({ ...prev, tasks: prev.tasks.filter(t => t.id !== task.id) }))
-                              }}
-                              className="w-4 h-4 rounded border-2 border-slate-300 hover:border-emerald-500 shrink-0 flex items-center justify-center transition"
-                              title="Mark complete"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-base font-medium truncate">{task.title}</p>
-                              {task.due_date && (
-                                <p className="text-xs text-slate-500">
-                                  {new Date(task.due_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                  {task.due_time && ` at ${task.due_time}`}
-                                </p>
-                              )}
-                            </div>
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${priorityColors[task.priority] || 'bg-slate-100 text-slate-600'}`}>
-                              {task.priority}
-                            </span>
-                          </div>
-                        )
-                      })}
-                      {/* Recycled lead follow-ups */}
-                      {data.followUps.map((fu) => (
-                        <a
-                          key={`fu-${fu.id}`}
-                          href={`/dashboard/leads/${fu.id}`}
-                          className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-50 transition"
-                        >
-                          <div className="w-4 h-4 rounded-full bg-cyan-100 flex items-center justify-center shrink-0">
-                            <div className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-base font-medium truncate">{fu.business_name}</p>
-                            <p className="text-xs text-slate-500">{fu.contact_name}</p>
-                          </div>
-                          <span className="text-xs text-slate-500">
-                            {new Date(fu.follow_up_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </span>
-                        </a>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Top 5 Merchants by Profitability */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                  <h3 className="text-base font-semibold text-slate-900 mb-3">Top 5 Merchants by Profitability</h3>
-                  {data.topMerchants.length === 0 ? (
-                    <p className="text-slate-400 text-xs">Import a <a href="/dashboard/residuals" className="text-emerald-600 hover:text-emerald-700">residual report</a> to see top merchants</p>
-                  ) : (
-                    <div>
-                      {data.topMerchants.map((m, i) => (
-                        <div key={m.merchantIdExternal} className={`flex items-center py-2 text-xs ${i < data.topMerchants.length - 1 ? 'border-b border-slate-50' : ''} ${i < 3 ? 'bg-emerald-50/50 rounded' : ''}`}>
-                          <span className="w-6 text-slate-400 font-medium">{i + 1}</span>
-                          {m.merchantId ? (
-                            <a href={`/dashboard/merchants/${m.merchantId}`} className="flex-1 text-emerald-600 font-medium truncate hover:text-emerald-700">{m.dbaName}</a>
-                          ) : (
-                            <span className="flex-1 text-slate-700 font-medium truncate">{m.dbaName}</span>
-                          )}
-                          <span className={`text-right font-medium tabular-nums ${m.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                            {m.netProfit.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right Column */}
-              <div className="space-y-6">
-                {/* Merchants by Processor — owner/manager only */}
-                {isOwnerOrManager && (
-                <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-                  <h3 className="font-semibold mb-4">Merchants by Processor</h3>
-                  {data.merchantsByProcessor.length === 0 ? (
-                    <p className="text-slate-400 text-base">No merchants yet</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {data.merchantsByProcessor.map(({ processor, count }, i) => (
-                        <div key={processor} className="flex items-center gap-3">
-                          <span className="text-base text-slate-500 w-28 shrink-0 truncate">{processor}</span>
-                          <div className="flex-1 bg-slate-200 rounded-full h-5 overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${PROCESSOR_COLORS[i % PROCESSOR_COLORS.length]}`}
-                              style={{ width: `${(count / maxProcessorCount) * 100}%` }}
-                            ></div>
-                          </div>
-                          <span className="text-base text-slate-600 w-8 text-right">{count}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                )}
-
-                {/* Residual Revenue */}
-                {data.latestImport ? (
-                  <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-                    <h3 className="font-semibold mb-3">Residual Revenue</h3>
-                    <p className={`text-2xl font-bold ${data.residualNetRevenue >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                      {data.residualNetRevenue.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 })}
-                    </p>
-                    <p className="text-base text-slate-500 mt-1">
-                      From {data.latestImport.processor_name || 'Unknown processor'} — {data.latestImport.report_month || 'No month'}
-                    </p>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Total volume: {data.residualTotalVolume.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 })}
-                    </p>
-                    <a href="/dashboard/residuals" className="text-emerald-600 text-sm mt-3 inline-block hover:underline">
-                      View Details →
-                    </a>
-                  </div>
-                ) : (
-                  <div className="bg-emerald-50/50 rounded-xl p-6 border border-dashed border-emerald-200">
-                    <div className="flex items-center gap-2 mb-3">
-                      <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                      <h3 className="font-semibold text-slate-700">Residual Revenue</h3>
-                    </div>
-                    <p className="text-slate-500 text-base mb-4">
-                      Upload your first residual report to see revenue tracking, processor breakdowns, and agent splits.
-                    </p>
-                    <a
-                      href="/dashboard/residuals"
-                      className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-4 py-2 text-sm transition"
-                    >
-                      Get Started
-                    </a>
+            {(leftWidgets.length > 0 || rightWidgets.length > 0) && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {leftWidgets.length > 0 && (
+                  <div className="space-y-6">
+                    {leftWidgets.map(id => renderWidget(id))}
                   </div>
                 )}
-
-                {/* Merchants by Agent — owner/manager only */}
-                {isOwnerOrManager && (
-                <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-                  <h3 className="font-semibold mb-4">Merchants by Agent</h3>
-                  {data.agentBreakdown.length === 0 ? (
-                    <p className="text-slate-400 text-base">Import a residual report to see agent breakdown</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {data.agentBreakdown.map(({ agent, merchantCount }) => (
-                        <div key={agent} className="flex items-center gap-3">
-                          <span className="text-base text-slate-500 w-28 shrink-0 truncate">{agent}</span>
-                          <div className="flex-1 bg-slate-200 rounded-full h-5 overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-emerald-500"
-                              style={{ width: `${(merchantCount / Math.max(...data.agentBreakdown.map(a => a.merchantCount), 1)) * 100}%` }}
-                            ></div>
-                          </div>
-                          <span className="text-base text-slate-600 w-8 text-right">{merchantCount}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                {rightWidgets.length > 0 && (
+                  <div className="space-y-6">
+                    {rightWidgets.map(id => renderWidget(id))}
+                  </div>
                 )}
               </div>
-            </div>
+            )}
 
-            {/* Full Width Bottom — Recent Activity */}
-            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-              <h3 className="text-base font-semibold mb-3">Recent Activity</h3>
-              {data.recentActivity.length === 0 ? (
-                <p className="text-slate-400 text-xs">No recent activity</p>
-              ) : (
-                <div>
-                  {data.recentActivity.map((activity) => (
-                    <div key={activity.id} className="flex items-center gap-2 py-2">
-                      <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${ACTIVITY_DOT_COLORS[activity.action_type] || 'bg-gray-500'}`}></div>
-                      <p className="text-xs text-slate-600 flex-1 truncate">{activity.description}</p>
-                      <span className="text-xs text-slate-400 shrink-0 ml-auto">{relativeTime(activity.created_at)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <a href="#" className="text-emerald-600 text-xs hover:text-emerald-700 mt-2 inline-block">View All &rarr;</a>
-            </div>
+            {/* Bottom section widgets */}
+            {bottomWidgets.map(id => renderWidget(id))}
           </div>
         )}
       </div>
