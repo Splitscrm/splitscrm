@@ -48,7 +48,10 @@ export default function PartnerDetailPage() {
       if (p) {
         setPartner(p);
         const { data: b } = await supabase.from("partner_sponsor_banks").select("*").eq("partner_id", p.id).order("created_at");
-        if (b) setBanks(b);
+        if (b) {
+          setBanks(b);
+          fetchMpasForBanks(b.map((bank: any) => bank.id));
+        }
         const { data: h } = await supabase.from("partner_hardware").select("*").eq("partner_id", p.id).order("created_at");
         if (h) setHardware(h);
         const { data: s } = await supabase.from("partner_software").select("*").eq("partner_id", p.id).order("created_at");
@@ -98,6 +101,74 @@ export default function PartnerDetailPage() {
   const updatePr = (idx: number, field: string, value: any) => { const u = [...pricing]; u[idx] = { ...u[idx], [field]: value }; setPricing(u); };
   const savePr = async (idx: number) => { const pr = pricing[idx]; const { id, created_at, ...updates } = pr; await supabase.from("partner_pricing").update(updates).eq("id", pr.id); showMsg("Pricing saved!"); };
   const removePr = async (idx: number) => { await supabase.from("partner_pricing").delete().eq("id", pricing[idx].id); setPricing(pricing.filter((_, i) => i !== idx)); };
+
+  // MPA documents state
+  const [bankMpas, setBankMpas] = useState<Record<string, any[]>>({});
+  const [mpaUploading, setMpaUploading] = useState<Record<string, boolean>>({});
+
+  const fetchMpasForBanks = async (bankIds: string[]) => {
+    if (bankIds.length === 0) return;
+    const { data } = await supabase
+      .from("sponsor_bank_mpas")
+      .select("*")
+      .in("sponsor_bank_id", bankIds)
+      .order("created_at", { ascending: false });
+    const grouped: Record<string, any[]> = {};
+    for (const mpa of data || []) {
+      if (!grouped[mpa.sponsor_bank_id]) grouped[mpa.sponsor_bank_id] = [];
+      grouped[mpa.sponsor_bank_id].push(mpa);
+    }
+    setBankMpas(grouped);
+  };
+
+  const fetchMpasForBank = async (bankId: string) => {
+    const { data } = await supabase
+      .from("sponsor_bank_mpas")
+      .select("*")
+      .eq("sponsor_bank_id", bankId)
+      .order("created_at", { ascending: false });
+    setBankMpas(prev => ({ ...prev, [bankId]: data || [] }));
+  };
+
+  const uploadMpa = async (bankId: string, file: File) => {
+    setMpaUploading(prev => ({ ...prev, [bankId]: true }));
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setMpaUploading(prev => ({ ...prev, [bankId]: false })); return; }
+
+    const timestamp = Date.now();
+    const path = `${user.id}/${partner.id}/mpas/${bankId}/${timestamp}_${file.name}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("deal-documents")
+      .upload(path, file);
+
+    if (uploadError) {
+      console.error("Upload error:", uploadError);
+      setMpaUploading(prev => ({ ...prev, [bankId]: false }));
+      return;
+    }
+
+    const { data: urlData } = supabase.storage.from("deal-documents").getPublicUrl(path);
+
+    await supabase.from("sponsor_bank_mpas").insert({
+      sponsor_bank_id: bankId,
+      user_id: user.id,
+      file_name: file.name,
+      file_url: urlData.publicUrl,
+      storage_path: path,
+    });
+
+    await fetchMpasForBank(bankId);
+    setMpaUploading(prev => ({ ...prev, [bankId]: false }));
+  };
+
+  const deleteMpa = async (mpa: any) => {
+    if (mpa.storage_path) {
+      await supabase.storage.from("deal-documents").remove([mpa.storage_path]);
+    }
+    await supabase.from("sponsor_bank_mpas").delete().eq("id", mpa.id);
+    await fetchMpasForBank(mpa.sponsor_bank_id);
+  };
 
   const [distinctMonthCount, setDistinctMonthCount] = useState(0);
 
@@ -291,6 +362,43 @@ export default function PartnerDetailPage() {
                   <div><label className={labelClass}>Accepted MCC Codes</label><input type="text" value={b.accepted_mcc_codes || ""} onChange={(e) => updateBank(idx, "accepted_mcc_codes", e.target.value)} className={inputClass} placeholder="e.g. 5411, 5812" /></div>
                   <div><label className={labelClass}>Restricted MCC Codes</label><input type="text" value={b.restricted_mcc_codes || ""} onChange={(e) => updateBank(idx, "restricted_mcc_codes", e.target.value)} className={inputClass} placeholder="e.g. 7995, 5967" /></div>
                 </div>
+                {/* MPA Documents */}
+                <div className="flex items-center gap-3 mt-4 pt-4 border-t border-slate-100">
+                  <span className="text-sm font-semibold text-slate-700">MPA Templates</span>
+                  <label className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg px-3 py-1.5 text-xs font-medium cursor-pointer transition">
+                    {mpaUploading[b.id] ? "Uploading..." : "📄 Upload MPA"}
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx"
+                      className="hidden"
+                      disabled={!!mpaUploading[b.id]}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) uploadMpa(b.id, file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+                {(bankMpas[b.id] || []).length === 0 ? (
+                  <p className="text-xs text-slate-400 mt-2">No MPA templates uploaded</p>
+                ) : (
+                  <div className="mt-2">
+                    {(bankMpas[b.id] || []).map((mpa: any) => (
+                      <div key={mpa.id} className="flex items-center justify-between py-2">
+                        <a href={mpa.file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 truncate">
+                          📄 {mpa.file_name}
+                        </a>
+                        <div className="flex items-center gap-3 shrink-0 ml-3">
+                          <span className="text-xs text-slate-400">
+                            {new Date(mpa.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                          </span>
+                          <button onClick={() => deleteMpa(mpa)} className="text-red-400 hover:text-red-500 text-xs">Remove</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
