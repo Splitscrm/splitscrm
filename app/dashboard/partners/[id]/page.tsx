@@ -9,6 +9,7 @@ import Sidebar from "@/components/Sidebar";
 import { useAuth } from "@/lib/auth-context";
 import LoadingScreen from "@/components/LoadingScreen";
 import { authFetch } from "@/lib/api-client";
+import { getSignedUrl } from "@/lib/storage";
 
 export default function PartnerDetailPage() {
   const router = useRouter();
@@ -118,6 +119,7 @@ export default function PartnerDetailPage() {
 
   // MPA documents state
   const [bankMpas, setBankMpas] = useState<Record<string, any[]>>({});
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [mpaUploading, setMpaUploading] = useState<Record<string, boolean>>({});
 
   const fetchMpasForBanks = async (bankIds: string[]) => {
@@ -162,13 +164,13 @@ export default function PartnerDetailPage() {
       return;
     }
 
-    const { data: urlData } = supabase.storage.from("deal-documents").getPublicUrl(path);
+    const signedUrl = await getSignedUrl(path);
 
     await supabase.from("sponsor_bank_mpas").insert({
       sponsor_bank_id: bankId,
       user_id: user.id,
       file_name: file.name,
-      file_url: urlData.publicUrl,
+      file_url: path,
       storage_path: path,
     });
 
@@ -182,6 +184,18 @@ export default function PartnerDetailPage() {
     }
     await supabase.from("sponsor_bank_mpas").delete().eq("id", mpa.id);
     await fetchMpasForBank(mpa.sponsor_bank_id);
+  };
+
+  const openSignedUrl = async (fileUrlOrPath: string) => {
+    if (signedUrls[fileUrlOrPath]) {
+      window.open(signedUrls[fileUrlOrPath], "_blank");
+      return;
+    }
+    const signed = await getSignedUrl(fileUrlOrPath);
+    if (signed) {
+      setSignedUrls(prev => ({ ...prev, [fileUrlOrPath]: signed }));
+      window.open(signed, "_blank");
+    }
   };
 
   const [distinctMonthCount, setDistinctMonthCount] = useState(0);
@@ -416,9 +430,9 @@ export default function PartnerDetailPage() {
                   <div className="mt-2">
                     {(bankMpas[b.id] || []).map((mpa: any) => (
                       <div key={mpa.id} className="flex items-center justify-between py-2">
-                        <a href={mpa.file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 truncate">
+                        <button onClick={() => openSignedUrl(mpa.storage_path || mpa.file_url)} className="text-sm text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 truncate text-left">
                           📄 {mpa.file_name}
-                        </a>
+                        </button>
                         <div className="flex items-center gap-3 shrink-0 ml-3">
                           <span className="text-xs text-slate-400">
                             {new Date(mpa.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
@@ -939,8 +953,7 @@ export default function PartnerDetailPage() {
                       const path = `${user.id}/${partner.id}/agreements/${timestamp}_${file.name}`;
                       const { error: uploadError } = await supabase.storage.from("deal-documents").upload(path, file);
                       if (uploadError) { showMsg("Upload failed."); setAgreementUploading(false); e.target.value = ""; return; }
-                      const { data: urlData } = supabase.storage.from("deal-documents").getPublicUrl(path);
-                      setAgreementPending({ file_name: file.name, file_url: urlData.publicUrl, storage_path: path });
+                      setAgreementPending({ file_name: file.name, file_url: path, storage_path: path });
                       setAgreementForm({ agreement_type: "", description: "" });
                     } catch {
                       showMsg("Upload failed.");
@@ -1012,9 +1025,9 @@ export default function PartnerDetailPage() {
               agreements.map((a) => (
                 <div key={a.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-3">
                   <div className="flex justify-between items-center">
-                    <a href={a.file_url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-emerald-600 hover:text-emerald-700 truncate max-w-[60%]">
+                    <button onClick={() => openSignedUrl(a.storage_path || a.file_url)} className="text-sm font-medium text-emerald-600 hover:text-emerald-700 truncate max-w-[60%] text-left">
                       {a.file_name}
-                    </a>
+                    </button>
                     <span className="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">{a.agreement_type}</span>
                   </div>
                   <div className="flex justify-between items-center mt-2">

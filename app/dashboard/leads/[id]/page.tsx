@@ -10,6 +10,7 @@ import TaskModal from "@/components/TaskModal";
 import { useAuth } from "@/lib/auth-context";
 import LoadingScreen from "@/components/LoadingScreen";
 import { authFetch } from "@/lib/api-client";
+import { getSignedUrl, extractStoragePath } from "@/lib/storage";
 
 export default function LeadDetailPage() {
   const router = useRouter();
@@ -46,6 +47,7 @@ export default function LeadDetailPage() {
   const [showStatementModal, setShowStatementModal] = useState(false);
   const [statementUploading, setStatementUploading] = useState(false);
   const [uploadedStatements, setUploadedStatements] = useState<any[]>([]);
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [partners, setPartners] = useState<any[]>([]);
   const [showPartnerSwitchModal, setShowPartnerSwitchModal] = useState(false);
   const pendingPartnerSwitch = useRef<{ partnerId: string; scheduleIdx: number | null } | null>(null);
@@ -122,7 +124,18 @@ export default function LeadDetailPage() {
           const { data: ownerData } = await supabase.from("deal_owners").select("*").eq("deal_id", dealData.id).order("created_at");
           if (ownerData) setOwners(ownerData);
           const { data: docData } = await supabase.from("deal_documents").select("*").eq("deal_id", dealData.id).order("created_at");
-          if (docData) setDocuments(docData);
+          if (docData) {
+            setDocuments(docData);
+            // Generate signed URLs for all documents
+            const urls: Record<string, string> = {};
+            await Promise.all(docData.map(async (doc: any) => {
+              if (doc.file_url) {
+                const signed = await getSignedUrl(doc.file_url);
+                if (signed) urls[doc.id] = signed;
+              }
+            }));
+            setSignedUrls(urls);
+          }
         }
         const { data: actData } = await supabase.from("activity_log").select("*").eq("lead_id", leadData.id).order("created_at", { ascending: false }).limit(50);
         if (actData) setActivities(actData);
@@ -473,16 +486,16 @@ export default function LeadDetailPage() {
     const { error: uploadError } = await supabase.storage.from("deal-documents").upload(filePath, file);
     if (uploadError) { setUploading(false); return; }
 
-    const { data: urlData } = supabase.storage.from("deal-documents").getPublicUrl(filePath);
-
     const { data: docRecord } = await supabase.from("deal_documents").insert({
       deal_id: deal.id,
       doc_type: selectedDocType,
       file_name: file.name,
-      file_url: urlData.publicUrl,
+      file_url: filePath,
     }).select().single();
 
     if (docRecord) {
+      const signed = await getSignedUrl(filePath);
+      if (signed) setSignedUrls(prev => ({ ...prev, [docRecord.id]: signed }));
       setDocuments([...documents, docRecord]);
       await logActivity("document_uploaded", null, null, file.name, "Document uploaded: " + docTypeLabel(selectedDocType) + " - " + file.name);
     }
@@ -492,9 +505,9 @@ export default function LeadDetailPage() {
   };
 
   const deleteDocument = async (doc: any) => {
-    const pathParts = doc.file_url.split("/deal-documents/");
-    if (pathParts[1]) {
-      await supabase.storage.from("deal-documents").remove([decodeURIComponent(pathParts[1])]);
+    const storagePath = extractStoragePath(doc.file_url);
+    if (storagePath) {
+      await supabase.storage.from("deal-documents").remove([storagePath]);
     }
     await supabase.from("deal_documents").delete().eq("id", doc.id);
     setDocuments(documents.filter(d => d.id !== doc.id));
@@ -540,21 +553,22 @@ export default function LeadDetailPage() {
     const { error: uploadError } = await supabase.storage.from("deal-documents").upload(filePath, file);
     if (uploadError) { setStatementUploading(false); return; }
 
-    const { data: urlData } = supabase.storage.from("deal-documents").getPublicUrl(filePath);
-
     if (deal) {
       const { data: docRecord } = await supabase.from("deal_documents").insert({
         deal_id: deal.id,
         doc_type: "processing_statements",
         file_name: file.name,
-        file_url: urlData.publicUrl,
+        file_url: filePath,
       }).select().single();
       if (docRecord) {
+        const signed = await getSignedUrl(filePath);
+        if (signed) setSignedUrls(prev => ({ ...prev, [docRecord.id]: signed }));
         setDocuments([...documents, docRecord]);
         await logActivity("document_uploaded", null, null, file.name, "Processing statement uploaded: " + file.name);
       }
     } else {
-      setUploadedStatements(prev => [...prev, { file_name: file.name, file_url: urlData.publicUrl }]);
+      const signed = await getSignedUrl(filePath);
+      setUploadedStatements(prev => [...prev, { file_name: file.name, file_url: signed || filePath }]);
     }
 
     setStatementUploading(false);
@@ -733,9 +747,13 @@ export default function LeadDetailPage() {
                 </a>
               ))}
               {documents.filter(d => d.doc_type === "processing_statements").map(doc => (
-                <a key={doc.id} href={doc.file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-emerald-600 hover:text-emerald-700">
-                  📄 {doc.file_name}
-                </a>
+                signedUrls[doc.id] ? (
+                  <a key={doc.id} href={signedUrls[doc.id]} target="_blank" rel="noopener noreferrer" className="text-sm text-emerald-600 hover:text-emerald-700">
+                    📄 {doc.file_name}
+                  </a>
+                ) : (
+                  <span key={doc.id} className="text-sm text-slate-400">📄 {doc.file_name} (link expired, refresh to regenerate)</span>
+                )
               ))}
             </div>
 
@@ -1045,7 +1063,11 @@ export default function LeadDetailPage() {
                         <div key={doc.id} className="flex items-center justify-between bg-slate-100 rounded-lg px-4 py-3">
                           <div className="flex items-center gap-3">
                             <span className="text-emerald-600 text-xs font-medium bg-emerald-500/10 px-2 py-1 rounded">{docTypeLabel(doc.doc_type)}</span>
-                            <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-slate-600 hover:text-slate-900 transition">{doc.file_name}</a>
+                            {signedUrls[doc.id] ? (
+                              <a href={signedUrls[doc.id]} target="_blank" rel="noopener noreferrer" className="text-sm text-slate-600 hover:text-slate-900 transition">{doc.file_name}</a>
+                            ) : (
+                              <span className="text-sm text-slate-400">{doc.file_name} <span className="text-xs">(link expired, refresh to regenerate)</span></span>
+                            )}
                           </div>
                           <div className="flex items-center gap-3">
                             <span className="text-slate-400 text-xs">{new Date(doc.created_at).toLocaleDateString()}</span>
