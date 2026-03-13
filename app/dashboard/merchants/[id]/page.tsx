@@ -7,6 +7,7 @@ import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import TaskModal from '@/components/TaskModal'
 import { useAuth } from '@/lib/auth-context'
+import LoadingScreen from '@/components/LoadingScreen'
 
 export default function MerchantDetailPage() {
   const router = useRouter()
@@ -321,7 +322,7 @@ export default function MerchantDetailPage() {
     pending: 'bg-amber-50 text-amber-700 border-amber-200',
   }
 
-  if (authLoading || loading) return <div className="min-h-screen bg-[#F8FAFC] text-slate-900 p-8">Loading...</div>
+  if (authLoading || loading) return <LoadingScreen />
 
   if (permissionDenied) return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
@@ -1166,7 +1167,7 @@ export default function MerchantDetailPage() {
               ) : chartData.length === 0 ? (
                 <div>
                   <p className="text-slate-400 text-sm mb-3">No residual data yet</p>
-                  <a href="/dashboard/residuals" className="text-emerald-600 text-sm hover:underline">Import Residuals →</a>
+                  <Link href="/dashboard/residuals" className="text-emerald-600 text-sm hover:underline">Import Residuals →</Link>
                 </div>
               ) : (
                 <div>

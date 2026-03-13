@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import PricingPreview from '@/components/PricingPreview'
 import Sidebar from '@/components/Sidebar'
 
@@ -117,9 +118,9 @@ export default function AddPartnerPage() {
       <Sidebar />
 
       <div className="lg:ml-64 p-4 lg:p-8 pt-16 lg:pt-8 max-w-4xl">
-        <a href="/dashboard/partners" className="text-slate-400 hover:text-slate-900 text-sm mb-6 block">
+        <Link href="/dashboard/partners" className="text-slate-400 hover:text-slate-900 text-sm mb-6 block">
           ← Back to Partners
-        </a>
+        </Link>
         <h2 className="text-xl lg:text-2xl font-bold mb-8">Add New Partner</h2>
 
         {error && (

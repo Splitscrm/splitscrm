@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
+import LoadingScreen from '@/components/LoadingScreen'
 
 interface Profile {
   id: string
@@ -577,12 +578,7 @@ export default function SettingsPage() {
   const labelClass = 'text-base text-slate-600 font-medium block mb-1.5'
   const cardClass = 'bg-white rounded-xl border border-slate-200 shadow-sm p-6'
 
-  if (loading) return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
-      <Sidebar />
-      <div className="lg:ml-64 p-4 lg:p-8 pt-16 lg:pt-8"><p className="text-slate-500">Loading...</p></div>
-    </div>
-  )
+  if (loading) return <LoadingScreen />
 
   const notifications = [
     { field: 'notification_lead_assigned', label: 'New lead assigned', desc: 'Get notified when a lead is assigned to you' },

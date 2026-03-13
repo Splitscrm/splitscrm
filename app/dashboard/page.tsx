@@ -7,6 +7,7 @@ import Sidebar from '@/components/Sidebar'
 import WelcomeWizard from '@/components/WelcomeWizard'
 import OnboardingChecklist from '@/components/OnboardingChecklist'
 import TaskModal from '@/components/TaskModal'
+import Link from 'next/link'
 import { useAuth } from '@/lib/auth-context'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -631,23 +632,23 @@ export default function Dashboard() {
       case 'quick_actions':
         return (
           <div key="quick_actions" className="flex flex-wrap flex-col sm:flex-row gap-3 sm:gap-4">
-            <a href="/dashboard/leads/new" className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition">
+            <Link href="/dashboard/leads/new" prefetch={true} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition">
               + Add Lead
-            </a>
+            </Link>
             {(isOwnerOrManager || role === 'master_agent' || role === 'agent') && (
-              <a href="/dashboard/merchants/new" className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition">
+              <Link href="/dashboard/merchants/new" prefetch={true} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition">
                 + Add Merchant
-              </a>
+              </Link>
             )}
             {isOwnerOrManager && (
-              <a href="/dashboard/partners/new" className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm transition">
+              <Link href="/dashboard/partners/new" prefetch={true} className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm transition">
                 + Add Partner
-              </a>
+              </Link>
             )}
             {isOwnerOrManager && (
-              <a href="/dashboard/statements" className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">
+              <Link href="/dashboard/statements" prefetch={true} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">
                 Analyze Statement
-              </a>
+              </Link>
             )}
           </div>
         )
@@ -741,7 +742,7 @@ export default function Dashboard() {
                   )
                 })}
                 {data.followUps.map((fu) => (
-                  <a
+                  <Link
                     key={`fu-${fu.id}`}
                     href={`/dashboard/leads/${fu.id}`}
                     className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-50 transition"
@@ -756,7 +757,7 @@ export default function Dashboard() {
                     <span className="text-xs text-slate-500">
                       {new Date(fu.follow_up_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </span>
-                  </a>
+                  </Link>
                 ))}
               </div>
             )}
@@ -768,14 +769,14 @@ export default function Dashboard() {
           <div key="top_merchants" className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
             <h3 className="text-base font-semibold text-slate-900 mb-3">Top 5 Merchants by Profitability</h3>
             {data.topMerchants.length === 0 ? (
-              <p className="text-slate-400 text-xs">Import a <a href="/dashboard/residuals" className="text-emerald-600 hover:text-emerald-700">residual report</a> to see top merchants</p>
+              <p className="text-slate-400 text-xs">Import a <Link href="/dashboard/residuals" className="text-emerald-600 hover:text-emerald-700">residual report</Link> to see top merchants</p>
             ) : (
               <div>
                 {data.topMerchants.map((m, i) => (
                   <div key={m.merchantIdExternal} className={`flex items-center py-2 text-xs ${i < data.topMerchants.length - 1 ? 'border-b border-slate-50' : ''} ${i < 3 ? 'bg-emerald-50/50 rounded' : ''}`}>
                     <span className="w-6 text-slate-400 font-medium">{i + 1}</span>
                     {m.merchantId ? (
-                      <a href={`/dashboard/merchants/${m.merchantId}`} className="flex-1 text-emerald-600 font-medium truncate hover:text-emerald-700">{m.dbaName}</a>
+                      <Link href={`/dashboard/merchants/${m.merchantId}`} className="flex-1 text-emerald-600 font-medium truncate hover:text-emerald-700">{m.dbaName}</Link>
                     ) : (
                       <span className="flex-1 text-slate-700 font-medium truncate">{m.dbaName}</span>
                     )}
@@ -827,9 +828,9 @@ export default function Dashboard() {
             <p className="text-xs text-slate-400 mt-1">
               Total volume: {data.residualTotalVolume.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 })}
             </p>
-            <a href="/dashboard/residuals" className="text-emerald-600 text-sm mt-3 inline-block hover:underline">
+            <Link href="/dashboard/residuals" className="text-emerald-600 text-sm mt-3 inline-block hover:underline">
               View Details →
-            </a>
+            </Link>
           </div>
         ) : (
           <div key="residual_revenue" className="bg-emerald-50/50 rounded-xl p-6 border border-dashed border-emerald-200">
@@ -842,12 +843,12 @@ export default function Dashboard() {
             <p className="text-slate-500 text-base mb-4">
               Upload your first residual report to see revenue tracking, processor breakdowns, and agent splits.
             </p>
-            <a
+            <Link
               href="/dashboard/residuals"
               className="inline-block bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-4 py-2 text-sm transition"
             >
               Get Started
-            </a>
+            </Link>
           </div>
         )
 
@@ -893,7 +894,7 @@ export default function Dashboard() {
                 ))}
               </div>
             )}
-            <a href="#" className="text-emerald-600 text-xs hover:text-emerald-700 mt-2 inline-block">View All &rarr;</a>
+            <Link href="#" className="text-emerald-600 text-xs hover:text-emerald-700 mt-2 inline-block">View All &rarr;</Link>
           </div>
         )
 
@@ -1069,7 +1070,7 @@ export default function Dashboard() {
             </div>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-fadeIn">
             {/* Onboarding Checklist */}
             {onboarding && onboarding.wizard_completed && !onboarding.onboarding_dismissed &&
               !(onboarding.profile_completed && onboarding.first_partner_added && onboarding.first_pricing_uploaded && onboarding.first_residual_imported && onboarding.first_lead_added) && (

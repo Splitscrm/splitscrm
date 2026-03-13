@@ -151,7 +151,7 @@ export default function PartnersPage() {
               </thead>
               <tbody>
                 {filtered.map((p) => (
-                  <tr key={p.id} onClick={() => router.push(`/dashboard/partners/${p.id}`)} className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition">
+                  <tr key={p.id} onClick={() => router.push(`/dashboard/partners/${p.id}`)} onMouseEnter={() => router.prefetch(`/dashboard/partners/${p.id}`)} className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition">
                     <td className="px-6 py-4 font-medium">{p.name}</td>
                     <td className="px-6 py-4 text-slate-600">{p.relationship_manager || "-"}</td>
                     <td className="px-6 py-4">

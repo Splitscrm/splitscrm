@@ -167,7 +167,7 @@ export default function MerchantsPage() {
               </thead>
               <tbody>
                 {filtered.map((m) => (
-                  <tr key={m.id} onClick={() => router.push(`/dashboard/merchants/${m.id}`)} className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition">
+                  <tr key={m.id} onClick={() => router.push(`/dashboard/merchants/${m.id}`)} onMouseEnter={() => router.prefetch(`/dashboard/merchants/${m.id}`)} className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition">
                     <td className="px-6 py-4">
                       <p className="font-medium text-base">{m.business_name}</p>
                       <p className="text-sm text-slate-500">{m.email}</p>

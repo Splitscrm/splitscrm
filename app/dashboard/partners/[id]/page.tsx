@@ -7,6 +7,7 @@ import Link from "next/link";
 import PricingPreview from '@/components/PricingPreview';
 import Sidebar from "@/components/Sidebar";
 import { useAuth } from "@/lib/auth-context";
+import LoadingScreen from "@/components/LoadingScreen";
 
 export default function PartnerDetailPage() {
   const router = useRouter();
@@ -223,7 +224,7 @@ export default function PartnerDetailPage() {
   const labelClass = "text-base text-slate-500 block mb-1";
   const cardClass = "bg-white rounded-xl p-6 border border-slate-200 shadow-sm mb-4";
 
-  if (loading) return <div className="min-h-screen bg-[#F8FAFC] text-slate-900 p-8">Loading...</div>;
+  if (loading) return <LoadingScreen />;
   if (!partner) return <div className="min-h-screen bg-[#F8FAFC] text-slate-900 p-8">Partner not found</div>;
 
   return (

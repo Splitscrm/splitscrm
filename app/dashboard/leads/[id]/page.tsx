@@ -8,6 +8,7 @@ import Sidebar from "@/components/Sidebar";
 import CommunicationLog from "@/components/CommunicationLog";
 import TaskModal from "@/components/TaskModal";
 import { useAuth } from "@/lib/auth-context";
+import LoadingScreen from "@/components/LoadingScreen";
 
 export default function LeadDetailPage() {
   const router = useRouter();
@@ -454,7 +455,7 @@ export default function LeadDetailPage() {
   const labelClass = "text-base text-slate-500 block mb-1";
   const sectionClass = "bg-white rounded-xl p-6 border border-slate-200 shadow-sm mb-6";
 
-  if (authLoading || loading) return <div className="min-h-screen bg-[#F8FAFC] text-slate-900 p-8">Loading...</div>;
+  if (authLoading || loading) return <LoadingScreen />;
 
   if (permissionDenied) return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900">

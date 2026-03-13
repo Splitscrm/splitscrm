@@ -66,6 +66,15 @@ export default function Sidebar() {
     router.push("/login");
   };
 
+  // Prefetch common routes on mount
+  useEffect(() => {
+    router.prefetch("/dashboard");
+    router.prefetch("/dashboard/leads");
+    router.prefetch("/dashboard/merchants");
+    router.prefetch("/dashboard/partners");
+    router.prefetch("/dashboard/residuals");
+  }, [router]);
+
   // Filter nav items based on permissions
   // Show ALL items by default — only hide when we have a confirmed role that lacks the permission
   const visibleNavItems = useMemo(() => {
@@ -115,6 +124,7 @@ export default function Sidebar() {
           <Link
             key={item.href}
             href={item.href}
+            prefetch={true}
             onClick={() => setMobileOpen(false)}
             className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-base transition-colors duration-150 ${
               isActive(item.href)

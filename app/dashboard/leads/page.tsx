@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import ExportCSV from '@/components/ExportCSV'
 import TaskModal from '@/components/TaskModal'
+import Link from 'next/link'
 import { useAuth } from '@/lib/auth-context'
 
 const LEAD_EXPORT_COLUMNS = [
@@ -251,12 +252,13 @@ export default function LeadsPage() {
             <h2 className="text-xl lg:text-2xl font-bold">Leads</h2>
             <p className="text-slate-500 mt-1">{leads.length} total leads</p>
           </div>
-          <a
+          <Link
             href="/dashboard/leads/new"
+            prefetch={true}
             className="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm font-medium transition text-white"
           >
             + Add Lead
-          </a>
+          </Link>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6 flex flex-wrap gap-4 items-center">
@@ -298,9 +300,9 @@ export default function LeadsPage() {
             <p className="text-4xl mb-4">🎯</p>
             <p className="text-lg">{leads.length === 0 ? 'No leads yet' : 'No matching leads'}</p>
             {leads.length === 0 && (
-              <a href="/dashboard/leads/new" className="text-emerald-600 hover:underline text-sm mt-2 block">
+              <Link href="/dashboard/leads/new" className="text-emerald-600 hover:underline text-sm mt-2 block">
                 Add your first lead
-              </a>
+              </Link>
             )}
           </div>
         ) : (
@@ -320,7 +322,7 @@ export default function LeadsPage() {
               </thead>
               <tbody>
                 {filtered.map((lead) => (
-                  <tr key={lead.id} onClick={() => openPreview(lead)} className="border-b border-slate-100 hover:bg-slate-50 transition cursor-pointer">
+                  <tr key={lead.id} onClick={() => openPreview(lead)} onMouseEnter={() => router.prefetch(`/dashboard/leads/${lead.id}`)} className="border-b border-slate-100 hover:bg-slate-50 transition cursor-pointer">
                     <td className="px-6 py-4">
                       <p className="font-medium text-base">{lead.business_name}</p>
                       <p className="text-slate-500 text-sm">{lead.email}</p>

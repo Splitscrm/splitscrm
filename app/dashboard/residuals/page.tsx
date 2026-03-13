@@ -3,9 +3,11 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
 import ExportCSV from '@/components/ExportCSV'
 import { useAuth } from '@/lib/auth-context'
+import LoadingScreen from '@/components/LoadingScreen'
 
 const RESIDUAL_EXPORT_COLUMNS = [
   { key: 'merchant_id_external', label: 'MID' },
@@ -1120,9 +1122,9 @@ export default function ResidualsPage() {
                             <td className="px-4 py-2.5">
                               <div className="flex items-center gap-2">
                                 {rec.merchant_id ? (
-                                  <a href={`/dashboard/merchants/${rec.merchant_id}`} className="text-emerald-600 hover:underline text-base">
+                                  <Link href={`/dashboard/merchants/${rec.merchant_id}`} className="text-emerald-600 hover:underline text-base">
                                     {rec.dba_name || '—'}
-                                  </a>
+                                  </Link>
                                 ) : (
                                   <span className="text-slate-700 text-base">{rec.dba_name || '—'}</span>
                                 )}
@@ -1236,7 +1238,7 @@ export default function ResidualsPage() {
     </>
   )
 
-  if (authLoading) return <div className="min-h-screen bg-[#F8FAFC] text-slate-900 p-8">Loading...</div>
+  if (authLoading) return <LoadingScreen />
 
   if (!isOwnerOrManager && role !== 'agent' && role !== 'master_agent') {
     return (
@@ -1247,7 +1249,7 @@ export default function ResidualsPage() {
             <p className="text-4xl mb-4">🔒</p>
             <h2 className="text-xl font-semibold text-slate-900 mb-2">Access Restricted</h2>
             <p className="text-slate-500 mb-6">You don't have access to residual data.</p>
-            <a href="/dashboard" className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-medium transition inline-block">Back to Dashboard</a>
+            <Link href="/dashboard" className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-medium transition inline-block">Back to Dashboard</Link>
           </div>
         </div>
       </div>
@@ -1263,7 +1265,7 @@ export default function ResidualsPage() {
             <p className="text-4xl mb-4">📊</p>
             <h2 className="text-xl font-semibold text-slate-900 mb-2">Residual Data</h2>
             <p className="text-slate-500 mb-6">Your residual reports will appear here once your administrator has mapped your rep code to your account. Contact your ISO admin for access.</p>
-            <a href="/dashboard" className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-medium transition inline-block">Back to Dashboard</a>
+            <Link href="/dashboard" className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-medium transition inline-block">Back to Dashboard</Link>
           </div>
         </div>
       </div>
