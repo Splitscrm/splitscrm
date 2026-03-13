@@ -127,11 +127,15 @@ export default function LeadDetailPage() {
   };
 
   const handleStatusChange = (newStatus: string) => {
+    const fromSignedOrConverted = lead.status === "signed" || lead.status === "converted";
     if (newStatus === "unqualified") { setShowModal("unqualified"); setModalData({ reason: "", reason_other: "" }); }
     else if (newStatus === "recycled") { setShowModal("recycled"); setModalData({ reason: "", follow_up_date: "" }); }
     else if (newStatus === "submitted") { setShowModal("submitted"); setModalData({}); }
     else if (newStatus === "signed") { setShowModal("signed"); setModalData({}); }
     else if (newStatus === "qualified_prospect") { createDealAndUpdateStatus(); }
+    else if (fromSignedOrConverted && newStatus !== "signed" && newStatus !== "converted") {
+      setShowModal("backward_from_signed"); setModalData({ targetStatus: newStatus });
+    }
     else { updateStatus(newStatus, {}); }
   };
 
@@ -139,7 +143,16 @@ export default function LeadDetailPage() {
     setSaving(true);
     const oldStatus = lead.status;
     const existing = await supabase.from("deals").select("*").eq("lead_id", params.id).single();
-    if (!existing.data) {
+    if (existing.data) {
+      // Deal already exists — restore local state if needed
+      if (!deal) {
+        setDeal(existing.data);
+        const { data: ownerData } = await supabase.from("deal_owners").select("*").eq("deal_id", existing.data.id).order("created_at");
+        if (ownerData) setOwners(ownerData);
+        const { data: docData } = await supabase.from("deal_documents").select("*").eq("deal_id", existing.data.id).order("created_at");
+        if (docData) setDocuments(docData);
+      }
+    } else {
       const { data: newDeal } = await supabase.from("deals").insert({ lead_id: params.id as string, user_id: userId, business_legal_name: lead.business_name, dba_name: lead.business_name }).select().single();
       if (newDeal) { setDeal(newDeal); }
       await logActivity("deal_created", null, null, null, "Deal created");
@@ -148,21 +161,6 @@ export default function LeadDetailPage() {
     await logActivity("stage_change", "status", statusLabel(oldStatus), "Qualified Prospect", "Stage changed from " + statusLabel(oldStatus) + " to Qualified Prospect");
     setLead({ ...lead, status: "qualified_prospect", updated_at: new Date().toISOString() });
     setSaving(false);
-  };
-
-  const deleteDealIfExists = async () => {
-    const { data: deals } = await supabase.from("deals").select("id").eq("lead_id", params.id as string);
-    if (deals && deals.length > 0) {
-      for (const d of deals) {
-        await supabase.from("deal_documents").delete().eq("deal_id", d.id);
-        await supabase.from("deal_owners").delete().eq("deal_id", d.id);
-        await supabase.from("deals").delete().eq("id", d.id);
-      }
-      setDeal(null);
-      setOwners([]);
-      setDocuments([]);
-      await logActivity("deal_deleted", null, null, null, "Deal removed");
-    }
   };
 
   const deleteMerchantIfExists = async () => {
@@ -176,14 +174,19 @@ export default function LeadDetailPage() {
   const updateStatus = async (newStatus: string, extraFields: any) => {
     setSaving(true);
     const oldStatus = lead.status;
-    if (newStatus !== "signed" && newStatus !== "converted") { await deleteMerchantIfExists(); }
-    if (newStatus === "new_prospect" || newStatus === "contact_pending" || newStatus === "pending_qualification") { await deleteMerchantIfExists(); await deleteDealIfExists(); }
     const { error } = await supabase.from("leads").update({ status: newStatus, updated_at: new Date().toISOString(), ...extraFields }).eq("id", params.id);
     if (!error) {
       await logActivity("stage_change", "status", statusLabel(oldStatus), statusLabel(newStatus), "Stage changed from " + statusLabel(oldStatus) + " to " + statusLabel(newStatus));
       setLead({ ...lead, status: newStatus, updated_at: new Date().toISOString(), ...extraFields });
       setShowModal("");
     }
+    setSaving(false);
+  };
+
+  const confirmBackwardFromSigned = async () => {
+    setSaving(true);
+    await deleteMerchantIfExists();
+    await updateStatus(modalData.targetStatus, {});
     setSaving(false);
   };
 
@@ -639,7 +642,7 @@ export default function LeadDetailPage() {
           />
         )}
 
-        {deal && (
+        {deal && ["qualified_prospect", "submitted", "signed", "converted"].includes(lead.status) && (
           <>
             <div className="flex justify-between items-center mb-4">
               <div>
@@ -1042,6 +1045,19 @@ export default function LeadDetailPage() {
             </label>
             <div className="flex justify-end mt-6">
               <button onClick={() => setShowStatementModal(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showModal === "backward_from_signed" && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-8 border border-slate-200 shadow-sm w-full max-w-md mx-4">
+            <h3 className="text-lg font-bold mb-4">Move Backward?</h3>
+            <p className="text-slate-500 text-sm mb-4">Moving backward from {statusLabel(lead.status)} will remove the associated merchant record. The deal data will be preserved.</p>
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+              <button onClick={confirmBackwardFromSigned} disabled={saving} className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm transition disabled:opacity-50">{saving ? "Processing..." : "Confirm"}</button>
+              <button onClick={() => setShowModal("")} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">Cancel</button>
             </div>
           </div>
         </div>
