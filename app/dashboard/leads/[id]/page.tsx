@@ -74,17 +74,22 @@ export default function LeadDetailPage() {
   const unqualifiedReasons = ["Bad credit", "High risk industry", "Insufficient volume", "TMF/MATCH list", "Fraudulent activity", "Other"];
 
   useEffect(() => {
+    console.log("Lead useEffect triggered, authLoading:", authLoading, "authUser:", authUser?.id);
     if (authLoading) return;
     const fetchData = async () => {
+      console.log("Fetching lead data...");
       const { data: { user } } = await supabase.auth.getUser();
+      console.log("User:", user?.id);
       if (!user) { router.push("/login"); return; }
       setUserId(user.id);
       const { data: leadData } = await supabase.from("leads").select("*").eq("id", params.id).single();
+      console.log("Lead data:", leadData);
       if (leadData) {
         // Permission check: non-owner/manager can only see their own leads
         if (!isOwnerOrManager && leadData.assigned_to !== user.id && leadData.user_id !== user.id) {
           setPermissionDenied(true);
           setLoading(false);
+          console.log("Setting loading false (permission denied)");
           return;
         }
         setLead(leadData);
@@ -101,10 +106,11 @@ export default function LeadDetailPage() {
         const { data: taskData } = await supabase.from("tasks").select("id, title, due_date, priority, status").eq("lead_id", leadData.id).eq("status", "pending").order("due_date", { ascending: true });
         if (taskData) setLeadTasks(taskData);
       }
+      console.log("Setting loading false");
       setLoading(false);
     };
     fetchData();
-  }, [params.id]);
+  }, [params.id, authLoading]);
 
   const fetchTasks = useCallback(async () => {
     const { data: taskData } = await supabase.from("tasks").select("id, title, due_date, priority, status").eq("lead_id", params.id).eq("status", "pending").order("due_date", { ascending: true });
