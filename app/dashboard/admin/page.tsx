@@ -173,6 +173,12 @@ export default function AdminPage() {
   const [invitations, setInvitations] = useState<any[]>([]);
   const [invitationsFetched, setInvitationsFetched] = useState(false);
 
+  // Add Org modal state
+  const [showAddOrg, setShowAddOrg] = useState(false);
+  const [newOrg, setNewOrg] = useState({ name: "", slug: "", plan: "starter", plan_limits: { max_users: 3, max_leads: 100, max_merchants: 50 } });
+  const [addOrgError, setAddOrgError] = useState("");
+  const [addOrgSaving, setAddOrgSaving] = useState(false);
+
   // Permission modal state
   const [permModal, setPermModal] = useState<any | null>(null);
   const [permOverrides, setPermOverrides] = useState<Record<string, boolean>>({});
@@ -404,6 +410,52 @@ export default function AdminPage() {
     showMsg("Permissions saved!");
   };
 
+  const PLAN_DEFAULTS: Record<string, any> = {
+    starter: { max_users: 3, max_leads: 100, max_merchants: 50 },
+    growth: { max_users: 10, max_leads: 500, max_merchants: 250 },
+    enterprise: { max_users: 50, max_leads: 9999, max_merchants: 9999 },
+  };
+
+  const slugify = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+  const openAddOrg = () => {
+    setNewOrg({ name: "", slug: "", plan: "starter", plan_limits: { ...PLAN_DEFAULTS.starter } });
+    setAddOrgError("");
+    setInviteLink("");
+    setShowAddOrg(true);
+  };
+
+  const createOrganization = async () => {
+    if (!newOrg.name.trim()) { setAddOrgError("Organization name is required."); return; }
+    const slug = newOrg.slug.trim() || slugify(newOrg.name);
+    if (!slug) { setAddOrgError("Slug is required."); return; }
+    setAddOrgSaving(true);
+    setAddOrgError("");
+
+    // Check slug uniqueness
+    const { data: existing } = await supabase.from("organizations").select("id").eq("slug", slug).maybeSingle();
+    if (existing) { setAddOrgError("Slug is already taken. Choose a different one."); setAddOrgSaving(false); return; }
+
+    const { data: inserted, error } = await supabase.from("organizations").insert({
+      name: newOrg.name.trim(),
+      slug,
+      plan: newOrg.plan,
+      plan_limits: newOrg.plan_limits,
+    }).select().single();
+
+    if (error || !inserted) {
+      setAddOrgError(error?.message || "Failed to create organization.");
+      setAddOrgSaving(false);
+      return;
+    }
+
+    setShowAddOrg(false);
+    setAddOrgSaving(false);
+    await fetchOrganizations();
+    setExpandedOrg(inserted.id);
+    showMsg("Organization created!");
+  };
+
   const resetPermissions = () => {
     setPermOverrides({});
   };
@@ -465,6 +517,88 @@ export default function AdminPage() {
         {/* ORGANIZATIONS TAB */}
         {activeTab === "organizations" && (
           <div>
+            <div className="flex justify-end mb-4">
+              <button onClick={openAddOrg} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">+ Add Organization</button>
+            </div>
+
+            {/* Add Organization Modal */}
+            {showAddOrg && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+                  <h3 className="font-semibold text-slate-900 mb-4">Create Organization</h3>
+
+                  {addOrgError && (
+                    <div className="bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded-lg text-sm mb-4">{addOrgError}</div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-xs text-slate-500 block mb-1">Organization Name *</label>
+                      <input
+                        type="text"
+                        value={newOrg.name}
+                        onChange={(e) => {
+                          const name = e.target.value;
+                          setNewOrg((prev) => ({ ...prev, name, slug: slugify(name) }));
+                        }}
+                        className={inputClass}
+                        placeholder="e.g. Acme Payments"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 block mb-1">Slug</label>
+                      <input
+                        type="text"
+                        value={newOrg.slug}
+                        onChange={(e) => setNewOrg((prev) => ({ ...prev, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") }))}
+                        className={inputClass}
+                        placeholder="acme-payments"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 block mb-1">Plan</label>
+                      <select
+                        value={newOrg.plan}
+                        onChange={(e) => {
+                          const plan = e.target.value;
+                          setNewOrg((prev) => ({ ...prev, plan, plan_limits: { ...(PLAN_DEFAULTS[plan] || PLAN_DEFAULTS.starter) } }));
+                        }}
+                        className={inputClass}
+                      >
+                        <option value="starter">Starter</option>
+                        <option value="growth">Growth</option>
+                        <option value="enterprise">Enterprise</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 block mb-1">Plan Limits</label>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-xs text-slate-400 block mb-0.5">Members</label>
+                          <input type="number" value={newOrg.plan_limits.max_users} onChange={(e) => setNewOrg((prev) => ({ ...prev, plan_limits: { ...prev.plan_limits, max_users: parseInt(e.target.value) || 0 } }))} className={inputClass} />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-400 block mb-0.5">Leads</label>
+                          <input type="number" value={newOrg.plan_limits.max_leads} onChange={(e) => setNewOrg((prev) => ({ ...prev, plan_limits: { ...prev.plan_limits, max_leads: parseInt(e.target.value) || 0 } }))} className={inputClass} />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-400 block mb-0.5">Merchants</label>
+                          <input type="number" value={newOrg.plan_limits.max_merchants} onChange={(e) => setNewOrg((prev) => ({ ...prev, plan_limits: { ...prev.plan_limits, max_merchants: parseInt(e.target.value) || 0 } }))} className={inputClass} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3 mt-6">
+                    <button onClick={() => setShowAddOrg(false)} className="text-slate-500 hover:text-slate-700 px-4 py-2 text-sm">Cancel</button>
+                    <button onClick={createOrganization} disabled={addOrgSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
+                      {addOrgSaving ? "Creating..." : "Create Organization"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
                 <p className="text-xs text-slate-500 mb-1">Total Organizations</p>
