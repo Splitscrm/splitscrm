@@ -39,6 +39,10 @@ export default function LeadDetailPage() {
   const [contactMsg, setContactMsg] = useState("");
   const [selectedDocType, setSelectedDocType] = useState("");
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ group1: true, group2: false, group3: false, activityLog: false });
+  const [revealedSsns, setRevealedSsns] = useState<Set<number>>(new Set());
+  const [showStatementModal, setShowStatementModal] = useState(false);
+  const [statementUploading, setStatementUploading] = useState(false);
+  const [uploadedStatements, setUploadedStatements] = useState<any[]>([]);
   const toggleGroup = (key: string) => setOpenGroups(prev => ({ ...prev, [key]: !prev[key] }));
 
   const docTypes = [
@@ -378,6 +382,65 @@ export default function LeadDetailPage() {
     setContactSaving(false);
   };
 
+  const handleStatementUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0]) return;
+    setStatementUploading(true);
+    const file = e.target.files[0];
+    const filePath = userId + "/" + (params.id as string) + "/statements/" + Date.now() + "_" + file.name;
+
+    const { error: uploadError } = await supabase.storage.from("deal-documents").upload(filePath, file);
+    if (uploadError) { setStatementUploading(false); return; }
+
+    const { data: urlData } = supabase.storage.from("deal-documents").getPublicUrl(filePath);
+
+    if (deal) {
+      const { data: docRecord } = await supabase.from("deal_documents").insert({
+        deal_id: deal.id,
+        doc_type: "processing_statements",
+        file_name: file.name,
+        file_url: urlData.publicUrl,
+      }).select().single();
+      if (docRecord) {
+        setDocuments([...documents, docRecord]);
+        await logActivity("document_uploaded", null, null, file.name, "Processing statement uploaded: " + file.name);
+      }
+    } else {
+      setUploadedStatements(prev => [...prev, { file_name: file.name, file_url: urlData.publicUrl }]);
+    }
+
+    setStatementUploading(false);
+    setShowStatementModal(false);
+    e.target.value = "";
+  };
+
+  const toggleSsnVisibility = (idx: number) => {
+    setRevealedSsns(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const maskSsn = (ssn: string) => {
+    if (!ssn) return "";
+    const digits = ssn.replace(/[^0-9]/g, "");
+    if (digits.length >= 4) return "•••-••-" + digits.slice(-4);
+    return "•".repeat(ssn.length);
+  };
+
+  const handleCpChange = (val: string) => {
+    const num = val === "" ? null : Math.min(100, Math.max(0, Number(val)));
+    updateDealField("cp_pct", num);
+    if (num != null) updateDealField("cnp_pct", 100 - num);
+  };
+
+  const handleCnpChange = (val: string) => {
+    const num = val === "" ? null : Math.min(100, Math.max(0, Number(val)));
+    updateDealField("cnp_pct", num);
+    if (num != null) updateDealField("cp_pct", 100 - num);
+  };
+
   const inputClass = "w-full bg-white text-slate-900 px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-base";
   const labelClass = "text-base text-slate-500 block mb-1";
   const sectionClass = "bg-white rounded-xl p-6 border border-slate-200 shadow-sm mb-6";
@@ -474,6 +537,23 @@ export default function LeadDetailPage() {
               <label className={labelClass}>Notes</label>
               <textarea value={lead.notes || ""} onChange={(e) => updateLeadField("notes", e.target.value)} className={inputClass + " h-20 resize-none"} rows={3} />
             </div>
+            {/* Statement Analysis */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <button onClick={() => setShowStatementModal(true)} className="bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-4 py-2 text-sm font-medium transition">
+                📄 Analyze Statement
+              </button>
+              {uploadedStatements.map((s, i) => (
+                <a key={i} href={s.file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-emerald-600 hover:text-emerald-700">
+                  📄 {s.file_name}
+                </a>
+              ))}
+              {documents.filter(d => d.doc_type === "processing_statements").map(doc => (
+                <a key={doc.id} href={doc.file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-emerald-600 hover:text-emerald-700">
+                  📄 {doc.file_name}
+                </a>
+              ))}
+            </div>
+
             {(lead.follow_up_date || lead.unqualified_reason || lead.recycled_reason) && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100 text-sm">
                 {lead.follow_up_date && <div><span className="text-slate-500">Follow Up:</span> <span className="ml-2">{lead.follow_up_date}</span></div>}
@@ -612,14 +692,16 @@ export default function LeadDetailPage() {
 
                 <div className={sectionClass}>
                   <h4 className="font-semibold mb-4 text-emerald-600">Transaction Info</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-                    <div><label className={labelClass}>Card Environment</label><select value={deal.card_environment || ""} onChange={(e) => updateDealField("card_environment", e.target.value)} className={inputClass}><option value="">Select...</option><option value="cp">Card Present</option><option value="cnp">Card Not Present</option><option value="both">Both</option></select></div>
-                    {(deal.card_environment === "both") && (
-                      <>
-                        <div><label className={labelClass}>CP %</label><input type="number" value={deal.cp_pct || ""} onChange={(e) => { updateDealField("cp_pct", e.target.value); updateDealField("cnp_pct", e.target.value ? String(100 - Number(e.target.value)) : ""); }} className={inputClass} /></div>
-                        <div><label className={labelClass}>CNP %</label><input type="number" value={deal.cnp_pct || ""} onChange={(e) => { updateDealField("cnp_pct", e.target.value); updateDealField("cp_pct", e.target.value ? String(100 - Number(e.target.value)) : ""); }} className={inputClass} /></div>
-                      </>
-                    )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className={labelClass}>Card Present %</label>
+                      <input type="number" min="0" max="100" value={deal.cp_pct ?? ""} onChange={(e) => handleCpChange(e.target.value)} className={inputClass} />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Card Not Present %</label>
+                      <input type="number" min="0" max="100" value={deal.cnp_pct ?? ""} onChange={(e) => handleCnpChange(e.target.value)} className={inputClass} />
+                      <p className="text-xs text-slate-400 mt-1">Must total 100%</p>
+                    </div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                     <div><label className={labelClass}>Currently Takes Cards?</label><select value={deal.currently_takes_cards || ""} onChange={(e) => updateDealField("currently_takes_cards", e.target.value)} className={inputClass}><option value="">Select...</option><option value="yes">Yes</option><option value="no">No</option></select></div>
@@ -666,7 +748,27 @@ export default function LeadDetailPage() {
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-3">
                         <div><label className={labelClass}>DOB</label><input type="date" value={o.dob || ""} onChange={(e) => updateOwner(idx, "dob", e.target.value)} className={inputClass} /></div>
-                        <div><label className={labelClass}>SSN</label><input type="password" value={o.ssn || ""} onChange={(e) => updateOwner(idx, "ssn", e.target.value)} className={inputClass} placeholder="###-##-####" /></div>
+                        <div>
+                          <label className={labelClass}>SSN</label>
+                          <div className="relative">
+                            <input
+                              type={revealedSsns.has(idx) ? "text" : "password"}
+                              value={revealedSsns.has(idx) ? (o.ssn || "") : (o.ssn || "")}
+                              onChange={(e) => updateOwner(idx, "ssn", e.target.value)}
+                              className={inputClass + " pr-10"}
+                              placeholder={revealedSsns.has(idx) ? "###-##-####" : "•••-••-####"}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => toggleSsnVisibility(idx)}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm"
+                              title={revealedSsns.has(idx) ? "Hide SSN" : "Show SSN"}
+                            >
+                              {revealedSsns.has(idx) ? "🙈" : "👁"}
+                            </button>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-0.5">🔒 Sensitive</p>
+                        </div>
                         <div><label className={labelClass}>Phone</label><input type="tel" value={o.phone || ""} onChange={(e) => updateOwner(idx, "phone", e.target.value)} className={inputClass} /></div>
                       </div>
                       <div className="grid grid-cols-4 gap-4">
@@ -923,6 +1025,23 @@ export default function LeadDetailPage() {
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
               <button onClick={() => updateStatus("submitted", {})} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm transition">Continue to Application</button>
               <button onClick={() => setShowModal("")} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Statement Upload Modal */}
+      {showStatementModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowStatementModal(false)}>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">Upload Processing Statement</h3>
+            <p className="text-sm text-slate-500 mb-4">Upload a processing statement (PDF or CSV) for analysis.</p>
+            <label className={`${statementUploading ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition inline-block`}>
+              {statementUploading ? "Uploading..." : "Choose File"}
+              <input type="file" className="hidden" accept=".pdf,.csv" onChange={handleStatementUpload} disabled={statementUploading} />
+            </label>
+            <div className="flex justify-end mt-6">
+              <button onClick={() => setShowStatementModal(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">Cancel</button>
             </div>
           </div>
         </div>

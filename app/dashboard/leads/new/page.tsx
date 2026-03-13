@@ -71,7 +71,7 @@ export default function NewLeadPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push("/login"); return; }
 
-    const { error: insertError } = await supabase.from("leads").insert({
+    const { data, error: insertError } = await supabase.from("leads").insert({
       user_id: user.id,
       org_id: member?.org_id || null,
       assigned_to: assignTo || user.id,
@@ -83,14 +83,14 @@ export default function NewLeadPage() {
       monthly_volume: form.monthly_volume ? parseFloat(form.monthly_volume) : null,
       status: form.status,
       notes: form.notes,
-    });
+    }).select("id").single();
 
     if (insertError) {
       setError(insertError.message);
       setLoading(false);
     } else {
       supabase.from('user_onboarding').update({ first_lead_added: true, updated_at: new Date().toISOString() }).eq('user_id', user.id)
-      router.push("/dashboard/leads");
+      router.push("/dashboard/leads/" + data.id);
     }
   };
 
