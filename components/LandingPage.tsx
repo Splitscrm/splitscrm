@@ -7,7 +7,7 @@ import SplitsLogo from '@/components/SplitsLogo'
 const faqs = [
   {
     q: 'What processors do you support?',
-    a: 'Splits works with any processor. Our AI auto-maps residual reports from Fiserv, TSYS, Worldpay, Payarc, Paysafe, and more. If you can export a CSV, we can import it.',
+    a: 'Splits works with any processor. Our AI auto-maps residual reports from Fiserv, TSYS, Worldpay, Paysafe, and more. If you can export a CSV, we can import it.',
   },
   {
     q: 'How is this different from IRIS CRM?',
@@ -31,7 +31,7 @@ const faqs = [
   },
 ]
 
-const processors = ['Fiserv', 'TSYS', 'Worldpay', 'Payarc', 'Paysafe', 'Elavon', 'Priority']
+const processors = ['Fiserv', 'TSYS', 'Worldpay', 'Paysafe', 'Elavon', 'Priority']
 
 const features = [
   {
