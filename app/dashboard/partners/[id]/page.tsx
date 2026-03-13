@@ -71,7 +71,7 @@ export default function PartnerDetailPage() {
       setLoading(false);
     };
     fetchData();
-  }, [params.id]);
+  }, [params.id, authLoading]);
 
   const showMsg = (text: string) => { setMsg(text); setTimeout(() => setMsg(""), 2000); };
   const updatePartnerField = (field: string, value: any) => { setPartner({ ...partner, [field]: value }); };
