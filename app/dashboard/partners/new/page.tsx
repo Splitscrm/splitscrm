@@ -7,12 +7,6 @@ import Link from 'next/link'
 import PricingPreview from '@/components/PricingPreview'
 import Sidebar from '@/components/Sidebar'
 
-const INDUSTRIES = [
-  'Retail', 'Restaurant', 'E-commerce', 'Healthcare', 'Automotive',
-  'Hotels & Lodging', 'Gas Stations', 'Grocery', 'Professional Services',
-  'Non-Profit', 'High Risk', 'CBD/Cannabis', 'Adult Entertainment'
-]
-
 export default function AddPartnerPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
@@ -29,17 +23,7 @@ export default function AddPartnerPage() {
     residual_split: '',
     restricted_split_pct: '',
     notes: '',
-    supported_industries: [] as string[],
   })
-
-  const toggleIndustry = (industry: string) => {
-    setForm((prev) => ({
-      ...prev,
-      supported_industries: prev.supported_industries.includes(industry)
-        ? prev.supported_industries.filter((i) => i !== industry)
-        : [...prev.supported_industries, industry],
-    }))
-  }
 
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -98,7 +82,6 @@ export default function AddPartnerPage() {
       residual_split: form.residual_split ? parseFloat(form.residual_split) : null,
       restricted_split_pct: form.restricted_split_pct ? parseFloat(form.restricted_split_pct) : null,
       notes: form.notes,
-      supported_industries: form.supported_industries,
       pricing_data: pricingSchedules.length > 0 ? pricingSchedules : null,
       status: 'active',
     })
@@ -244,27 +227,6 @@ export default function AddPartnerPage() {
                 <PricingPreview pricing={pricingSchedules} onRemove={removeSchedule} />
               </div>
             )}
-          </div>
-
-          {/* Supported Industries */}
-          <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-            <h3 className="font-semibold mb-4 text-slate-700">Supported Industries</h3>
-            <div className="flex flex-wrap gap-2">
-              {INDUSTRIES.map((industry) => (
-                <button
-                  key={industry}
-                  type="button"
-                  onClick={() => toggleIndustry(industry)}
-                  className={`px-3 py-1.5 rounded-full text-sm transition ${
-                    form.supported_industries.includes(industry)
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                  }`}
-                >
-                  {industry}
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Notes */}
