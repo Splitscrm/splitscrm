@@ -40,7 +40,8 @@ export default function LeadDetailPage() {
   const [contactMsg, setContactMsg] = useState("");
   const [selectedDocType, setSelectedDocType] = useState("");
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ group1: true, group2: false, group3: false, activityLog: false });
-  const [revealedSsns, setRevealedSsns] = useState<Set<number>>(new Set());
+  const [revealedSsns, setRevealedSsns] = useState<Record<number, string>>({});
+  const [revealingIdx, setRevealingIdx] = useState<number | null>(null);
   const [showStatementModal, setShowStatementModal] = useState(false);
   const [statementUploading, setStatementUploading] = useState(false);
   const [uploadedStatements, setUploadedStatements] = useState<any[]>([]);
@@ -426,10 +427,37 @@ export default function LeadDetailPage() {
   };
 
   const saveOwners = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
     for (const o of owners) {
-      const { id, created_at, ...updates } = o;
+      const { id, created_at, _ssn_plain, ...updates } = o;
+      // If there's a plaintext SSN pending, encrypt it
+      if (_ssn_plain) {
+        try {
+          const res = await fetch("/api/encrypt-ssn", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session?.access_token}`,
+            },
+            body: JSON.stringify({ ssn: _ssn_plain }),
+          });
+          const data = await res.json();
+          if (data.encrypted) {
+            updates.ssn_encrypted = data.encrypted;
+            updates.ssn = null;
+          }
+        } catch (err) {
+          console.error("Failed to encrypt SSN for owner", id, err);
+        }
+      }
       await supabase.from("deal_owners").update(updates).eq("id", id);
     }
+    // Clear local plaintext markers
+    setOwners(prev => prev.map(o => {
+      const { _ssn_plain, ...rest } = o;
+      return rest;
+    }));
+    setRevealedSsns({});
   };
 
   const removeOwner = async (idx: number) => {
@@ -537,13 +565,47 @@ export default function LeadDetailPage() {
     e.target.value = "";
   };
 
-  const toggleSsnVisibility = (idx: number) => {
-    setRevealedSsns(prev => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
-      return next;
-    });
+  const toggleSsnVisibility = async (idx: number) => {
+    const owner = owners[idx];
+    if (!owner) return;
+
+    // If already revealed, hide it
+    if (revealedSsns[idx] !== undefined) {
+      setRevealedSsns(prev => {
+        const next = { ...prev };
+        delete next[idx];
+        return next;
+      });
+      return;
+    }
+
+    // If owner has a pending (unencrypted) SSN edit, just reveal it locally
+    if (owner._ssn_plain) {
+      setRevealedSsns(prev => ({ ...prev, [idx]: owner._ssn_plain }));
+      return;
+    }
+
+    // Decrypt from server
+    if (!owner.ssn_encrypted) return;
+    setRevealingIdx(idx);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/decrypt-ssn", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ encrypted: owner.ssn_encrypted, deal_owner_id: owner.id }),
+      });
+      const data = await res.json();
+      if (data.ssn) {
+        setRevealedSsns(prev => ({ ...prev, [idx]: data.ssn }));
+      }
+    } catch (err) {
+      console.error("Failed to decrypt SSN:", err);
+    }
+    setRevealingIdx(null);
   };
 
   const maskSsn = (ssn: string) => {
@@ -907,23 +969,41 @@ export default function LeadDetailPage() {
                         <div>
                           <label className={labelClass}>SSN</label>
                           <div className="relative">
-                            <input
-                              type={revealedSsns.has(idx) ? "text" : "password"}
-                              value={revealedSsns.has(idx) ? (o.ssn || "") : (o.ssn || "")}
-                              onChange={(e) => updateOwner(idx, "ssn", e.target.value)}
-                              className={inputClass + " pr-10"}
-                              placeholder={revealedSsns.has(idx) ? "###-##-####" : "•••-••-####"}
-                            />
+                            {revealedSsns[idx] !== undefined ? (
+                              <input
+                                type="text"
+                                value={revealedSsns[idx]}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  updateOwner(idx, "_ssn_plain", val);
+                                  setRevealedSsns(prev => ({ ...prev, [idx]: val }));
+                                }}
+                                className={inputClass + " pr-10"}
+                                placeholder="###-##-####"
+                              />
+                            ) : (
+                              <input
+                                type="password"
+                                value={o.ssn_encrypted ? "••••••••••" : o._ssn_plain || ""}
+                                onChange={(e) => {
+                                  updateOwner(idx, "_ssn_plain", e.target.value);
+                                }}
+                                className={inputClass + " pr-10"}
+                                placeholder="•••-••-####"
+                                readOnly={!!o.ssn_encrypted && !o._ssn_plain}
+                              />
+                            )}
                             <button
                               type="button"
                               onClick={() => toggleSsnVisibility(idx)}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm"
-                              title={revealedSsns.has(idx) ? "Hide SSN" : "Show SSN"}
+                              disabled={revealingIdx === idx}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm disabled:opacity-50"
+                              title={revealedSsns[idx] !== undefined ? "Hide SSN" : "Show SSN"}
                             >
-                              {revealedSsns.has(idx) ? "🙈" : "👁"}
+                              {revealingIdx === idx ? "⏳" : revealedSsns[idx] !== undefined ? "🙈" : "👁"}
                             </button>
                           </div>
-                          <p className="text-xs text-slate-400 mt-0.5">🔒 Sensitive</p>
+                          <p className="text-xs text-slate-400 mt-0.5">🔒 Encrypted</p>
                         </div>
                         <div><label className={labelClass}>Phone</label><input type="tel" value={o.phone || ""} onChange={(e) => updateOwner(idx, "phone", e.target.value)} className={inputClass} /></div>
                       </div>
