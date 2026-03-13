@@ -303,6 +303,10 @@ export default function PartnerDetailPage() {
               <input type="text" value={partner.website || ""} onChange={(e) => updatePartnerField("website", e.target.value)} className={inputClass} placeholder="https://partner.com" />
             </div>
           </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+            <div><label className={labelClass}>Residual Split %</label><input type="number" min={0} max={100} step={0.01} value={partner.residual_split ?? ""} onChange={(e) => updatePartnerField("residual_split", e.target.value)} className={inputClass} placeholder="e.g. 50" /></div>
+            <div><label className={labelClass}>Restricted / High-Risk Split %</label><input type="number" min={0} max={100} step={0.01} value={partner.restricted_split_pct ?? ""} onChange={(e) => updatePartnerField("restricted_split_pct", e.target.value)} className={inputClass} placeholder="e.g. 50" /></div>
+          </div>
           <div className="mt-4">
             <label className={labelClass}>Notes</label>
             <textarea value={partner.notes || ""} onChange={(e) => updatePartnerField("notes", e.target.value)} className={inputClass + " h-20 resize-none"} />

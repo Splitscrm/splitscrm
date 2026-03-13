@@ -27,6 +27,7 @@ export default function AddPartnerPage() {
     phone: '',
     website: '',
     residual_split: '',
+    restricted_split_pct: '',
     notes: '',
     supported_industries: [] as string[],
   })
@@ -95,6 +96,7 @@ export default function AddPartnerPage() {
       phone: form.phone,
       website: form.website,
       residual_split: form.residual_split ? parseFloat(form.residual_split) : null,
+      restricted_split_pct: form.restricted_split_pct ? parseFloat(form.restricted_split_pct) : null,
       notes: form.notes,
       supported_industries: form.supported_industries,
       pricing_data: pricingSchedules.length > 0 ? pricingSchedules : null,
@@ -190,6 +192,19 @@ export default function AddPartnerPage() {
                   type="number"
                   value={form.residual_split}
                   onChange={(e) => setForm({ ...form, residual_split: e.target.value })}
+                  className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  placeholder="e.g. 50"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-slate-500 block mb-1">Restricted / High-Risk Split %</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.01}
+                  value={form.restricted_split_pct}
+                  onChange={(e) => setForm({ ...form, restricted_split_pct: e.target.value })}
                   className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                   placeholder="e.g. 50"
                 />
