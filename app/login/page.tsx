@@ -51,13 +51,15 @@ function LoginContent() {
     setGoogleLoading(true)
     setError('')
     const callbackUrl = inviteToken
-      ? `${window.location.origin}/auth/callback?next=/invite/${inviteToken}`
-      : `${window.location.origin}/auth/callback?next=/dashboard`
-    const { error } = await supabase.auth.signInWithOAuth({
+      ? `https://splitscrm.com/auth/callback?next=/invite/${inviteToken}`
+      : 'https://splitscrm.com/auth/callback?next=/dashboard'
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: callbackUrl }
     })
+    console.log('OAuth response:', JSON.stringify({ data, error }))
     if (error) {
+      console.error('OAuth error:', error)
       setError(error.message)
       setGoogleLoading(false)
     }
