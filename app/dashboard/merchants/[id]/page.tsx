@@ -285,6 +285,33 @@ export default function MerchantDetailPage() {
     setMerchant({ ...merchant, [field]: value })
   }
 
+  // Auto-sync summary pricing fields when detail fields change
+  useEffect(() => {
+    if (!merchant) return
+    const updates: Record<string, any> = {}
+    // Pricing rate = Visa %
+    const visaPct = merchant.ic_plus_visa_pct
+    if (visaPct != null && visaPct !== merchant.pricing_rate) {
+      updates.pricing_rate = visaPct
+    }
+    // Per-transaction fee = Visa txn
+    const visaTxn = merchant.ic_plus_visa_txn
+    if (visaTxn != null && visaTxn !== merchant.per_transaction_fee) {
+      updates.per_transaction_fee = visaTxn
+    }
+    // Monthly fees = sum of statement + custom + PCI
+    const sf = parseFloat(merchant.monthly_fee_statement) || 0
+    const cf = parseFloat(merchant.monthly_fee_custom_amount) || 0
+    const pci = parseFloat(merchant.pci_compliance_monthly) || (merchant.pci_compliance_annual ? parseFloat(merchant.pci_compliance_annual) / 12 : 0) || 0
+    const totalFees = Math.round((sf + cf + pci) * 100) / 100
+    if (totalFees !== merchant.monthly_fees && (sf > 0 || cf > 0 || pci > 0)) {
+      updates.monthly_fees = totalFees
+    }
+    if (Object.keys(updates).length > 0) {
+      setMerchant((prev: any) => ({ ...prev, ...updates }))
+    }
+  }, [merchant?.ic_plus_visa_pct, merchant?.ic_plus_visa_txn, merchant?.monthly_fee_statement, merchant?.monthly_fee_custom_amount, merchant?.pci_compliance_monthly, merchant?.pci_compliance_annual])
+
   const handleSave = async () => {
     if (!merchant.business_name?.trim()) {
       setError('Business name is required')
@@ -857,11 +884,41 @@ export default function MerchantDetailPage() {
                 <div className={sectionClass}>
                   <h4 className="text-base font-semibold text-slate-700 mb-4">Monthly Fees</h4>
                   <div className="space-y-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                       <div>
                         <label className={labelClass}>Statement Fee ($)</label>
                         <input type="number" step="0.01" value={merchant.monthly_fee_statement ?? ''} onChange={(e) => updateField('monthly_fee_statement', e.target.value ? parseFloat(e.target.value) : null)} className={inputClass} />
                       </div>
+                      <div>
+                        <label className={labelClass}>PCI Type</label>
+                        <select value={merchant.pci_compliance_monthly ? 'monthly' : merchant.pci_compliance_annual ? 'annual' : ''} onChange={(e) => {
+                          const currentAmount = merchant.pci_compliance_monthly ?? merchant.pci_compliance_annual ?? null;
+                          if (e.target.value === 'monthly') {
+                            setMerchant({ ...merchant, pci_compliance_monthly: currentAmount, pci_compliance_annual: null });
+                          } else if (e.target.value === 'annual') {
+                            setMerchant({ ...merchant, pci_compliance_annual: currentAmount, pci_compliance_monthly: null });
+                          } else {
+                            setMerchant({ ...merchant, pci_compliance_monthly: null, pci_compliance_annual: null });
+                          }
+                        }} className={inputClass}>
+                          <option value="">Select...</option>
+                          <option value="monthly">Monthly</option>
+                          <option value="annual">Annual</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelClass}>PCI Amount ($)</label>
+                        <input type="number" step="0.01" value={merchant.pci_compliance_monthly ?? merchant.pci_compliance_annual ?? ''} onChange={(e) => {
+                          const val = e.target.value ? parseFloat(e.target.value) : null;
+                          if (merchant.pci_compliance_annual) {
+                            updateField('pci_compliance_annual', val);
+                          } else {
+                            updateField('pci_compliance_monthly', val);
+                          }
+                        }} className={inputClass} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                       <div>
                         <label className={labelClass}>Custom Fee Name</label>
                         <input type="text" value={merchant.monthly_fee_custom_name || ''} onChange={(e) => updateField('monthly_fee_custom_name', e.target.value)} className={inputClass} />
@@ -869,16 +926,6 @@ export default function MerchantDetailPage() {
                       <div>
                         <label className={labelClass}>Custom Fee Amount ($)</label>
                         <input type="number" step="0.01" value={merchant.monthly_fee_custom_amount ?? ''} onChange={(e) => updateField('monthly_fee_custom_amount', e.target.value ? parseFloat(e.target.value) : null)} className={inputClass} />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      <div>
-                        <label className={labelClass}>PCI Compliance Monthly ($)</label>
-                        <input type="number" step="0.01" value={merchant.pci_compliance_monthly ?? ''} onChange={(e) => updateField('pci_compliance_monthly', e.target.value ? parseFloat(e.target.value) : null)} className={inputClass} />
-                      </div>
-                      <div>
-                        <label className={labelClass}>PCI Compliance Annual ($)</label>
-                        <input type="number" step="0.01" value={merchant.pci_compliance_annual ?? ''} onChange={(e) => updateField('pci_compliance_annual', e.target.value ? parseFloat(e.target.value) : null)} className={inputClass} />
                       </div>
                     </div>
                   </div>

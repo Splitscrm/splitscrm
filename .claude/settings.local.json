@@ -105,7 +105,8 @@
       "Bash(npm run:*)",
       "Bash(find .next/static -name \"*.css\" 2>/dev/null | head -5)",
       "Bash(grep -n -A 5 \"cp_pct\\\\|cnp_pct\\\\|CP %\\\\|CNP %\\\\|Card Present\" app/dashboard/leads/\\\\[id\\\\]/page.tsx | head -60)",
-      "Bash(grep -L \"import.*Link.*from.*next/link\" /c/Users/ealvr/isocrm/app/dashboard/**/*.tsx /c/Users/ealvr/isocrm/app/dashboard/page.tsx /c/Users/ealvr/isocrm/app/dashboard/statements/page.tsx /c/Users/ealvr/isocrm/app/dashboard/residuals/page.tsx 2>/dev/null | head -20)"
+      "Bash(grep -L \"import.*Link.*from.*next/link\" /c/Users/ealvr/isocrm/app/dashboard/**/*.tsx /c/Users/ealvr/isocrm/app/dashboard/page.tsx /c/Users/ealvr/isocrm/app/dashboard/statements/page.tsx /c/Users/ealvr/isocrm/app/dashboard/residuals/page.tsx 2>/dev/null | head -20)",
+      "Bash(grep -n -A 80 \"const convertToMerchant\" app/dashboard/leads/\\\\[id\\\\]/page.tsx | head -100)"
     ]
   }
 }

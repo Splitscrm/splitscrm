@@ -249,6 +249,18 @@ export default function LeadDetailPage() {
       if (dealData.free_hardware === "yes") merchantInsert.free_equipment = "yes";
       else if (dealData.free_hardware === "no") merchantInsert.free_equipment = "no";
     }
+    // Auto-populate summary pricing fields
+    if (merchantInsert.ic_plus_visa_pct) {
+      merchantInsert.pricing_rate = merchantInsert.ic_plus_visa_pct;
+    }
+    if (merchantInsert.ic_plus_visa_txn) {
+      merchantInsert.per_transaction_fee = merchantInsert.ic_plus_visa_txn;
+    }
+    const statementFee = parseFloat(merchantInsert.monthly_fee_statement) || 0;
+    const customFee = parseFloat(merchantInsert.monthly_fee_custom_amount) || 0;
+    const pciFee = parseFloat(merchantInsert.pci_compliance_monthly) || (merchantInsert.pci_compliance_annual ? parseFloat(merchantInsert.pci_compliance_annual) / 12 : 0) || 0;
+    merchantInsert.monthly_fees = statementFee + customFee + pciFee;
+    console.log("Merchant insert object:", merchantInsert);
     const { data: merchant, error: merchantError } = await supabase.from("merchants").insert(merchantInsert).select().single();
     if (merchantError) { setSaving(false); return; }
     await supabase.from("leads").update({ status: "converted", updated_at: new Date().toISOString() }).eq("id", params.id);
@@ -926,14 +938,40 @@ export default function LeadDetailPage() {
 
                 <div className={sectionClass}>
                   <h4 className="font-semibold mb-4 text-emerald-600">Monthly Fees</h4>
-                  <div className="grid grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div><label className={labelClass}>Statement Fee</label><input type="number" step="0.01" value={deal.monthly_fee_statement || ""} onChange={(e) => updateDealField("monthly_fee_statement", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Custom Fee Name</label><input type="text" value={deal.monthly_fee_custom_name || ""} onChange={(e) => updateDealField("monthly_fee_custom_name", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Custom Fee Amount</label><input type="number" step="0.01" value={deal.monthly_fee_custom_amount || ""} onChange={(e) => updateDealField("monthly_fee_custom_amount", e.target.value)} className={inputClass} /></div>
+                    <div>
+                      <label className={labelClass}>PCI Type</label>
+                      <select value={deal.pci_compliance_monthly ? "monthly" : deal.pci_compliance_annual ? "annual" : ""} onChange={(e) => {
+                        const currentAmount = deal.pci_compliance_monthly || deal.pci_compliance_annual || "";
+                        if (e.target.value === "monthly") {
+                          setDeal((prev: any) => ({ ...prev, pci_compliance_monthly: currentAmount, pci_compliance_annual: null }));
+                        } else if (e.target.value === "annual") {
+                          setDeal((prev: any) => ({ ...prev, pci_compliance_annual: currentAmount, pci_compliance_monthly: null }));
+                        } else {
+                          setDeal((prev: any) => ({ ...prev, pci_compliance_monthly: null, pci_compliance_annual: null }));
+                        }
+                      }} className={inputClass}>
+                        <option value="">Select...</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="annual">Annual</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelClass}>PCI Amount ($)</label>
+                      <input type="number" step="0.01" value={deal.pci_compliance_monthly || deal.pci_compliance_annual || ""} onChange={(e) => {
+                        const val = e.target.value;
+                        if (deal.pci_compliance_annual) {
+                          updateDealField("pci_compliance_annual", val);
+                        } else {
+                          updateDealField("pci_compliance_monthly", val);
+                        }
+                      }} className={inputClass} />
+                    </div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                    <div><label className={labelClass}>PCI Compliance Monthly</label><input type="number" step="0.01" value={deal.pci_compliance_monthly || ""} onChange={(e) => updateDealField("pci_compliance_monthly", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>PCI Compliance Annual</label><input type="number" step="0.01" value={deal.pci_compliance_annual || ""} onChange={(e) => updateDealField("pci_compliance_annual", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Custom Fee Name</label><input type="text" value={deal.monthly_fee_custom_name || ""} onChange={(e) => updateDealField("monthly_fee_custom_name", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Custom Fee Amount</label><input type="number" step="0.01" value={deal.monthly_fee_custom_amount || ""} onChange={(e) => updateDealField("monthly_fee_custom_amount", e.target.value)} className={inputClass} /></div>
                   </div>
                 </div>
 
