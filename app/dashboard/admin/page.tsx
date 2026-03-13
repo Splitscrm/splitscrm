@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
@@ -178,6 +178,8 @@ export default function AdminPage() {
   const [newOrg, setNewOrg] = useState({ name: "", slug: "", plan: "starter", plan_limits: { max_users: 3, max_leads: 100, max_merchants: 50 } });
   const [addOrgError, setAddOrgError] = useState("");
   const [addOrgSaving, setAddOrgSaving] = useState(false);
+  const [slugError, setSlugError] = useState("");
+  const slugCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Permission modal state
   const [permModal, setPermModal] = useState<any | null>(null);
@@ -416,11 +418,45 @@ export default function AdminPage() {
     enterprise: { max_users: 50, max_leads: 9999, max_merchants: 9999 },
   };
 
+  const SLUG_REGEX = /^[a-z][a-z0-9-]{1,46}[a-z0-9]$/;
+  const RESERVED_SLUGS = new Set([
+    "admin", "api", "app", "dashboard", "settings", "login", "signup", "auth",
+    "billing", "support", "help", "docs", "blog", "status", "www", "mail",
+    "ftp", "staging", "dev", "test", "demo", "splits", "platform", "system",
+    "root", "null", "undefined",
+  ]);
+
   const slugify = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+  const validateSlugFormat = (slug: string): string => {
+    if (!slug) return "";
+    if (slug.length < 3) return "Slug must be at least 3 characters.";
+    if (slug.length > 48) return "Slug must be 48 characters or less.";
+    if (!SLUG_REGEX.test(slug)) return "Must start with a letter, end with a letter or number, and contain only lowercase letters, numbers, and hyphens.";
+    if (RESERVED_SLUGS.has(slug)) return "Slug not available.";
+    return "";
+  };
+
+  const checkSlugAvailability = useCallback(async (slug: string) => {
+    const formatErr = validateSlugFormat(slug);
+    if (formatErr) { setSlugError(formatErr); return; }
+    const { data: existing } = await supabase.from("organizations").select("id").eq("slug", slug).maybeSingle();
+    if (existing) { setSlugError("Slug not available."); return; }
+    setSlugError("");
+  }, []);
+
+  const handleSlugChange = (slug: string) => {
+    setNewOrg((prev) => ({ ...prev, slug }));
+    if (slugCheckTimer.current) clearTimeout(slugCheckTimer.current);
+    const formatErr = validateSlugFormat(slug);
+    if (formatErr || !slug) { setSlugError(formatErr); return; }
+    slugCheckTimer.current = setTimeout(() => checkSlugAvailability(slug), 400);
+  };
 
   const openAddOrg = () => {
     setNewOrg({ name: "", slug: "", plan: "starter", plan_limits: { ...PLAN_DEFAULTS.starter } });
     setAddOrgError("");
+    setSlugError("");
     setInviteLink("");
     setShowAddOrg(true);
   };
@@ -429,12 +465,14 @@ export default function AdminPage() {
     if (!newOrg.name.trim()) { setAddOrgError("Organization name is required."); return; }
     const slug = newOrg.slug.trim() || slugify(newOrg.name);
     if (!slug) { setAddOrgError("Slug is required."); return; }
+    const formatErr = validateSlugFormat(slug);
+    if (formatErr) { setSlugError(formatErr); return; }
     setAddOrgSaving(true);
     setAddOrgError("");
 
-    // Check slug uniqueness
+    // Check slug availability (reserved + uniqueness)
     const { data: existing } = await supabase.from("organizations").select("id").eq("slug", slug).maybeSingle();
-    if (existing) { setAddOrgError("Slug is already taken. Choose a different one."); setAddOrgSaving(false); return; }
+    if (existing) { setSlugError("Slug not available."); setAddOrgSaving(false); return; }
 
     const { data: inserted, error } = await supabase.from("organizations").insert({
       name: newOrg.name.trim(),
@@ -539,7 +577,9 @@ export default function AdminPage() {
                         value={newOrg.name}
                         onChange={(e) => {
                           const name = e.target.value;
-                          setNewOrg((prev) => ({ ...prev, name, slug: slugify(name) }));
+                          const slug = slugify(name);
+                          setNewOrg((prev) => ({ ...prev, name, slug }));
+                          handleSlugChange(slug);
                         }}
                         className={inputClass}
                         placeholder="e.g. Acme Payments"
@@ -550,10 +590,11 @@ export default function AdminPage() {
                       <input
                         type="text"
                         value={newOrg.slug}
-                        onChange={(e) => setNewOrg((prev) => ({ ...prev, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") }))}
+                        onChange={(e) => handleSlugChange(e.target.value)}
                         className={inputClass}
                         placeholder="acme-payments"
                       />
+                      {slugError && <p className="text-xs text-red-500 mt-1">{slugError}</p>}
                     </div>
                     <div>
                       <label className="text-xs text-slate-500 block mb-1">Plan</label>

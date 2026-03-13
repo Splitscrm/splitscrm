@@ -114,7 +114,20 @@
       "Bash(grep -n \"fee_gateway\\\\|gateway_monthly\\\\|gateway_txn\" /c/Users/ealvr/isocrm/app/dashboard/merchants/[id]/page.tsx | head -10)",
       "Bash(grep -n \"Pricing & Fees\" /c/Users/ealvr/isocrm/app/dashboard/merchants/[id]/page.tsx)",
       "Bash(ls app/api/extract-hardware/ 2>&1; grep -n \"Upload Hardware\" app/dashboard/partners/\\\\[id\\\\]/page.tsx 2>&1)",
-      "Bash(grep -n \"Upload\" app/dashboard/partners/\\\\[id\\\\]/page.tsx)"
+      "Bash(grep -n \"Upload\" app/dashboard/partners/\\\\[id\\\\]/page.tsx)",
+      "WebFetch(domain:clerk.com)",
+      "WebFetch(domain:workos.com)",
+      "WebFetch(domain:gist.github.com)",
+      "Bash(find /c/Users/ealvr/isocrm -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" -o -name \"*.sql\" \\\\\\) 2>/dev/null | head -50)",
+      "Bash(find /c/Users/ealvr/isocrm -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" \\\\\\) -not -path \"*/node_modules/*\" -not -path \"*/.next/*\" 2>/dev/null | head -100)",
+      "Bash(find /c/Users/ealvr/isocrm -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" \\\\\\) -not -path \"*/node_modules/*\" -not -path \"*/.next/*\" | xargs grep -l \"deal\\\\|Deal\" 2>/dev/null)",
+      "Bash(find /c/Users/ealvr/isocrm -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" \\\\\\) -not -path \"*/node_modules/*\" -not -path \"*/.next/*\" | xargs grep -l \"partner\" 2>/dev/null)",
+      "Bash(find /c/Users/ealvr/isocrm -type f \\\\\\( -name \"*.sql\" -o -name \"*.json\" \\\\\\) -not -path \"*/node_modules/*\" -not -path \"*/.next/*\" 2>/dev/null | head -20)",
+      "Bash(find /c/Users/ealvr/isocrm -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" \\\\\\) -not -path \"*/node_modules/*\" -not -path \"*/.next/*\" | xargs grep -l \"partner_pricing\\\\|partner_sponsor_banks\\\\|partner_hardware\" 2>/dev/null)",
+      "Bash(grep -r \"pricing_data\\\\|pricing_type\" /c/Users/ealvr/isocrm/app --include=\"*.ts\" --include=\"*.tsx\" 2>/dev/null | head -20)",
+      "Bash(grep -r \"from.*partners\\\\|from.*pricing\" /c/Users/ealvr/isocrm/app --include=\"*.ts\" --include=\"*.tsx\" 2>/dev/null | head -30)",
+      "Bash(grep -r \"CREATE TABLE.*deals\\\\|CREATE TABLE.*partners\\\\|CREATE TABLE.*merchants\" /c/Users/ealvr/isocrm --include=\"*.sql\" --include=\"*.ts\" 2>/dev/null | head -20)",
+      "Bash(grep -n \"pricing_type\\\\|interchange_plus\\\\|dual_pricing\\\\|flat_rate\\\\|tiered\\\\|surcharging\" /c/Users/ealvr/isocrm/app/dashboard/leads/[id]/page.tsx | head -50)"
     ]
   }
 }
