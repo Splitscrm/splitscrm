@@ -15,7 +15,7 @@ const faqs = [
   },
   {
     q: 'Is my data secure?',
-    a: 'Yes. We use Supabase with PostgreSQL and row-level security. Your data is encrypted at rest, isolated per account, and never shared. Sensitive fields like SSNs and bank accounts have additional encryption.',
+    a: 'Yes. We use Supabase with PostgreSQL and row-level security. Your data is isolated per organization, access is controlled by role-based permissions, and sensitive fields like SSNs use application-level AES-256 encryption with audit logging.',
   },
   {
     q: 'Can I import my existing data?',
