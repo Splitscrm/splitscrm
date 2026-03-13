@@ -207,6 +207,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .from("organizations")
             .insert({
               name: orgName,
+              plan: "trial",
             })
             .select()
             .single();
@@ -216,6 +217,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setLoading(false);
             return;
           }
+
+          console.log("New org created:", orgName, "plan: trial");
 
           const { data: newMember, error: memberError } = await supabase
             .from("org_members")

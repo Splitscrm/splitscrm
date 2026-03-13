@@ -144,7 +144,7 @@ export default function LandingPage() {
                 <span className="text-emerald-600">Spreadsheet</span> Again
               </h1>
               <p className="mt-6 text-xl text-slate-500 leading-relaxed lg:max-w-lg">
-                Upload your processor files. See every agent&apos;s split in seconds. Track your entire portfolio from one dashboard. Purpose-built for ISOs — starting at $99/mo.
+                Upload your processor files. See your splits in seconds. Track your entire portfolio from one dashboard. Purpose-built for ISOs — starting at $99/mo.
               </p>
               <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
                 <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-4.5 rounded-lg font-semibold text-xl transition duration-150 shadow-lg shadow-emerald-600/20">
