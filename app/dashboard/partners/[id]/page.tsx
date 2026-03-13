@@ -29,7 +29,12 @@ export default function PartnerDetailPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [activeTab, setActiveTab] = useState("banks");
+  const [hwExtracting, setHwExtracting] = useState(false);
+  const [hwPreview, setHwPreview] = useState<any[] | null>(null);
+  const [hwSelected, setHwSelected] = useState<Set<number>>(new Set());
   const [swExtracting, setSwExtracting] = useState(false);
+  const [swPreview, setSwPreview] = useState<any[] | null>(null);
+  const [swSelected, setSwSelected] = useState<Set<number>>(new Set());
 
   const tabs = [
     { key: "banks", label: "Sponsor Banks" },
@@ -410,9 +415,137 @@ export default function PartnerDetailPage() {
           <div>
             <div className="flex justify-between items-center mb-4">
               <h4 className="font-semibold text-emerald-600">Hardware Options</h4>
-              <button onClick={addHardware} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs transition">+ Add Hardware</button>
+              <div className="flex gap-2">
+                <label className="bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition">
+                  {hwExtracting ? "Extracting..." : "Upload Hardware Sheet"}
+                  <input
+                    type="file"
+                    accept=".pdf,.csv"
+                    className="hidden"
+                    disabled={hwExtracting}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setHwExtracting(true);
+                      try {
+                        const formData = new FormData();
+                        formData.append("pdf", file);
+                        const res = await fetch("/api/extract-hardware", { method: "POST", body: formData });
+                        const data = await res.json();
+                        if (data.hardware && Array.isArray(data.hardware) && data.hardware.length > 0) {
+                          setHwPreview(data.hardware);
+                          setHwSelected(new Set(data.hardware.map((_: any, i: number) => i)));
+                        } else {
+                          showMsg("Could not extract hardware from file.");
+                        }
+                      } catch {
+                        showMsg("Hardware extraction failed.");
+                      }
+                      setHwExtracting(false);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                <button onClick={addHardware} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs transition">+ Add Hardware</button>
+              </div>
             </div>
-            {hardware.length === 0 && <p className="text-slate-500 text-sm">No hardware options added yet.</p>}
+
+            {/* Hardware Preview Modal */}
+            {hwPreview && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+                  <div className="p-4 border-b border-slate-200 flex justify-between items-center">
+                    <h3 className="font-semibold text-slate-900">Extracted Hardware — {hwPreview.length} item(s)</h3>
+                    <button onClick={() => setHwPreview(null)} className="text-slate-400 hover:text-slate-600 text-lg">x</button>
+                  </div>
+                  <div className="overflow-auto flex-1 p-4">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50">
+                          <th className="text-left px-3 py-2 text-xs text-slate-500 font-medium w-8">
+                            <input type="checkbox" checked={hwSelected.size === hwPreview.length} onChange={(e) => {
+                              if (e.target.checked) setHwSelected(new Set(hwPreview.map((_, i) => i)));
+                              else setHwSelected(new Set());
+                            }} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+                          </th>
+                          <th className="text-left px-3 py-2 text-xs text-slate-500 font-medium">Type</th>
+                          <th className="text-left px-3 py-2 text-xs text-slate-500 font-medium">Name</th>
+                          <th className="text-left px-3 py-2 text-xs text-slate-500 font-medium">Model</th>
+                          <th className="text-left px-3 py-2 text-xs text-slate-500 font-medium">Manufacturer</th>
+                          <th className="text-right px-3 py-2 text-xs text-slate-500 font-medium">Cost</th>
+                          <th className="text-right px-3 py-2 text-xs text-slate-500 font-medium">MSRP</th>
+                          <th className="text-left px-3 py-2 text-xs text-slate-500 font-medium">Free Placement</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {hwPreview.map((item, idx) => (
+                          <tr key={idx} className="border-b border-slate-100">
+                            <td className="px-3 py-2">
+                              <input type="checkbox" checked={hwSelected.has(idx)} onChange={(e) => {
+                                const next = new Set(hwSelected);
+                                if (e.target.checked) next.add(idx); else next.delete(idx);
+                                setHwSelected(next);
+                              }} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+                            </td>
+                            <td className="px-3 py-2 capitalize">{item.hardware_type?.replace('_', ' ') || '-'}</td>
+                            <td className="px-3 py-2">{item.hardware_name || '-'}</td>
+                            <td className="px-3 py-2">{item.model || '-'}</td>
+                            <td className="px-3 py-2">{item.manufacturer || '-'}</td>
+                            <td className="px-3 py-2 text-right">{item.cost != null ? `$${item.cost}` : '-'}</td>
+                            <td className="px-3 py-2 text-right">{item.msrp != null ? `$${item.msrp}` : '-'}</td>
+                            <td className="px-3 py-2">{item.free_placement_eligible ? 'Yes' : 'No'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="p-4 border-t border-slate-200 flex justify-end gap-3">
+                    <button onClick={() => setHwPreview(null)} className="text-slate-500 hover:text-slate-700 px-4 py-2 text-sm">Cancel</button>
+                    <button onClick={async () => {
+                      const selected = hwPreview.filter((_, i) => hwSelected.has(i));
+                      for (const item of selected) {
+                        const { data: inserted } = await supabase.from("partner_hardware").insert({
+                          partner_id: partner.id,
+                          hardware_type: item.hardware_type || "",
+                          hardware_name: item.hardware_name || "",
+                          model: item.model || "",
+                          manufacturer: item.manufacturer || "",
+                          cost: item.cost || null,
+                          msrp: item.msrp || null,
+                          free_placement: item.free_placement_eligible ? "yes" : "no",
+                        }).select().single();
+                        if (inserted) setHardware((prev) => [...prev, inserted]);
+                      }
+                      showMsg(`${selected.length} hardware item(s) imported!`);
+                      setHwPreview(null);
+                    }} disabled={hwSelected.size === 0} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
+                      Import Selected ({hwSelected.size})
+                    </button>
+                    <button onClick={async () => {
+                      for (const item of hwPreview) {
+                        const { data: inserted } = await supabase.from("partner_hardware").insert({
+                          partner_id: partner.id,
+                          hardware_type: item.hardware_type || "",
+                          hardware_name: item.hardware_name || "",
+                          model: item.model || "",
+                          manufacturer: item.manufacturer || "",
+                          cost: item.cost || null,
+                          msrp: item.msrp || null,
+                          free_placement: item.free_placement_eligible ? "yes" : "no",
+                        }).select().single();
+                        if (inserted) setHardware((prev) => [...prev, inserted]);
+                      }
+                      showMsg(`${hwPreview.length} hardware item(s) imported!`);
+                      setHwPreview(null);
+                    }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+                      Import All ({hwPreview.length})
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {hardware.length === 0 && <p className="text-slate-500 text-sm">No hardware options added yet. Upload a sheet or add manually.</p>}
             {hardware.map((h, idx) => (
               <div key={h.id} className={cardClass}>
                 <div className="flex justify-between items-center mb-3">
@@ -450,11 +583,11 @@ export default function PartnerDetailPage() {
             <div className="flex justify-between items-center mb-4">
               <h4 className="font-semibold text-emerald-600">Software Options</h4>
               <div className="flex gap-2">
-                <label className="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg px-3 py-1 text-xs font-medium cursor-pointer transition">
-                  {swExtracting ? "Extracting..." : "Upload PDF"}
+                <label className="bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition">
+                  {swExtracting ? "Extracting..." : "Upload Software Sheet"}
                   <input
                     type="file"
-                    accept=".pdf"
+                    accept=".pdf,.csv"
                     className="hidden"
                     disabled={swExtracting}
                     onChange={async (e) => {
@@ -466,25 +599,14 @@ export default function PartnerDetailPage() {
                         formData.append("pdf", file);
                         const res = await fetch("/api/extract-software", { method: "POST", body: formData });
                         const data = await res.json();
-                        if (data.software && Array.isArray(data.software)) {
-                          for (const sw of data.software) {
-                            const { data: inserted } = await supabase.from("partner_software").insert({
-                              partner_id: partner.id,
-                              software_name: sw.software_name || "",
-                              software_type: sw.software_type || "",
-                              manufacturer: sw.manufacturer || "",
-                              monthly_cost: sw.monthly_cost || null,
-                              per_transaction_cost: sw.per_transaction_cost || null,
-                              notes: sw.notes || "",
-                            }).select().single();
-                            if (inserted) setSoftware((prev) => [...prev, inserted]);
-                          }
-                          showMsg(`${data.software.length} software item(s) extracted!`);
+                        if (data.software && Array.isArray(data.software) && data.software.length > 0) {
+                          setSwPreview(data.software);
+                          setSwSelected(new Set(data.software.map((_: any, i: number) => i)));
                         } else {
-                          showMsg("Could not extract software from PDF.");
+                          showMsg("Could not extract software from file.");
                         }
                       } catch {
-                        showMsg("PDF extraction failed.");
+                        showMsg("Software extraction failed.");
                       }
                       setSwExtracting(false);
                       e.target.value = "";
@@ -494,7 +616,99 @@ export default function PartnerDetailPage() {
                 <button onClick={addSoftware} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs transition">+ Add Software</button>
               </div>
             </div>
-            {software.length === 0 && <p className="text-slate-500 text-sm">No software options added yet. Upload a PDF or add manually.</p>}
+
+            {/* Software Preview Modal */}
+            {swPreview && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+                  <div className="p-4 border-b border-slate-200 flex justify-between items-center">
+                    <h3 className="font-semibold text-slate-900">Extracted Software — {swPreview.length} item(s)</h3>
+                    <button onClick={() => setSwPreview(null)} className="text-slate-400 hover:text-slate-600 text-lg">x</button>
+                  </div>
+                  <div className="overflow-auto flex-1 p-4">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50">
+                          <th className="text-left px-3 py-2 text-xs text-slate-500 font-medium w-8">
+                            <input type="checkbox" checked={swSelected.size === swPreview.length} onChange={(e) => {
+                              if (e.target.checked) setSwSelected(new Set(swPreview.map((_, i) => i)));
+                              else setSwSelected(new Set());
+                            }} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+                          </th>
+                          <th className="text-left px-3 py-2 text-xs text-slate-500 font-medium">Name</th>
+                          <th className="text-left px-3 py-2 text-xs text-slate-500 font-medium">Type</th>
+                          <th className="text-left px-3 py-2 text-xs text-slate-500 font-medium">Manufacturer</th>
+                          <th className="text-right px-3 py-2 text-xs text-slate-500 font-medium">Monthly</th>
+                          <th className="text-right px-3 py-2 text-xs text-slate-500 font-medium">Per Txn</th>
+                          <th className="text-left px-3 py-2 text-xs text-slate-500 font-medium">Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {swPreview.map((item, idx) => (
+                          <tr key={idx} className="border-b border-slate-100">
+                            <td className="px-3 py-2">
+                              <input type="checkbox" checked={swSelected.has(idx)} onChange={(e) => {
+                                const next = new Set(swSelected);
+                                if (e.target.checked) next.add(idx); else next.delete(idx);
+                                setSwSelected(next);
+                              }} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+                            </td>
+                            <td className="px-3 py-2">{item.software_name || '-'}</td>
+                            <td className="px-3 py-2 capitalize">{item.software_type?.replace('_', ' ') || '-'}</td>
+                            <td className="px-3 py-2">{item.manufacturer || '-'}</td>
+                            <td className="px-3 py-2 text-right">{item.monthly_cost != null ? `$${item.monthly_cost}` : '-'}</td>
+                            <td className="px-3 py-2 text-right">{item.per_transaction_cost != null ? `$${item.per_transaction_cost}` : '-'}</td>
+                            <td className="px-3 py-2 text-slate-500 text-xs max-w-[200px] truncate">{item.notes || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="p-4 border-t border-slate-200 flex justify-end gap-3">
+                    <button onClick={() => setSwPreview(null)} className="text-slate-500 hover:text-slate-700 px-4 py-2 text-sm">Cancel</button>
+                    <button onClick={async () => {
+                      const selected = swPreview.filter((_, i) => swSelected.has(i));
+                      for (const item of selected) {
+                        const { data: inserted } = await supabase.from("partner_software").insert({
+                          partner_id: partner.id,
+                          software_name: item.software_name || "",
+                          software_type: item.software_type || "",
+                          manufacturer: item.manufacturer || "",
+                          monthly_cost: item.monthly_cost || null,
+                          per_transaction_cost: item.per_transaction_cost || null,
+                          notes: item.notes || "",
+                        }).select().single();
+                        if (inserted) setSoftware((prev) => [...prev, inserted]);
+                      }
+                      showMsg(`${selected.length} software item(s) imported!`);
+                      setSwPreview(null);
+                    }} disabled={swSelected.size === 0} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
+                      Import Selected ({swSelected.size})
+                    </button>
+                    <button onClick={async () => {
+                      for (const item of swPreview) {
+                        const { data: inserted } = await supabase.from("partner_software").insert({
+                          partner_id: partner.id,
+                          software_name: item.software_name || "",
+                          software_type: item.software_type || "",
+                          manufacturer: item.manufacturer || "",
+                          monthly_cost: item.monthly_cost || null,
+                          per_transaction_cost: item.per_transaction_cost || null,
+                          notes: item.notes || "",
+                        }).select().single();
+                        if (inserted) setSoftware((prev) => [...prev, inserted]);
+                      }
+                      showMsg(`${swPreview.length} software item(s) imported!`);
+                      setSwPreview(null);
+                    }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+                      Import All ({swPreview.length})
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {software.length === 0 && <p className="text-slate-500 text-sm">No software options added yet. Upload a sheet or add manually.</p>}
             {software.map((s, idx) => (
               <div key={s.id} className={cardClass}>
                 <div className="flex justify-between items-center mb-3">

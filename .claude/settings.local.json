@@ -112,7 +112,9 @@
       "Bash(grep -n \"saveDeal\\\\|convertToMerchant\" /c/Users/ealvr/isocrm/app/dashboard/leads/[id]/page.tsx | head -10)",
       "Bash(grep -n \"Contract & Equipment\\\\|contract\\\\|equipment\" /c/Users/ealvr/isocrm/app/dashboard/merchants/[id]/page.tsx | head -15)",
       "Bash(grep -n \"fee_gateway\\\\|gateway_monthly\\\\|gateway_txn\" /c/Users/ealvr/isocrm/app/dashboard/merchants/[id]/page.tsx | head -10)",
-      "Bash(grep -n \"Pricing & Fees\" /c/Users/ealvr/isocrm/app/dashboard/merchants/[id]/page.tsx)"
+      "Bash(grep -n \"Pricing & Fees\" /c/Users/ealvr/isocrm/app/dashboard/merchants/[id]/page.tsx)",
+      "Bash(ls app/api/extract-hardware/ 2>&1; grep -n \"Upload Hardware\" app/dashboard/partners/\\\\[id\\\\]/page.tsx 2>&1)",
+      "Bash(grep -n \"Upload\" app/dashboard/partners/\\\\[id\\\\]/page.tsx)"
     ]
   }
 }
