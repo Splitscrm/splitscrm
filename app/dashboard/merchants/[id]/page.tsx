@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import Sidebar from '@/components/Sidebar'
-import CommunicationLog from '@/components/CommunicationLog'
 import TaskModal from '@/components/TaskModal'
 import { useAuth } from '@/lib/auth-context'
 
@@ -52,6 +51,20 @@ export default function MerchantDetailPage() {
   const [commsLoading, setCommsLoading] = useState(false)
   const [expandedComms, setExpandedComms] = useState<Record<string, boolean>>({})
   const [showAllComms, setShowAllComms] = useState(false)
+
+  // Communication modal state
+  const [commModal, setCommModal] = useState<'call' | 'email' | 'note' | null>(null)
+  const [commDirection, setCommDirection] = useState('outbound')
+  const [commName, setCommName] = useState('')
+  const [commPhone, setCommPhone] = useState('')
+  const [commEmail, setCommEmail] = useState('')
+  const [commSubject, setCommSubject] = useState('')
+  const [commBody, setCommBody] = useState('')
+  const [commSaving, setCommSaving] = useState(false)
+  const [phoneCopied, setPhoneCopied] = useState(false)
+  const [emailTemplates, setEmailTemplates] = useState<any[]>([])
+  const [selectedTemplate, setSelectedTemplate] = useState('')
+  const [showCommTaskModal, setShowCommTaskModal] = useState(false)
 
   const syncFromDeal = async () => {
     if (!merchant?.lead_id) return
@@ -136,13 +149,14 @@ export default function MerchantDetailPage() {
     setResidualLoading(false)
   }
 
-  const fetchRecentComms = async (merchantId: string, leadId?: string) => {
+  const fetchRecentComms = async (merchantId: string, leadId?: string, fetchAll?: boolean) => {
     setCommsLoading(true)
     let query = supabase
       .from('communications')
       .select('*')
-      .order('created_at', { ascending: false })
-      .limit(5)
+      .order('logged_at', { ascending: false })
+
+    if (!fetchAll) query = query.limit(5)
 
     if (leadId) {
       query = query.or(`merchant_id.eq.${merchantId},lead_id.eq.${leadId}`)
@@ -155,12 +169,78 @@ export default function MerchantDetailPage() {
     setCommsLoading(false)
   }
 
+  const openCommModal = (type: 'call' | 'email' | 'note') => {
+    setCommModal(type)
+    setCommDirection(type === 'email' ? 'sent' : 'outbound')
+    setCommName(merchant?.contact_name || '')
+    setCommPhone(merchant?.phone || '')
+    setCommEmail(merchant?.email || '')
+    setCommSubject('')
+    setCommBody('')
+    setSelectedTemplate('')
+  }
+
+  const handleCommSave = async () => {
+    if (!commModal) return
+    setCommSaving(true)
+
+    const record: Record<string, any> = {
+      user_id: merchantUserId,
+      lead_id: null,
+      merchant_id: merchant?.id || null,
+      deal_id: null,
+      type: commModal,
+      direction: commModal === 'note' ? null : commDirection,
+      contact_name: commName || null,
+      contact_email: commModal === 'email' ? (commEmail || null) : null,
+      contact_phone: commModal === 'call' ? (commPhone || null) : null,
+      subject: commModal === 'email' ? (commSubject || null) : null,
+      body: commBody || null,
+      duration_seconds: null,
+      logged_at: new Date().toISOString(),
+    }
+
+    await supabase.from('communications').insert(record)
+
+    // Activity log
+    let desc = ''
+    if (commModal === 'call') desc = `Call logged: ${commDirection} call with ${commName || 'unknown'}`
+    else if (commModal === 'email') desc = `Email logged: ${commDirection} — ${commSubject || '(no subject)'}`
+    else desc = `Note added${commName ? ` for ${commName}` : ''}`
+
+    await supabase.from('activity_log').insert({
+      user_id: merchantUserId,
+      merchant_id: merchant?.id || null,
+      action_type: 'communication_logged',
+      description: desc,
+    })
+
+    setCommModal(null)
+    setCommSaving(false)
+    // Refresh comms list
+    if (merchant) fetchRecentComms(merchant.id, merchant.lead_id, showAllComms)
+  }
+
+  const handleTemplateSelect = (templateId: string) => {
+    setSelectedTemplate(templateId)
+    if (!templateId) return
+    const tpl = emailTemplates.find((t: any) => t.id === templateId)
+    if (tpl) {
+      setCommSubject(tpl.subject)
+      setCommBody(tpl.body)
+    }
+  }
+
   useEffect(() => {
     if (authLoading) return
     const fetchMerchant = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
       setMerchantUserId(user.id)
+
+      // Fetch email templates
+      const { data: tpls } = await supabase.from('email_templates').select('id, name, subject, body').eq('user_id', user.id).order('name')
+      if (tpls) setEmailTemplates(tpls)
 
       const { data } = await supabase.from('merchants').select('*').eq('id', params.id).single()
       if (data) {
@@ -882,15 +962,157 @@ export default function MerchantDetailPage() {
           {/* RIGHT COLUMN (40%) */}
           <div className="lg:col-span-2 space-y-6">
 
-            {/* Communication Log action bar (compact) */}
-            <CommunicationLog
-              merchantId={merchant.id}
-              linkedLeadId={merchant.lead_id}
-              contactName={merchant.contact_name}
-              contactPhone={merchant.phone}
-              contactEmail={merchant.email}
-              onTaskCreated={() => { fetchTasks(); fetchRecentComms(merchant.id, merchant.lead_id) }}
-            />
+            {/* Action Bar */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+              <div className="flex items-center gap-3 flex-wrap">
+                <button onClick={() => openCommModal('call')} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-medium transition">
+                  📞 Log Call
+                </button>
+                {merchant.phone && (
+                  <a
+                    href={`tel:${merchant.phone}`}
+                    onClick={() => { navigator.clipboard.writeText(merchant.phone).then(() => { setPhoneCopied(true); setTimeout(() => setPhoneCopied(false), 2000) }) }}
+                    className="text-emerald-600 hover:text-emerald-700 text-sm font-medium"
+                  >
+                    {phoneCopied ? 'Copied!' : merchant.phone}
+                  </a>
+                )}
+                {merchant.email ? (
+                  <a
+                    href={`mailto:${merchant.email}`}
+                    onClick={(e) => { e.preventDefault(); window.open(`mailto:${merchant.email}`); setTimeout(() => openCommModal('email'), 1000) }}
+                    className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-medium transition"
+                  >
+                    ✉️ Send Email
+                  </a>
+                ) : (
+                  <span className="bg-white border border-slate-200 text-slate-700 rounded-lg px-4 py-2 text-sm font-medium opacity-50 cursor-not-allowed" title="No email on file">
+                    ✉️ Send Email
+                  </span>
+                )}
+                <button onClick={() => openCommModal('note')} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-medium transition">
+                  📝 Add Note
+                </button>
+                <button onClick={() => setShowCommTaskModal(true)} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-medium transition">
+                  📋 Follow-up
+                </button>
+              </div>
+            </div>
+
+            {/* Follow-up Task Modal from action bar */}
+            {showCommTaskModal && (
+              <TaskModal
+                onClose={() => setShowCommTaskModal(false)}
+                onSaved={async () => {
+                  await supabase.from('activity_log').insert({
+                    user_id: merchantUserId,
+                    merchant_id: merchant.id,
+                    action_type: 'communication_logged',
+                    description: 'Follow-up task created',
+                  })
+                  fetchTasks()
+                  setShowCommTaskModal(false)
+                }}
+                merchantId={merchant.id}
+                linkedEntityName={merchant.dba_name || merchant.contact_name}
+              />
+            )}
+
+            {/* Communication Modal */}
+            {commModal && (
+              <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setCommModal(null)}>
+                <div className="bg-white rounded-xl border border-slate-200 shadow-xl p-6 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+                  {commModal === 'call' && (
+                    <>
+                      <h3 className="text-lg font-semibold text-slate-900 mb-4">Log Call</h3>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-sm text-slate-600 font-medium block mb-1.5">Direction</label>
+                          <div className="flex gap-2">
+                            {['outbound', 'inbound'].map((d) => (
+                              <button key={d} onClick={() => setCommDirection(d)} className={`px-4 py-2 rounded-lg text-sm font-medium transition capitalize ${commDirection === d ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                {d}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-sm text-slate-600 font-medium block mb-1.5">Contact Name</label>
+                            <input type="text" value={commName} onChange={(e) => setCommName(e.target.value)} className="w-full bg-white text-slate-900 px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm" />
+                          </div>
+                          <div>
+                            <label className="text-sm text-slate-600 font-medium block mb-1.5">Phone Number</label>
+                            <input type="tel" value={commPhone} onChange={(e) => setCommPhone(e.target.value)} className="w-full bg-white text-slate-900 px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-sm text-slate-600 font-medium block mb-1.5">Notes</label>
+                          <textarea value={commBody} onChange={(e) => setCommBody(e.target.value)} className="w-full bg-white text-slate-900 px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm h-24 resize-none" rows={4} />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {commModal === 'email' && (
+                    <>
+                      <h3 className="text-lg font-semibold text-slate-900 mb-4">Log Email</h3>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-sm text-slate-600 font-medium block mb-1.5">Direction</label>
+                          <div className="flex gap-2">
+                            {['sent', 'received'].map((d) => (
+                              <button key={d} onClick={() => setCommDirection(d)} className={`px-4 py-2 rounded-lg text-sm font-medium transition capitalize ${commDirection === d ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                {d}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-sm text-slate-600 font-medium block mb-1.5">{commDirection === 'sent' ? 'To' : 'From'}</label>
+                          <input type="email" value={commEmail} onChange={(e) => setCommEmail(e.target.value)} className="w-full bg-white text-slate-900 px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm" />
+                        </div>
+                        <div>
+                          <label className="text-sm text-slate-600 font-medium block mb-1.5">Template</label>
+                          <select value={selectedTemplate} onChange={(e) => handleTemplateSelect(e.target.value)} className="w-full bg-white text-slate-900 px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm">
+                            <option value="">No template</option>
+                            {emailTemplates.map((t: any) => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-sm text-slate-600 font-medium block mb-1.5">Subject</label>
+                          <input type="text" value={commSubject} onChange={(e) => setCommSubject(e.target.value)} className="w-full bg-white text-slate-900 px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm" />
+                        </div>
+                        <div>
+                          <label className="text-sm text-slate-600 font-medium block mb-1.5">Body</label>
+                          <textarea value={commBody} onChange={(e) => setCommBody(e.target.value)} className="w-full bg-white text-slate-900 px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm h-36 resize-none" rows={6} />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {commModal === 'note' && (
+                    <>
+                      <h3 className="text-lg font-semibold text-slate-900 mb-4">Add Note</h3>
+                      <div>
+                        <textarea value={commBody} onChange={(e) => setCommBody(e.target.value)} className="w-full bg-white text-slate-900 px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm h-36 resize-none" rows={6} placeholder="Enter your note..." />
+                      </div>
+                    </>
+                  )}
+
+                  <div className="flex justify-end gap-3 mt-6">
+                    <button onClick={() => setCommModal(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">
+                      Cancel
+                    </button>
+                    <button onClick={handleCommSave} disabled={commSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
+                      {commSaving ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* CARD 1 — Residual History Chart */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
@@ -1075,13 +1297,13 @@ export default function MerchantDetailPage() {
               )}
             </div>
 
-            {/* CARD 3 — Recent Communications */}
+            {/* CARD 3 — Communications */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-              <h3 className="text-base font-semibold text-slate-900 mb-3">Recent Communications</h3>
+              <h3 className="text-base font-semibold text-slate-900 mb-3">Communications</h3>
               {commsLoading ? (
                 <p className="text-slate-400 text-sm">Loading...</p>
               ) : recentComms.length === 0 ? (
-                <p className="text-slate-400 text-sm">No communications yet</p>
+                <p className="text-slate-400 text-sm">No communications yet. Log a call, send an email, or add a note to get started.</p>
               ) : (
                 <div>
                   {recentComms.map((comm, i) => (
@@ -1093,11 +1315,11 @@ export default function MerchantDetailPage() {
                         className="flex items-center gap-2 cursor-pointer"
                         onClick={() => setExpandedComms(prev => ({ ...prev, [comm.id]: !prev[comm.id] }))}
                       >
-                        <span className="text-xs">{commIcon(comm.comm_type)}</span>
+                        <span className="text-xs">{commIcon(comm.type)}</span>
                         <span className="text-xs text-slate-700 flex-1 truncate">
-                          {comm.subject || comm.body?.slice(0, 60) || comm.comm_type}
+                          {comm.subject || comm.body?.slice(0, 60) || comm.type}
                         </span>
-                        <span className="text-xs text-slate-400 whitespace-nowrap">{relativeTime(comm.created_at)}</span>
+                        <span className="text-xs text-slate-400 whitespace-nowrap">{relativeTime(comm.logged_at)}</span>
                       </div>
                       {expandedComms[comm.id] && comm.body && (
                         <p className="text-xs text-slate-500 mt-1 pl-6 whitespace-pre-wrap">{comm.body}</p>
@@ -1106,10 +1328,18 @@ export default function MerchantDetailPage() {
                   ))}
                   {!showAllComms && recentComms.length >= 5 && (
                     <button
-                      onClick={() => setShowAllComms(true)}
+                      onClick={() => { setShowAllComms(true); fetchRecentComms(merchant.id, merchant.lead_id, true) }}
                       className="text-emerald-600 text-sm hover:underline mt-2"
                     >
                       View All →
+                    </button>
+                  )}
+                  {showAllComms && (
+                    <button
+                      onClick={() => { setShowAllComms(false); fetchRecentComms(merchant.id, merchant.lead_id, false) }}
+                      className="text-slate-400 text-sm hover:underline mt-2"
+                    >
+                      Show Less
                     </button>
                   )}
                 </div>
