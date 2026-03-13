@@ -106,13 +106,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
       setIsPlatformAdmin(!!adminRow);
 
+      // DEBUG: Check what get_my_org_ids() returns for this user
+      const { data: orgIds, error: orgIdsErr } = await supabase.rpc("get_my_org_ids");
+      console.log("[RLS DEBUG] auth.uid() from getUser:", currentUser.id);
+      console.log("[RLS DEBUG] get_my_org_ids() result:", orgIds, "error:", orgIdsErr);
+
       // Find org membership
       const { data: memberRow, error: memberQueryError } = await supabase
         .from("org_members")
         .select("*")
         .eq("user_id", currentUser.id)
         .maybeSingle();
-      console.log("Org member query result:", memberRow, memberQueryError);
+      console.log("[RLS DEBUG] org_members query:", { data: memberRow, error: memberQueryError, status: memberQueryError?.code, details: memberQueryError?.details, hint: memberQueryError?.hint });
 
       if (memberRow) {
         setMember(memberRow);
