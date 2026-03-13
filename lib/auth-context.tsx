@@ -141,60 +141,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .maybeSingle();
 
           if (pendingInvite) {
-            console.log("Found pending invitation for user:", pendingInvite);
+            // Accept invitation via RPC (SECURITY DEFINER — bypasses RLS)
+            const { data: result, error: acceptErr } = await supabase
+              .rpc("accept_org_invitation", { p_invite_email: userEmail });
 
-            // Try to update existing org_members record
-            const { error: updateErr } = await supabase
-              .from("org_members")
-              .update({
-                user_id: currentUser.id,
-                status: "active",
-                joined_at: new Date().toISOString(),
-              })
-              .eq("org_id", pendingInvite.org_id)
-              .eq("invited_email", userEmail)
-              .eq("status", "invited");
-
-            if (updateErr) {
-              // No invited record — create one
-              await supabase.from("org_members").insert({
-                org_id: pendingInvite.org_id,
-                user_id: currentUser.id,
-                role: pendingInvite.role,
-                status: "active",
-                joined_at: new Date().toISOString(),
-              });
-            }
-
-            // Mark invitation as accepted
-            await supabase
-              .from("org_invitations")
-              .update({ status: "accepted" })
-              .eq("id", pendingInvite.id);
-
-            // Fetch the now-active member record
-            const { data: acceptedMember } = await supabase
-              .from("org_members")
-              .select("*")
-              .eq("user_id", currentUser.id)
-              .single();
-
-            if (acceptedMember) {
-              setMember(acceptedMember);
-              const { data: acceptedOrg } = await supabase
-                .from("organizations")
-                .select("*")
-                .eq("id", acceptedMember.org_id)
-                .single();
-              setOrg(acceptedOrg || null);
-              console.log("Auth context (accepted invite):", { userId: currentUser.id, orgId: acceptedMember.org_id, role: acceptedMember.role, isPlatformAdmin: !!adminRow });
+            if (acceptErr || result?.error) {
+              console.error("Failed to accept invitation:", acceptErr || result?.error);
+            } else {
+              setMember(result.member);
+              setOrg(result.org);
               handledViaInvite = true;
             }
           }
         }
 
         if (!handledViaInvite) {
-          // Auto-create organization for new user
+          // Auto-create organization via RPC (SECURITY DEFINER — bypasses
+          // the RETURNING/SELECT policy conflict during org creation)
           const { data: profile } = await supabase
             .from("user_profiles")
             .select("company_name")
@@ -203,44 +166,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           const orgName = profile?.company_name || "My Organization";
 
-          const { data: newOrg, error: orgError } = await supabase
-            .from("organizations")
-            .insert({
-              name: orgName,
-              plan: "trial",
-            })
-            .select()
-            .single();
+          const { data: result, error: createErr } = await supabase
+            .rpc("create_org_with_owner", {
+              p_org_name: orgName,
+              p_plan: "trial",
+            });
 
-          if (orgError || !newOrg) {
-            console.error("Failed to auto-create organization:", orgError);
+          if (createErr || !result?.org) {
+            console.error("Failed to auto-create organization:", createErr);
             setLoading(false);
             return;
           }
 
-          console.log("New org created:", orgName, "plan: trial");
-
-          const { data: newMember, error: memberError } = await supabase
-            .from("org_members")
-            .insert({
-              org_id: newOrg.id,
-              user_id: currentUser.id,
-              role: "owner",
-              status: "active",
-              joined_at: new Date().toISOString(),
-            })
-            .select("*")
-            .single();
-
-          if (memberError || !newMember) {
-            console.error("Failed to create org member:", memberError);
-            setLoading(false);
-            return;
-          }
-
-          setMember(newMember);
-          setOrg(newOrg);
-          console.log("Auth context (auto-created org):", { userId: currentUser.id, orgId: newOrg.id, role: newMember.role, isPlatformAdmin: !!adminRow });
+          setMember(result.member);
+          setOrg(result.org);
         }
       }
     } catch (err) {
