@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import SplitsLogo from '@/components/SplitsLogo'
+import { supabase } from '@/lib/supabase'
 
 const faqs = [
   {
@@ -75,9 +77,16 @@ const steps = [
 ]
 
 export default function LandingPage() {
+  const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const [scrolled, setScrolled] = useState(false)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) router.replace('/dashboard')
+    })
+  }, [router])
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10)

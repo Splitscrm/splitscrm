@@ -30,24 +30,16 @@ export async function GET(request: Request) {
   const code = searchParams.get('code')
   const next = getSafeRedirectPath(searchParams.get('next'))
 
-  console.log('[auth/callback] Received callback:', {
-    hasCode: !!code,
-    next,
-    allParams: Object.fromEntries(searchParams.entries()),
-  })
-
   if (code) {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
     const { error } = await supabase.auth.exchangeCodeForSession(code)
-    console.log('[auth/callback] Code exchange result:', { error: error?.message, redirectTo: `${origin}${next}` })
     if (!error) {
       return NextResponse.redirect(`${origin}${next}`)
     }
   }
 
-  console.log('[auth/callback] Falling through to login error redirect')
   return NextResponse.redirect(`${origin}/login?error=auth`)
 }

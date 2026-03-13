@@ -87,7 +87,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadAuth = useCallback(async () => {
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
-      console.log("Auth user:", currentUser?.id, currentUser?.email);
       if (!currentUser) {
         setUser(null);
         setOrg(null);
@@ -106,32 +105,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
       setIsPlatformAdmin(!!adminRow);
 
-      // DEBUG: Check what get_my_org_ids() returns for this user
-      const { data: orgIds, error: orgIdsErr } = await supabase.rpc("get_my_org_ids");
-      console.log("[RLS DEBUG] auth.uid() from getUser:", currentUser.id);
-      console.log("[RLS DEBUG] get_my_org_ids() result:", orgIds, "error:", orgIdsErr);
-
       // Find org membership
-      const { data: memberRow, error: memberQueryError } = await supabase
+      const { data: memberRow } = await supabase
         .from("org_members")
         .select("*")
         .eq("user_id", currentUser.id)
         .maybeSingle();
-      console.log("[RLS DEBUG] org_members query:", { data: memberRow, error: memberQueryError, status: memberQueryError?.code, details: memberQueryError?.details, hint: memberQueryError?.hint });
 
       if (memberRow) {
         setMember(memberRow);
 
         // Fetch organization separately (avoids RLS issues with join)
-        const { data: orgData, error: orgQueryError } = await supabase
+        const { data: orgData } = await supabase
           .from("organizations")
           .select("*")
           .eq("id", memberRow.org_id)
           .single();
-        console.log("Org query result:", orgData, orgQueryError);
 
         setOrg(orgData || null);
-        console.log("Auth context:", { userId: currentUser.id, orgId: memberRow.org_id, role: memberRow.role, isPlatformAdmin: !!adminRow });
       } else {
         // Check if there's a pending invitation for this user's email
         const userEmail = currentUser.email?.toLowerCase();

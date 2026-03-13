@@ -47,19 +47,27 @@ function LoginContent() {
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
 
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) router.replace('/dashboard')
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) router.replace('/dashboard')
+    })
+    return () => subscription.unsubscribe()
+  }, [router])
+
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true)
     setError('')
     const callbackUrl = inviteToken
       ? `https://splitscrm.com/auth/callback?next=/invite/${inviteToken}`
       : 'https://splitscrm.com/auth/callback?next=/dashboard'
-    const { data, error } = await supabase.auth.signInWithOAuth({
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: callbackUrl }
     })
-    console.log('OAuth response:', JSON.stringify({ data, error }))
     if (error) {
-      console.error('OAuth error:', error)
       setError(error.message)
       setGoogleLoading(false)
     }
