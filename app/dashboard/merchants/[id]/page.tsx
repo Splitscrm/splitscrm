@@ -262,6 +262,17 @@ export default function MerchantDetailPage() {
     fetchMerchant()
   }, [params.id, authLoading])
 
+  // Fire-and-forget: sync calculated residual metrics back to merchant record
+  useEffect(() => {
+    if (!merchant?.id || !residualFetched || residualRecords.length === 0) return
+    const updates: Record<string, number> = {}
+    if (calcLastMonthResidual != null) updates.last_month_residual = Math.round(calcLastMonthResidual * 100) / 100
+    if (calcAvgResidual != null) updates.average_residual = Math.round(calcAvgResidual * 100) / 100
+    if (Object.keys(updates).length > 0) {
+      supabase.from('merchants').update(updates).eq('id', merchant.id).then(() => {})
+    }
+  }, [merchant?.id, residualFetched, residualRecords.length])
+
   const fetchTasks = useCallback(async () => {
     const { data: taskData } = await supabase.from('tasks').select('id, title, due_date, priority, status').eq('merchant_id', params.id).eq('status', 'pending').order('due_date', { ascending: true })
     if (taskData) setMerchantTasks(taskData)
@@ -354,6 +365,27 @@ export default function MerchantDetailPage() {
   const residualAvg = allMonthNets.length > 0 ? allMonthNets.reduce((a, b) => a + b, 0) / allMonthNets.length : 0
   const residualTotal = allMonthNets.reduce((a, b) => a + b, 0)
   const chartMax = chartData.length > 0 ? Math.max(...chartData.map(d => Math.abs(d.net)), 1) : 1
+
+  // Compute snapshot metrics from residual data
+  const hasResidualData = residualFetched && residualMonthKeys.length > 0
+  const latestMonthKey = hasResidualData ? residualMonthKeys[residualMonthKeys.length - 1] : null
+  const latestMonthRecs = latestMonthKey ? residualByMonth[latestMonthKey] : []
+
+  const calcLastMonthResidual = hasResidualData
+    ? latestMonthRecs.reduce((s: number, r: any) => s + (r.gross_income || 0), 0) - latestMonthRecs.reduce((s: number, r: any) => s + (r.total_expenses || 0), 0)
+    : null
+  const calcAvgResidual = hasResidualData ? residualAvg : null
+  const calcMonthlyVolume = hasResidualData
+    ? latestMonthRecs.reduce((s: number, r: any) => s + (r.sales_amount || 0), 0)
+    : null
+
+  // Snapshot display values
+  const snapshotVolume = merchant.monthly_volume ? parseFloat(merchant.monthly_volume) : (calcMonthlyVolume || null)
+  const snapshotVolumeFromResiduals = !merchant.monthly_volume && calcMonthlyVolume != null
+  const snapshotLastResidual = calcLastMonthResidual != null ? calcLastMonthResidual : (merchant.last_month_residual != null ? parseFloat(merchant.last_month_residual) : null)
+  const snapshotLastResidualFromResiduals = calcLastMonthResidual != null
+  const snapshotAvgResidual = calcAvgResidual != null ? calcAvgResidual : (merchant.average_residual != null ? parseFloat(merchant.average_residual) : null)
+  const snapshotAvgResidualFromResiduals = calcAvgResidual != null
 
   const fmtShortMonth = (key: string) => {
     if (key === 'Unknown') return '?'
@@ -451,20 +483,23 @@ export default function MerchantDetailPage() {
             <div>
               <p className="text-xs text-slate-500">Monthly Volume</p>
               <p className="text-lg font-semibold text-slate-900">
-                {merchant.monthly_volume ? fmtDollar(parseFloat(merchant.monthly_volume)) : '—'}
+                {snapshotVolume != null ? fmtDollar(snapshotVolume) : '—'}
               </p>
+              {snapshotVolumeFromResiduals && <p className="text-xs text-slate-400">📊 from residuals</p>}
             </div>
             <div>
               <p className="text-xs text-slate-500">Last Month Residual</p>
-              <p className={`text-lg font-semibold ${merchant.last_month_residual != null ? (parseFloat(merchant.last_month_residual) >= 0 ? 'text-emerald-600' : 'text-red-600') : 'text-slate-900'}`}>
-                {merchant.last_month_residual != null ? fmtDollar(parseFloat(merchant.last_month_residual)) : '—'}
+              <p className={`text-lg font-semibold ${snapshotLastResidual != null ? (snapshotLastResidual >= 0 ? 'text-emerald-600' : 'text-red-600') : 'text-slate-900'}`}>
+                {snapshotLastResidual != null ? fmtDollar(snapshotLastResidual) : '—'}
               </p>
+              {snapshotLastResidualFromResiduals && <p className="text-xs text-slate-400">📊 from residuals</p>}
             </div>
             <div>
               <p className="text-xs text-slate-500">Average Residual</p>
-              <p className={`text-lg font-semibold ${merchant.average_residual != null ? (parseFloat(merchant.average_residual) >= 0 ? 'text-emerald-600' : 'text-red-600') : 'text-slate-900'}`}>
-                {merchant.average_residual != null ? fmtDollar(parseFloat(merchant.average_residual)) : '—'}
+              <p className={`text-lg font-semibold ${snapshotAvgResidual != null ? (snapshotAvgResidual >= 0 ? 'text-emerald-600' : 'text-red-600') : 'text-slate-900'}`}>
+                {snapshotAvgResidual != null ? fmtDollar(snapshotAvgResidual) : '—'}
               </p>
+              {snapshotAvgResidualFromResiduals && <p className="text-xs text-slate-400">📊 from residuals</p>}
             </div>
             <div>
               <p className="text-xs text-slate-500">MIDs</p>
