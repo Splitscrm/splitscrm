@@ -95,6 +95,24 @@ export default function LeadDetailPage() {
         setLead(leadData);
         const { data: dealData } = await supabase.from("deals").select("*").eq("lead_id", leadData.id).single();
         if (dealData) {
+          // Migrate legacy single-item hardware/software fields to JSONB arrays
+          if (!dealData.hardware_items && (dealData.terminal_type || dealData.hardware_model || dealData.preferred_model)) {
+            dealData.hardware_items = [{
+              type: dealData.terminal_type || "",
+              model: dealData.preferred_model || dealData.hardware_model || "",
+              quantity: dealData.hardware_quantity || 1,
+              cost: dealData.terminal_cost || "",
+              free: dealData.free_hardware || "",
+            }];
+          }
+          if (!dealData.software_items && (dealData.gateway_name || dealData.gateway_api)) {
+            dealData.software_items = [{
+              name: dealData.gateway_name || "",
+              type: "gateway",
+              monthly_cost: dealData.fee_gateway_monthly || "",
+              per_txn: dealData.fee_gateway_txn || "",
+            }];
+          }
           setDeal(dealData);
           const { data: ownerData } = await supabase.from("deal_owners").select("*").eq("deal_id", dealData.id).order("created_at");
           if (ownerData) setOwners(ownerData);
@@ -235,8 +253,6 @@ export default function LeadDetailPage() {
         fee_arbitration: "fee_arbitration",
         fee_voice_auth: "fee_voice_auth",
         fee_ebt_auth: "fee_ebt_auth",
-        fee_gateway_monthly: "fee_gateway_monthly",
-        fee_gateway_txn: "fee_gateway_txn",
         fee_ach_reject: "fee_ach_reject",
         monthly_fee_statement: "monthly_fee_statement",
         monthly_fee_custom_name: "monthly_fee_custom_name",
@@ -254,6 +270,8 @@ export default function LeadDetailPage() {
       }
       if (dealData.free_hardware === "yes") merchantInsert.free_equipment = "yes";
       else if (dealData.free_hardware === "no") merchantInsert.free_equipment = "no";
+      if (dealData.hardware_items) merchantInsert.hardware_items = dealData.hardware_items;
+      if (dealData.software_items) merchantInsert.software_items = dealData.software_items;
     }
     // Auto-populate summary pricing fields
     if (merchantInsert.ic_plus_visa_pct) {
@@ -930,14 +948,12 @@ export default function LeadDetailPage() {
 
                 <div className={sectionClass}>
                   <h4 className="font-semibold mb-4 text-emerald-600">Misc Fees ($)</h4>
-                  <div className="grid grid-cols-4 gap-4">
+                  <div className="grid grid-cols-3 lg:grid-cols-6 gap-4">
                     <div><label className={labelClass}>Chargebacks</label><input type="number" step="0.01" value={deal.fee_chargeback || ""} onChange={(e) => updateDealField("fee_chargeback", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>Retrievals</label><input type="number" step="0.01" value={deal.fee_retrieval || ""} onChange={(e) => updateDealField("fee_retrieval", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>Arbitration</label><input type="number" step="0.01" value={deal.fee_arbitration || ""} onChange={(e) => updateDealField("fee_arbitration", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>Voice Auths</label><input type="number" step="0.01" value={deal.fee_voice_auth || ""} onChange={(e) => updateDealField("fee_voice_auth", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>EBT Auths</label><input type="number" step="0.01" value={deal.fee_ebt_auth || ""} onChange={(e) => updateDealField("fee_ebt_auth", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Gateway Monthly</label><input type="number" step="0.01" value={deal.fee_gateway_monthly || ""} onChange={(e) => updateDealField("fee_gateway_monthly", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Gateway Per Txn</label><input type="number" step="0.01" value={deal.fee_gateway_txn || ""} onChange={(e) => updateDealField("fee_gateway_txn", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>ACH Reject</label><input type="number" step="0.01" value={deal.fee_ach_reject || ""} onChange={(e) => updateDealField("fee_ach_reject", e.target.value)} className={inputClass} /></div>
                   </div>
                 </div>
@@ -982,33 +998,123 @@ export default function LeadDetailPage() {
                 </div>
 
                 <div className={sectionClass}>
-                  <h4 className="font-semibold mb-4 text-emerald-600">Hardware & Software</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-                    <div>
-                      <label className={labelClass}>Hardware Needed</label>
-                      <select value={deal.terminal_type || ""} onChange={(e) => updateDealField("terminal_type", e.target.value)} className={inputClass}>
-                        <option value="">Select...</option>
-                        <option value="terminal">Terminal</option>
-                        <option value="mobile_reader">Mobile Reader</option>
-                        <option value="pos_system">POS System</option>
-                        <option value="pin_pad">Pin Pad</option>
-                        <option value="printer">Printer</option>
-                        <option value="other">Other</option>
-                      </select>
+                  <h4 className="font-semibold mb-4 text-emerald-600">Hardware</h4>
+                  {(deal.hardware_items || []).map((item: any, idx: number) => (
+                    <div key={idx} className="bg-slate-50 rounded-lg p-4 mb-3 border border-slate-200">
+                      <div className="flex justify-between items-center mb-3">
+                        <span className="text-sm font-medium text-slate-700">Hardware {idx + 1}</span>
+                        <button onClick={() => {
+                          const items = [...(deal.hardware_items || [])];
+                          items.splice(idx, 1);
+                          updateDealField("hardware_items", items);
+                        }} className="text-red-400 hover:text-red-500 text-xs">Remove</button>
+                      </div>
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+                        <div>
+                          <label className={labelClass}>Type</label>
+                          <select value={item.type || ""} onChange={(e) => {
+                            const items = [...(deal.hardware_items || [])];
+                            items[idx] = { ...items[idx], type: e.target.value };
+                            updateDealField("hardware_items", items);
+                          }} className={inputClass}>
+                            <option value="">Select...</option>
+                            <option value="terminal">Terminal</option>
+                            <option value="mobile_reader">Mobile Reader</option>
+                            <option value="pos_system">POS System</option>
+                            <option value="pin_pad">Pin Pad</option>
+                            <option value="printer">Printer</option>
+                            <option value="other">Other</option>
+                          </select>
+                        </div>
+                        <div><label className={labelClass}>Model</label><input type="text" value={item.model || ""} onChange={(e) => {
+                          const items = [...(deal.hardware_items || [])];
+                          items[idx] = { ...items[idx], model: e.target.value };
+                          updateDealField("hardware_items", items);
+                        }} className={inputClass} placeholder="e.g. Dejavoo QD4" /></div>
+                        <div><label className={labelClass}>Quantity</label><input type="number" min="1" value={item.quantity || 1} onChange={(e) => {
+                          const items = [...(deal.hardware_items || [])];
+                          items[idx] = { ...items[idx], quantity: parseInt(e.target.value) || 1 };
+                          updateDealField("hardware_items", items);
+                        }} className={inputClass} /></div>
+                        <div><label className={labelClass}>Cost ($)</label><input type="number" step="0.01" value={item.cost || ""} onChange={(e) => {
+                          const items = [...(deal.hardware_items || [])];
+                          items[idx] = { ...items[idx], cost: e.target.value };
+                          updateDealField("hardware_items", items);
+                        }} className={inputClass} /></div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className={labelClass}>Free Placement</label>
+                          <select value={item.free || ""} onChange={(e) => {
+                            const items = [...(deal.hardware_items || [])];
+                            items[idx] = { ...items[idx], free: e.target.value };
+                            updateDealField("hardware_items", items);
+                          }} className={inputClass}>
+                            <option value="">Select...</option>
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                          </select>
+                        </div>
+                      </div>
                     </div>
-                    <div><label className={labelClass}>Preferred Model</label><input type="text" value={deal.preferred_model || ""} onChange={(e) => updateDealField("preferred_model", e.target.value)} className={inputClass} placeholder="e.g. Dejavoo QD4" /></div>
-                    <div><label className={labelClass}>Hardware Model</label><input type="text" value={deal.hardware_model || ""} onChange={(e) => updateDealField("hardware_model", e.target.value)} className={inputClass} /></div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-                    <div><label className={labelClass}>Quantity</label><input type="number" min="1" value={deal.hardware_quantity || 1} onChange={(e) => updateDealField("hardware_quantity", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Free Hardware?</label><select value={deal.free_hardware || ""} onChange={(e) => updateDealField("free_hardware", e.target.value)} className={inputClass}><option value="">Select...</option><option value="yes">Yes</option><option value="no">No</option></select></div>
-                    <div><label className={labelClass}>Estimated Cost ($)</label><input type="number" step="0.01" value={deal.terminal_cost || ""} onChange={(e) => updateDealField("terminal_cost", e.target.value)} className={inputClass} /></div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div><label className={labelClass}>Gateway Name</label><input type="text" value={deal.gateway_name || ""} onChange={(e) => updateDealField("gateway_name", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Gateway API</label><input type="text" value={deal.gateway_api || ""} onChange={(e) => updateDealField("gateway_api", e.target.value)} className={inputClass} /></div>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-3">Hardware availability and pricing will be confirmed when submitting to a partner.</p>
+                  ))}
+                  <button onClick={() => {
+                    const items = [...(deal.hardware_items || [])];
+                    items.push({ type: "", model: "", quantity: 1, cost: "", free: "" });
+                    updateDealField("hardware_items", items);
+                  }} className="text-emerald-600 hover:text-emerald-700 text-sm font-medium">+ Add Hardware Item</button>
+                </div>
+
+                <div className={sectionClass}>
+                  <h4 className="font-semibold mb-4 text-emerald-600">Software / Gateways</h4>
+                  {(deal.software_items || []).map((item: any, idx: number) => (
+                    <div key={idx} className="bg-slate-50 rounded-lg p-4 mb-3 border border-slate-200">
+                      <div className="flex justify-between items-center mb-3">
+                        <span className="text-sm font-medium text-slate-700">Software {idx + 1}</span>
+                        <button onClick={() => {
+                          const items = [...(deal.software_items || [])];
+                          items.splice(idx, 1);
+                          updateDealField("software_items", items);
+                        }} className="text-red-400 hover:text-red-500 text-xs">Remove</button>
+                      </div>
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div><label className={labelClass}>Name</label><input type="text" value={item.name || ""} onChange={(e) => {
+                          const items = [...(deal.software_items || [])];
+                          items[idx] = { ...items[idx], name: e.target.value };
+                          updateDealField("software_items", items);
+                        }} className={inputClass} placeholder="e.g. Authorize.net" /></div>
+                        <div>
+                          <label className={labelClass}>Type</label>
+                          <select value={item.type || ""} onChange={(e) => {
+                            const items = [...(deal.software_items || [])];
+                            items[idx] = { ...items[idx], type: e.target.value };
+                            updateDealField("software_items", items);
+                          }} className={inputClass}>
+                            <option value="">Select...</option>
+                            <option value="gateway">Gateway</option>
+                            <option value="pos">POS</option>
+                            <option value="plugin">Plugin</option>
+                            <option value="virtual_terminal">Virtual Terminal</option>
+                          </select>
+                        </div>
+                        <div><label className={labelClass}>Monthly ($)</label><input type="number" step="0.01" value={item.monthly_cost || ""} onChange={(e) => {
+                          const items = [...(deal.software_items || [])];
+                          items[idx] = { ...items[idx], monthly_cost: e.target.value };
+                          updateDealField("software_items", items);
+                        }} className={inputClass} /></div>
+                        <div><label className={labelClass}>Per Txn ($)</label><input type="number" step="0.01" value={item.per_txn || ""} onChange={(e) => {
+                          const items = [...(deal.software_items || [])];
+                          items[idx] = { ...items[idx], per_txn: e.target.value };
+                          updateDealField("software_items", items);
+                        }} className={inputClass} /></div>
+                      </div>
+                    </div>
+                  ))}
+                  <button onClick={() => {
+                    const items = [...(deal.software_items || [])];
+                    items.push({ name: "", type: "", monthly_cost: "", per_txn: "" });
+                    updateDealField("software_items", items);
+                  }} className="text-emerald-600 hover:text-emerald-700 text-sm font-medium">+ Add Software Item</button>
                 </div>
 
                 <div className={sectionClass}>

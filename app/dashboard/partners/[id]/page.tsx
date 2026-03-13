@@ -29,6 +29,7 @@ export default function PartnerDetailPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [activeTab, setActiveTab] = useState("banks");
+  const [swExtracting, setSwExtracting] = useState(false);
 
   const tabs = [
     { key: "banks", label: "Sponsor Banks" },
@@ -421,11 +422,23 @@ export default function PartnerDetailPage() {
                     <button onClick={() => removeHw(idx)} className="text-red-400 hover:text-red-300 text-xs">Remove</button>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div><label className={labelClass}>Hardware Type</label><select value={h.hardware_type || ""} onChange={(e) => updateHw(idx, "hardware_type", e.target.value)} className={inputClass}><option value="">Select...</option><option value="terminal">Terminal</option><option value="mobile_reader">Mobile Reader</option><option value="pos">POS</option></select></div>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-3">
+                  <div><label className={labelClass}>Hardware Type</label><select value={h.hardware_type || ""} onChange={(e) => updateHw(idx, "hardware_type", e.target.value)} className={inputClass}><option value="">Select...</option><option value="terminal">Terminal</option><option value="mobile_reader">Mobile Reader</option><option value="pos">POS System</option><option value="pin_pad">Pin Pad</option><option value="printer">Printer</option><option value="other">Other</option></select></div>
                   <div><label className={labelClass}>Hardware Name</label><input type="text" value={h.hardware_name || ""} onChange={(e) => updateHw(idx, "hardware_name", e.target.value)} className={inputClass} placeholder="e.g. Dejavoo QD4" /></div>
+                  <div><label className={labelClass}>Manufacturer</label><input type="text" value={h.manufacturer || ""} onChange={(e) => updateHw(idx, "manufacturer", e.target.value)} className={inputClass} placeholder="e.g. Dejavoo, PAX" /></div>
                   <div><label className={labelClass}>Model</label><input type="text" value={h.model || ""} onChange={(e) => updateHw(idx, "model", e.target.value)} className={inputClass} /></div>
-                  <div><label className={labelClass}>Cost ($)</label><input type="number" step="0.01" value={h.cost || ""} onChange={(e) => updateHw(idx, "cost", e.target.value)} className={inputClass} /></div>
+                </div>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div><label className={labelClass}>Partner Cost ($)</label><input type="number" step="0.01" value={h.cost || ""} onChange={(e) => updateHw(idx, "cost", e.target.value)} className={inputClass} /></div>
+                  <div><label className={labelClass}>MSRP ($)</label><input type="number" step="0.01" value={h.msrp || ""} onChange={(e) => updateHw(idx, "msrp", e.target.value)} className={inputClass} /></div>
+                  <div>
+                    <label className={labelClass}>Free Placement</label>
+                    <select value={h.free_placement || ""} onChange={(e) => updateHw(idx, "free_placement", e.target.value)} className={inputClass}>
+                      <option value="">Select...</option>
+                      <option value="yes">Yes</option>
+                      <option value="no">No</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             ))}
@@ -436,9 +449,52 @@ export default function PartnerDetailPage() {
           <div>
             <div className="flex justify-between items-center mb-4">
               <h4 className="font-semibold text-emerald-600">Software Options</h4>
-              <button onClick={addSoftware} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs transition">+ Add Software</button>
+              <div className="flex gap-2">
+                <label className="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg px-3 py-1 text-xs font-medium cursor-pointer transition">
+                  {swExtracting ? "Extracting..." : "Upload PDF"}
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    className="hidden"
+                    disabled={swExtracting}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setSwExtracting(true);
+                      try {
+                        const formData = new FormData();
+                        formData.append("pdf", file);
+                        const res = await fetch("/api/extract-software", { method: "POST", body: formData });
+                        const data = await res.json();
+                        if (data.software && Array.isArray(data.software)) {
+                          for (const sw of data.software) {
+                            const { data: inserted } = await supabase.from("partner_software").insert({
+                              partner_id: partner.id,
+                              software_name: sw.software_name || "",
+                              software_type: sw.software_type || "",
+                              manufacturer: sw.manufacturer || "",
+                              monthly_cost: sw.monthly_cost || null,
+                              per_transaction_cost: sw.per_transaction_cost || null,
+                              notes: sw.notes || "",
+                            }).select().single();
+                            if (inserted) setSoftware((prev) => [...prev, inserted]);
+                          }
+                          showMsg(`${data.software.length} software item(s) extracted!`);
+                        } else {
+                          showMsg("Could not extract software from PDF.");
+                        }
+                      } catch {
+                        showMsg("PDF extraction failed.");
+                      }
+                      setSwExtracting(false);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                <button onClick={addSoftware} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs transition">+ Add Software</button>
+              </div>
             </div>
-            {software.length === 0 && <p className="text-slate-500 text-sm">No software options added yet.</p>}
+            {software.length === 0 && <p className="text-slate-500 text-sm">No software options added yet. Upload a PDF or add manually.</p>}
             {software.map((s, idx) => (
               <div key={s.id} className={cardClass}>
                 <div className="flex justify-between items-center mb-3">
@@ -448,11 +504,15 @@ export default function PartnerDetailPage() {
                     <button onClick={() => removeSw(idx)} className="text-red-400 hover:text-red-300 text-xs">Remove</button>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-3">
                   <div><label className={labelClass}>Software Name</label><input type="text" value={s.software_name || ""} onChange={(e) => updateSw(idx, "software_name", e.target.value)} className={inputClass} placeholder="e.g. Authorize.net" /></div>
-                  <div><label className={labelClass}>Type</label><select value={s.software_type || ""} onChange={(e) => updateSw(idx, "software_type", e.target.value)} className={inputClass}><option value="">Select...</option><option value="gateway">Gateway</option><option value="pos">POS</option><option value="plugin">Plugin</option></select></div>
+                  <div><label className={labelClass}>Type</label><select value={s.software_type || ""} onChange={(e) => updateSw(idx, "software_type", e.target.value)} className={inputClass}><option value="">Select...</option><option value="gateway">Gateway</option><option value="pos">POS</option><option value="plugin">Plugin</option><option value="integration">Integration</option><option value="virtual_terminal">Virtual Terminal</option><option value="reporting">Reporting</option></select></div>
+                  <div><label className={labelClass}>Manufacturer</label><input type="text" value={s.manufacturer || ""} onChange={(e) => updateSw(idx, "manufacturer", e.target.value)} className={inputClass} placeholder="e.g. Authorize.net" /></div>
                   <div><label className={labelClass}>Monthly Cost ($)</label><input type="number" step="0.01" value={s.monthly_cost || ""} onChange={(e) => updateSw(idx, "monthly_cost", e.target.value)} className={inputClass} /></div>
+                </div>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   <div><label className={labelClass}>Per Transaction ($)</label><input type="number" step="0.01" value={s.per_transaction_cost || ""} onChange={(e) => updateSw(idx, "per_transaction_cost", e.target.value)} className={inputClass} /></div>
+                  <div className="col-span-2 lg:col-span-3"><label className={labelClass}>Notes</label><input type="text" value={s.notes || ""} onChange={(e) => updateSw(idx, "notes", e.target.value)} className={inputClass} placeholder="Features, restrictions, etc." /></div>
                 </div>
               </div>
             ))}

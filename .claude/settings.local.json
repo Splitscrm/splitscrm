@@ -106,7 +106,13 @@
       "Bash(find .next/static -name \"*.css\" 2>/dev/null | head -5)",
       "Bash(grep -n -A 5 \"cp_pct\\\\|cnp_pct\\\\|CP %\\\\|CNP %\\\\|Card Present\" app/dashboard/leads/\\\\[id\\\\]/page.tsx | head -60)",
       "Bash(grep -L \"import.*Link.*from.*next/link\" /c/Users/ealvr/isocrm/app/dashboard/**/*.tsx /c/Users/ealvr/isocrm/app/dashboard/page.tsx /c/Users/ealvr/isocrm/app/dashboard/statements/page.tsx /c/Users/ealvr/isocrm/app/dashboard/residuals/page.tsx 2>/dev/null | head -20)",
-      "Bash(grep -n -A 80 \"const convertToMerchant\" app/dashboard/leads/\\\\[id\\\\]/page.tsx | head -100)"
+      "Bash(grep -n -A 80 \"const convertToMerchant\" app/dashboard/leads/\\\\[id\\\\]/page.tsx | head -100)",
+      "Bash(grep -n \"Hardware & Software\" /c/Users/ealvr/isocrm/app/dashboard/leads/[id]/page.tsx | head -5)",
+      "Bash(grep -n \"fee_gateway_monthly\\\\|fee_gateway_txn\" /c/Users/ealvr/isocrm/app/dashboard/leads/[id]/page.tsx | head -10)",
+      "Bash(grep -n \"saveDeal\\\\|convertToMerchant\" /c/Users/ealvr/isocrm/app/dashboard/leads/[id]/page.tsx | head -10)",
+      "Bash(grep -n \"Contract & Equipment\\\\|contract\\\\|equipment\" /c/Users/ealvr/isocrm/app/dashboard/merchants/[id]/page.tsx | head -15)",
+      "Bash(grep -n \"fee_gateway\\\\|gateway_monthly\\\\|gateway_txn\" /c/Users/ealvr/isocrm/app/dashboard/merchants/[id]/page.tsx | head -10)",
+      "Bash(grep -n \"Pricing & Fees\" /c/Users/ealvr/isocrm/app/dashboard/merchants/[id]/page.tsx)"
     ]
   }
 }

@@ -859,18 +859,10 @@ export default function MerchantDetailPage() {
                         <input type="number" step="0.01" value={merchant.fee_voice_auth ?? ''} onChange={(e) => updateField('fee_voice_auth', e.target.value ? parseFloat(e.target.value) : null)} className={inputClass} />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
                       <div>
                         <label className={labelClass}>EBT Auths</label>
                         <input type="number" step="0.01" value={merchant.fee_ebt_auth ?? ''} onChange={(e) => updateField('fee_ebt_auth', e.target.value ? parseFloat(e.target.value) : null)} className={inputClass} />
-                      </div>
-                      <div>
-                        <label className={labelClass}>Gateway Monthly</label>
-                        <input type="number" step="0.01" value={merchant.fee_gateway_monthly ?? ''} onChange={(e) => updateField('fee_gateway_monthly', e.target.value ? parseFloat(e.target.value) : null)} className={inputClass} />
-                      </div>
-                      <div>
-                        <label className={labelClass}>Gateway Per Txn</label>
-                        <input type="number" step="0.01" value={merchant.fee_gateway_txn ?? ''} onChange={(e) => updateField('fee_gateway_txn', e.target.value ? parseFloat(e.target.value) : null)} className={inputClass} />
                       </div>
                       <div>
                         <label className={labelClass}>ACH Reject</label>
@@ -980,6 +972,51 @@ export default function MerchantDetailPage() {
                       <option value="no">No</option>
                     </select>
                   </div>
+
+                  {/* Hardware Items from Deal */}
+                  {merchant.hardware_items && Array.isArray(merchant.hardware_items) && merchant.hardware_items.length > 0 && (
+                    <div className="mt-6 pt-6 border-t border-slate-200">
+                      <h4 className="text-sm font-semibold text-slate-700 mb-3">Hardware Items</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {merchant.hardware_items.map((item: any, idx: number) => (
+                          <div key={idx} className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <p className="text-sm font-medium text-slate-900 capitalize">{item.type?.replace('_', ' ') || 'Hardware'}</p>
+                                {item.model && <p className="text-xs text-slate-500">{item.model}</p>}
+                              </div>
+                              <div className="text-right">
+                                {item.quantity && <span className="text-xs text-slate-500">Qty: {item.quantity}</span>}
+                              </div>
+                            </div>
+                            <div className="flex gap-4 mt-2 text-xs text-slate-500">
+                              {item.cost && <span>Cost: ${item.cost}</span>}
+                              {item.free === 'yes' && <span className="text-emerald-600 font-medium">Free Placement</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Software Items from Deal */}
+                  {merchant.software_items && Array.isArray(merchant.software_items) && merchant.software_items.length > 0 && (
+                    <div className="mt-6 pt-6 border-t border-slate-200">
+                      <h4 className="text-sm font-semibold text-slate-700 mb-3">Software / Gateways</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {merchant.software_items.map((item: any, idx: number) => (
+                          <div key={idx} className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                            <p className="text-sm font-medium text-slate-900">{item.name || 'Software'}</p>
+                            {item.type && <p className="text-xs text-slate-500 capitalize">{item.type.replace('_', ' ')}</p>}
+                            <div className="flex gap-4 mt-2 text-xs text-slate-500">
+                              {item.monthly_cost && <span>${item.monthly_cost}/mo</span>}
+                              {item.per_txn && <span>${item.per_txn}/txn</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
