@@ -504,7 +504,7 @@ export default function Dashboard() {
       <div className="lg:ml-64 p-4 lg:p-8 pt-16 lg:pt-8">
         {/* Header */}
         <div className="mb-6">
-          <h2 className="text-xl lg:text-2xl font-bold">Welcome back 👋</h2>
+          <h2 className="text-xl lg:text-2xl font-bold">Welcome back</h2>
           <p className="text-slate-500 mt-1">{user?.email}</p>
         </div>
 
@@ -608,7 +608,7 @@ export default function Dashboard() {
               )}
               {isOwnerOrManager && (
                 <a href="/dashboard/statements" className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">
-                  📄 Analyze Statement
+                  Analyze Statement
                 </a>
               )}
             </div>

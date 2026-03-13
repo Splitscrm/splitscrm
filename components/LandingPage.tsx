@@ -35,22 +35,22 @@ const processors = ['Fiserv', 'TSYS', 'Worldpay', 'Payarc', 'Paysafe', 'Elavon',
 
 const features = [
   {
-    emoji: '🧠',
+    icon: <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 4v12m0 0l-4-4m4 4l4-4" /></svg>,
     title: 'AI-Powered Residual Import',
     desc: 'Upload CSV or Excel files from any processor. AI auto-detects columns, maps fields, and normalizes data — no manual drag-and-drop mapping. Learns your processor\'s format and remembers it forever.',
   },
   {
-    emoji: '📄',
+    icon: <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
     title: 'Smart Pricing Extraction',
     desc: 'Upload any partner\'s pricing schedule PDF. AI extracts every rate, fee, and revenue share structure into organized, searchable data in seconds. No more flipping through PDFs during prospect calls.',
   },
   {
-    emoji: '🎯',
+    icon: <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M5 8h14M7 12h10M9 16h6" /></svg>,
     title: 'Full Pipeline Management',
     desc: 'Track every lead from first contact to live merchant. 10-stage pipeline, automated deal creation, document management, and one-click conversion to merchant accounts.',
   },
   {
-    emoji: '📊',
+    icon: <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>,
     title: 'Portfolio Dashboard',
     desc: 'See your entire business at a glance. Active merchants, pipeline value, processing volume by processor, chargeback alerts, and upcoming follow-ups — all in real time.',
   },
@@ -284,7 +284,7 @@ export default function LandingPage() {
             {features.map((f) => (
               <div key={f.title} className="bg-white rounded-xl p-6 lg:p-8 border border-slate-200 shadow-sm hover:shadow-md hover:border-emerald-200 transition duration-150">
                 <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center mb-4">
-                  <span className="text-2xl">{f.emoji}</span>
+                  {f.icon}
                 </div>
                 <h3 className="text-2xl font-semibold text-slate-900 mb-2">{f.title}</h3>
                 <p className="text-base text-slate-500 leading-relaxed">{f.desc}</p>
