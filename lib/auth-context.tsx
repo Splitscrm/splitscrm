@@ -271,6 +271,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (permission: string): boolean => {
       if (isPlatformAdmin) return true;
       if (!member?.role) return false;
+      // Check per-user permission overrides first
+      if (member.permissions && permission in member.permissions) {
+        return member.permissions[permission];
+      }
+      // Fall back to role defaults
       const perms = ROLE_PERMISSIONS[member.role];
       return perms ? perms.includes(permission) : false;
     },

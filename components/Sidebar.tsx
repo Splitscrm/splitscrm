@@ -54,7 +54,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { org, member, hasPermission, loading: authLoading } = useAuth();
+  const { org, member, hasPermission, isPlatformAdmin, loading: authLoading } = useAuth();
 
   const isActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
@@ -136,6 +136,21 @@ export default function Sidebar() {
             {item.label}
           </Link>
         ))}
+        {isPlatformAdmin && (
+          <Link
+            href="/dashboard/admin"
+            prefetch={true}
+            onClick={() => setMobileOpen(false)}
+            className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-base transition-colors duration-150 mt-4 border-t border-white/10 pt-4 ${
+              isActive("/dashboard/admin")
+                ? "text-red-300 bg-white/10 font-medium"
+                : "text-red-400 hover:text-red-300 hover:bg-white/5"
+            }`}
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
+            Admin
+          </Link>
+        )}
       </nav>
       <button
         onClick={handleSignOut}
