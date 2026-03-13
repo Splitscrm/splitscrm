@@ -35,6 +35,11 @@ export default function PartnerDetailPage() {
   const [swExtracting, setSwExtracting] = useState(false);
   const [swPreview, setSwPreview] = useState<any[] | null>(null);
   const [swSelected, setSwSelected] = useState<Set<number>>(new Set());
+  const [agreements, setAgreements] = useState<any[]>([]);
+  const [agreementsFetched, setAgreementsFetched] = useState(false);
+  const [agreementUploading, setAgreementUploading] = useState(false);
+  const [agreementPending, setAgreementPending] = useState<{ file_name: string; file_url: string; storage_path: string } | null>(null);
+  const [agreementForm, setAgreementForm] = useState({ agreement_type: "", description: "" });
 
   const tabs = [
     { key: "banks", label: "Sponsor Banks" },
@@ -43,6 +48,7 @@ export default function PartnerDetailPage() {
     { key: "underwriting", label: "Underwriting" },
     { key: "pricing", label: "Pricing" },
     { key: "merchants", label: "Merchants" },
+    { key: "agreements", label: "Agreements" },
   ];
 
   useEffect(() => {
@@ -226,6 +232,17 @@ export default function PartnerDetailPage() {
     setMerchantsFetched(true);
   };
 
+  const fetchAgreements = async () => {
+    if (agreementsFetched || !partner) return;
+    const { data } = await supabase
+      .from("partner_agreements")
+      .select("*")
+      .eq("partner_id", partner.id)
+      .order("uploaded_at", { ascending: false });
+    if (data) setAgreements(data);
+    setAgreementsFetched(true);
+  };
+
   const inputClass = "w-full bg-white text-slate-900 px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-base";
   const labelClass = "text-base text-slate-500 block mb-1";
   const cardClass = "bg-white rounded-xl p-6 border border-slate-200 shadow-sm mb-4";
@@ -297,9 +314,9 @@ export default function PartnerDetailPage() {
 
         <div className="flex flex-nowrap gap-2 mb-6 border-b border-slate-200 pb-2 overflow-x-auto">
           {tabs.map((t) => {
-            const count = t.key === "banks" ? banks.length : t.key === "hardware" ? hardware.length : t.key === "software" ? software.length : t.key === "underwriting" ? underwriting.length : t.key === "merchants" ? partnerMerchants.length : pricing.length;
+            const count = t.key === "banks" ? banks.length : t.key === "hardware" ? hardware.length : t.key === "software" ? software.length : t.key === "underwriting" ? underwriting.length : t.key === "merchants" ? partnerMerchants.length : t.key === "agreements" ? agreements.length : pricing.length;
             return (
-              <button key={t.key} onClick={() => { setActiveTab(t.key); if (t.key === "merchants") fetchMerchants(); }} className={`px-4 py-2 rounded-t-lg text-sm font-medium transition whitespace-nowrap ${activeTab === t.key ? "bg-white text-slate-900 border-b-2 border-emerald-500" : "text-slate-400 hover:text-slate-900"}`}>
+              <button key={t.key} onClick={() => { setActiveTab(t.key); if (t.key === "merchants") fetchMerchants(); if (t.key === "agreements") fetchAgreements(); }} className={`px-4 py-2 rounded-t-lg text-sm font-medium transition whitespace-nowrap ${activeTab === t.key ? "bg-white text-slate-900 border-b-2 border-emerald-500" : "text-slate-400 hover:text-slate-900"}`}>
                 {t.label} ({count})
               </button>
             );
@@ -891,6 +908,129 @@ export default function PartnerDetailPage() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {activeTab === "agreements" && (
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h4 className="text-base font-semibold text-slate-900">Agreements</h4>
+              <label className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition">
+                {agreementUploading ? "Uploading..." : "Upload Agreement"}
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,.png,.jpg"
+                  className="hidden"
+                  disabled={agreementUploading}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setAgreementUploading(true);
+                    try {
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (!user) { setAgreementUploading(false); return; }
+                      const timestamp = Date.now();
+                      const path = `${user.id}/${partner.id}/agreements/${timestamp}_${file.name}`;
+                      const { error: uploadError } = await supabase.storage.from("deal-documents").upload(path, file);
+                      if (uploadError) { showMsg("Upload failed."); setAgreementUploading(false); e.target.value = ""; return; }
+                      const { data: urlData } = supabase.storage.from("deal-documents").getPublicUrl(path);
+                      setAgreementPending({ file_name: file.name, file_url: urlData.publicUrl, storage_path: path });
+                      setAgreementForm({ agreement_type: "", description: "" });
+                    } catch {
+                      showMsg("Upload failed.");
+                    }
+                    setAgreementUploading(false);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+
+            {/* Agreement metadata modal */}
+            {agreementPending && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+                  <h3 className="font-semibold text-slate-900 mb-4">Agreement Details</h3>
+                  <p className="text-sm text-slate-500 mb-4">File: {agreementPending.file_name}</p>
+                  <div className="space-y-4">
+                    <div>
+                      <label className={labelClass}>Agreement Type *</label>
+                      <select value={agreementForm.agreement_type} onChange={(e) => setAgreementForm({ ...agreementForm, agreement_type: e.target.value })} className={inputClass}>
+                        <option value="">Select type...</option>
+                        <option value="ISO Agreement">ISO Agreement</option>
+                        <option value="Agent Agreement">Agent Agreement</option>
+                        <option value="Schedule A">Schedule A</option>
+                        <option value="Buy Rate Sheet">Buy Rate Sheet</option>
+                        <option value="Revenue Share Agreement">Revenue Share Agreement</option>
+                        <option value="NDA">NDA</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelClass}>Description</label>
+                      <input type="text" value={agreementForm.description} onChange={(e) => setAgreementForm({ ...agreementForm, description: e.target.value })} className={inputClass} placeholder="e.g., 2026 updated ISO agreement" />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-3 mt-6">
+                    <button onClick={async () => {
+                      if (agreementPending.storage_path) {
+                        await supabase.storage.from("deal-documents").remove([agreementPending.storage_path]);
+                      }
+                      setAgreementPending(null);
+                    }} className="text-slate-500 hover:text-slate-700 px-4 py-2 text-sm">Cancel</button>
+                    <button onClick={async () => {
+                      if (!agreementForm.agreement_type) { showMsg("Please select an agreement type."); return; }
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (!user) return;
+                      const { data: inserted } = await supabase.from("partner_agreements").insert({
+                        partner_id: partner.id,
+                        user_id: user.id,
+                        file_name: agreementPending.file_name,
+                        file_url: agreementPending.file_url,
+                        storage_path: agreementPending.storage_path,
+                        agreement_type: agreementForm.agreement_type,
+                        description: agreementForm.description || null,
+                      }).select().single();
+                      if (inserted) setAgreements((prev) => [inserted, ...prev]);
+                      setAgreementPending(null);
+                      showMsg("Agreement uploaded!");
+                    }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">Save Agreement</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {agreements.length === 0 ? (
+              <p className="text-sm text-slate-400">No agreements uploaded yet.</p>
+            ) : (
+              agreements.map((a) => (
+                <div key={a.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-3">
+                  <div className="flex justify-between items-center">
+                    <a href={a.file_url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-emerald-600 hover:text-emerald-700 truncate max-w-[60%]">
+                      {a.file_name}
+                    </a>
+                    <span className="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">{a.agreement_type}</span>
+                  </div>
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-xs text-slate-500">{a.description || "No description"}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-slate-400">
+                        {new Date(a.uploaded_at || a.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </span>
+                      <button onClick={async () => {
+                        if (!confirm("Remove this agreement?")) return;
+                        if (a.storage_path) {
+                          await supabase.storage.from("deal-documents").remove([a.storage_path]);
+                        }
+                        await supabase.from("partner_agreements").delete().eq("id", a.id);
+                        setAgreements((prev) => prev.filter((ag) => ag.id !== a.id));
+                        showMsg("Agreement removed.");
+                      }} className="text-red-400 hover:text-red-500 text-xs">Remove</button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         )}
       </div>
