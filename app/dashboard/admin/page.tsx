@@ -252,7 +252,6 @@ export default function AdminPage() {
   };
 
   const fetchInvitations = async () => {
-    if (invitationsFetched) return;
     const { data } = await supabase.from("org_invitations").select("*").order("created_at", { ascending: false });
     if (data) {
       const { data: orgData } = await supabase.from("organizations").select("id, name");
