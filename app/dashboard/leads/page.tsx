@@ -86,6 +86,11 @@ export default function LeadsPage() {
   const role = member?.role || ''
   const isOwnerOrManager = role === 'owner' || role === 'manager'
 
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+
   // Preview panel state
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null)
   const [selectedLead, setSelectedLead] = useState<any>(null)
@@ -134,6 +139,51 @@ export default function LeadsPage() {
     if (selectedLeadId === id) closePreview()
     fetchLeads()
   }
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filtered.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(filtered.map((l) => l.id)))
+    }
+  }
+
+  const bulkDelete = async () => {
+    setBulkDeleting(true)
+    const ids = Array.from(selectedIds)
+    // Delete related data first, then leads
+    // Get deal ids for selected leads
+    const { data: deals } = await supabase.from('deals').select('id').in('lead_id', ids)
+    const dealIds = (deals || []).map((d: any) => d.id)
+    if (dealIds.length > 0) {
+      await supabase.from('deal_owners').delete().in('deal_id', dealIds)
+      await supabase.from('deal_documents').delete().in('deal_id', dealIds)
+      await supabase.from('deals').delete().in('lead_id', ids)
+    }
+    await supabase.from('communications').delete().in('lead_id', ids)
+    await supabase.from('activity_log').delete().in('lead_id', ids)
+    await supabase.from('tasks').delete().in('lead_id', ids)
+    await supabase.from('leads').delete().in('id', ids)
+    if (selectedLeadId && ids.includes(selectedLeadId)) closePreview()
+    setSelectedIds(new Set())
+    setShowBulkDeleteModal(false)
+    setBulkDeleting(false)
+    fetchLeads()
+  }
+
+  // Clear selection when filters change
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [search, statusFilter, sort])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -293,6 +343,16 @@ export default function LeadsPage() {
           <ExportCSV data={filtered} filename="leads-export" columns={LEAD_EXPORT_COLUMNS} />
         </div>
 
+        {selectedIds.size > 0 && (
+          <div className="bg-white rounded-xl border border-emerald-200 shadow-sm p-3 mb-4 flex items-center justify-between">
+            <span className="text-sm font-medium text-slate-700">{selectedIds.size} selected</span>
+            <div className="flex items-center gap-3">
+              <button onClick={() => setSelectedIds(new Set())} className="text-sm text-slate-500 hover:text-slate-700 transition">Clear</button>
+              <button onClick={() => setShowBulkDeleteModal(true)} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">Delete Selected</button>
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <p className="text-slate-500">Loading...</p>
         ) : filtered.length === 0 ? (
@@ -311,6 +371,14 @@ export default function LeadsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
+                  <th className="px-3 py-4 w-10">
+                    <input
+                      type="checkbox"
+                      checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                    />
+                  </th>
                   <th className="text-left px-6 py-4 text-slate-500 text-base font-medium">Business</th>
                   <th className="text-left px-6 py-4 text-slate-500 text-base font-medium">Contact</th>
                   <th className="text-left px-6 py-4 text-slate-500 text-base font-medium">Volume/mo</th>
@@ -322,7 +390,15 @@ export default function LeadsPage() {
               </thead>
               <tbody>
                 {filtered.map((lead) => (
-                  <tr key={lead.id} onClick={() => openPreview(lead)} onMouseEnter={() => router.prefetch(`/dashboard/leads/${lead.id}`)} className="border-b border-slate-100 hover:bg-slate-50 transition cursor-pointer">
+                  <tr key={lead.id} onClick={() => openPreview(lead)} onMouseEnter={() => router.prefetch(`/dashboard/leads/${lead.id}`)} className={`border-b border-slate-100 hover:bg-slate-50 transition cursor-pointer ${selectedIds.has(lead.id) ? 'bg-emerald-50/50' : ''}`}>
+                    <td className="px-3 py-4 w-10" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(lead.id)}
+                        onChange={() => toggleSelect(lead.id)}
+                        className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                      />
+                    </td>
                     <td className="px-6 py-4">
                       <p className="font-medium text-base">{lead.business_name}</p>
                       <p className="text-slate-500 text-sm">{lead.email}</p>
@@ -515,6 +591,20 @@ export default function LeadsPage() {
           leadId={selectedLead.id}
           linkedEntityName={selectedLead.business_name}
         />
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {showBulkDeleteModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Delete {selectedIds.size} lead{selectedIds.size !== 1 ? 's' : ''}?</h3>
+            <p className="text-sm text-slate-500 mb-4">This will also delete associated deals, documents, and communications. This can&apos;t be undone.</p>
+            <div className="flex gap-3">
+              <button onClick={bulkDelete} disabled={bulkDeleting} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">{bulkDeleting ? 'Deleting...' : 'Delete'}</button>
+              <button onClick={() => setShowBulkDeleteModal(false)} disabled={bulkDeleting} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">Cancel</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Communication Modal */}
