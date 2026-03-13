@@ -172,6 +172,7 @@ export default function AdminPage() {
   // Invitations state
   const [invitations, setInvitations] = useState<any[]>([]);
   const [invitationsFetched, setInvitationsFetched] = useState(false);
+  const [deleteInvId, setDeleteInvId] = useState<string | null>(null);
 
   // Add Org modal state
   const [showAddOrg, setShowAddOrg] = useState(false);
@@ -345,6 +346,13 @@ export default function AdminPage() {
     await supabase.from("org_invitations").update({ status: "revoked" }).eq("id", invId);
     setInvitations((prev) => prev.map((inv) => inv.id === invId ? { ...inv, status: "revoked" } : inv));
     showMsg("Invitation revoked.");
+  };
+
+  const deleteInvitation = async (invId: string) => {
+    await supabase.from("org_invitations").delete().eq("id", invId);
+    setInvitations((prev) => prev.filter((inv) => inv.id !== invId));
+    setDeleteInvId(null);
+    showMsg("Invitation deleted.");
   };
 
   const resendInvitation = async (inv: any) => {
@@ -925,6 +933,9 @@ export default function AdminPage() {
                                 <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/invite/${inv.token}`); showMsg("Link copied!"); }} className="text-xs text-emerald-600 hover:text-emerald-700">Copy Link</button>
                               </>
                             )}
+                            {inv.status === "revoked" && (
+                              <button onClick={() => setDeleteInvId(inv.id)} className="text-xs text-red-500 hover:text-red-600">Delete</button>
+                            )}
                             {inv.status === "expired" && (
                               <button onClick={() => resendInvitation(inv)} className="text-xs text-emerald-600 hover:text-emerald-700">Resend</button>
                             )}
@@ -937,6 +948,20 @@ export default function AdminPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* DELETE INVITATION CONFIRMATION */}
+        {deleteInvId && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
+              <h3 className="font-semibold text-slate-900 mb-2">Delete Invitation</h3>
+              <p className="text-sm text-slate-500 mb-4">Delete this invitation? This can&apos;t be undone.</p>
+              <div className="flex gap-3">
+                <button onClick={() => deleteInvitation(deleteInvId)} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">Delete</button>
+                <button onClick={() => setDeleteInvId(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">Cancel</button>
               </div>
             </div>
           </div>
