@@ -50,12 +50,12 @@ function LoginContent() {
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true)
     setError('')
-    const redirectUrl = inviteToken
-      ? `${window.location.origin}/invite/${inviteToken}`
-      : `${window.location.origin}/dashboard`
+    const callbackUrl = inviteToken
+      ? `${window.location.origin}/auth/callback?next=/invite/${inviteToken}`
+      : `${window.location.origin}/auth/callback?next=/dashboard`
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: redirectUrl }
+      options: { redirectTo: callbackUrl }
     })
     if (error) {
       setError(error.message)
