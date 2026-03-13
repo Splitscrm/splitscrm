@@ -56,16 +56,16 @@ const features = [
   },
 ]
 
-const comparisonRows = [
-  { label: 'Price', spreadsheet: 'Free', iris: '$1,799/mo', iso: '$99/mo', isoGreen: true },
-  { label: 'Setup Time', spreadsheet: 'Weeks of building', iris: 'Weeks of onboarding', iso: '5 minutes' },
-  { label: 'Residual Automation', spreadsheet: '❌ Manual', iris: '⚠️ Manual field mapping', iso: '✅ AI auto-mapping' },
-  { label: 'Pricing Schedule Mgmt', spreadsheet: '❌ PDF files in folders', iris: '⚠️ Basic', iso: '✅ AI extraction from PDF' },
-  { label: 'Pipeline Tracking', spreadsheet: '❌ None', iris: '✅ Full', iso: '✅ Full' },
-  { label: 'Agent Splits', spreadsheet: '❌ Manual calculation', iris: '✅ Automated', iso: '✅ AI-powered' },
-  { label: 'Chargeback Alerts', spreadsheet: '❌ None', iris: '✅ Yes', iso: '✅ Yes with threshold warnings' },
-  { label: 'Mobile Access', spreadsheet: '⚠️ Clunky', iris: '⚠️ Dated', iso: '✅ Modern, responsive' },
-  { label: 'Processor Support', spreadsheet: 'N/A', iris: 'Limited (2yr cycles)', iso: 'Any processor (AI-powered)' },
+const comparisonRows: { label: string; spreadsheet: { text: string; color: string }; iris: { text: string; color: string }; iso: { text: string; color: string } }[] = [
+  { label: 'Price', spreadsheet: { text: 'Free', color: 'text-slate-500' }, iris: { text: '$1,799/mo', color: 'text-slate-500' }, iso: { text: '$99/mo', color: 'text-emerald-600 font-semibold' } },
+  { label: 'Setup Time', spreadsheet: { text: 'Weeks of building', color: 'text-slate-400' }, iris: { text: 'Weeks of onboarding', color: 'text-slate-400' }, iso: { text: '5 minutes', color: 'text-emerald-600 font-semibold' } },
+  { label: 'Residual Automation', spreadsheet: { text: 'Manual', color: 'text-red-400' }, iris: { text: 'Manual mapping', color: 'text-amber-500' }, iso: { text: 'AI auto-mapping', color: 'text-emerald-600' } },
+  { label: 'Pricing Schedule Mgmt', spreadsheet: { text: 'PDF files in folders', color: 'text-red-400' }, iris: { text: 'Basic', color: 'text-amber-500' }, iso: { text: 'AI extraction from PDF', color: 'text-emerald-600' } },
+  { label: 'Pipeline Tracking', spreadsheet: { text: 'None', color: 'text-red-400' }, iris: { text: 'Full', color: 'text-slate-600' }, iso: { text: 'Full', color: 'text-emerald-600' } },
+  { label: 'Agent Splits', spreadsheet: { text: 'Manual calculation', color: 'text-red-400' }, iris: { text: 'Automated', color: 'text-slate-600' }, iso: { text: 'AI-powered', color: 'text-emerald-600' } },
+  { label: 'Chargeback Alerts', spreadsheet: { text: 'None', color: 'text-red-400' }, iris: { text: 'Included', color: 'text-slate-600' }, iso: { text: 'Threshold warnings', color: 'text-emerald-600' } },
+  { label: 'Mobile Access', spreadsheet: { text: 'Clunky', color: 'text-amber-500' }, iris: { text: 'Dated', color: 'text-amber-500' }, iso: { text: 'Modern, responsive', color: 'text-emerald-600' } },
+  { label: 'Processor Support', spreadsheet: { text: 'N/A', color: 'text-slate-400' }, iris: { text: 'Limited (2yr cycles)', color: 'text-amber-500' }, iso: { text: 'Any processor', color: 'text-emerald-600' } },
 ]
 
 const steps = [
@@ -316,9 +316,9 @@ export default function LandingPage() {
                 {comparisonRows.map((row, i) => (
                   <tr key={i} className="border-t border-slate-200">
                     <td className="py-3.5 px-4 text-base text-slate-700 font-medium">{row.label}</td>
-                    <td className="hidden sm:table-cell py-3.5 px-4 text-base text-slate-500 text-center">{row.spreadsheet}</td>
-                    <td className="py-3.5 px-4 text-base text-slate-500 text-center">{row.iris}</td>
-                    <td className={`py-3.5 px-4 text-base text-center bg-emerald-50 ${row.isoGreen ? 'text-emerald-600 font-semibold' : 'text-slate-700'}`}>{row.iso}</td>
+                    <td className={`hidden sm:table-cell py-3.5 px-4 text-base text-center ${row.spreadsheet.color}`}>{row.spreadsheet.text}</td>
+                    <td className={`py-3.5 px-4 text-base text-center ${row.iris.color}`}>{row.iris.text}</td>
+                    <td className={`py-3.5 px-4 text-base text-center bg-emerald-50 ${row.iso.color}`}>{row.iso.text}</td>
                   </tr>
                 ))}
               </tbody>
