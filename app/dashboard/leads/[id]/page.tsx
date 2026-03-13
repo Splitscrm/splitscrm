@@ -433,15 +433,21 @@ export default function LeadDetailPage() {
   };
 
   const handleCpChange = (val: string) => {
-    const num = val === "" ? null : Math.min(100, Math.max(0, Number(val)));
-    updateDealField("cp_pct", num);
-    if (num != null) updateDealField("cnp_pct", 100 - num);
+    if (val === "" || isNaN(Number(val))) {
+      setDeal((prev: any) => ({ ...prev, cp_pct: val, cnp_pct: "" }));
+    } else {
+      const clamped = Math.min(100, Math.max(0, Number(val)));
+      setDeal((prev: any) => ({ ...prev, cp_pct: val, cnp_pct: String(100 - clamped) }));
+    }
   };
 
   const handleCnpChange = (val: string) => {
-    const num = val === "" ? null : Math.min(100, Math.max(0, Number(val)));
-    updateDealField("cnp_pct", num);
-    if (num != null) updateDealField("cp_pct", 100 - num);
+    if (val === "" || isNaN(Number(val))) {
+      setDeal((prev: any) => ({ ...prev, cnp_pct: val, cp_pct: "" }));
+    } else {
+      const clamped = Math.min(100, Math.max(0, Number(val)));
+      setDeal((prev: any) => ({ ...prev, cnp_pct: val, cp_pct: String(100 - clamped) }));
+    }
   };
 
   const inputClass = "w-full bg-white text-slate-900 px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-base";

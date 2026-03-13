@@ -103,7 +103,8 @@
       "Bash(gh repo:*)",
       "Bash(git remote:*)",
       "Bash(npm run:*)",
-      "Bash(find .next/static -name \"*.css\" 2>/dev/null | head -5)"
+      "Bash(find .next/static -name \"*.css\" 2>/dev/null | head -5)",
+      "Bash(grep -n -A 5 \"cp_pct\\\\|cnp_pct\\\\|CP %\\\\|CNP %\\\\|Card Present\" app/dashboard/leads/\\\\[id\\\\]/page.tsx | head -60)"
     ]
   }
 }
