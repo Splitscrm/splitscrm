@@ -8,6 +8,7 @@ import Sidebar from '@/components/Sidebar'
 import ExportCSV from '@/components/ExportCSV'
 import { useAuth } from '@/lib/auth-context'
 import LoadingScreen from '@/components/LoadingScreen'
+import { authFetch } from '@/lib/api-client'
 
 const RESIDUAL_EXPORT_COLUMNS = [
   { key: 'merchant_id_external', label: 'MID' },
@@ -283,7 +284,7 @@ export default function ResidualsPage() {
       const partnerObj = partners.find(p => p.id === selectedPartnerId)
       const pName = processorName || partnerObj?.name || undefined
 
-      const res = await fetch('/api/map-residual-columns', {
+      const res = await authFetch('/api/map-residual-columns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ headers, sampleRows, processorName: pName }),

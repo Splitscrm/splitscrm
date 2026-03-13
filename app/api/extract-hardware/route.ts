@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { getAuthenticatedUser } from '@/lib/api-auth'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -7,6 +8,8 @@ const anthropic = new Anthropic({
 
 export async function POST(req: NextRequest) {
   try {
+    await getAuthenticatedUser(req)
+
     const formData = await req.formData()
     const pdf = formData.get('pdf') as File
 
@@ -63,7 +66,10 @@ Extract every distinct hardware product mentioned. Use null for unknown numeric 
     const hardware = JSON.parse(clean)
 
     return NextResponse.json({ hardware: Array.isArray(hardware) ? hardware : [hardware] })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.status === 401 || error?.status === 403) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('Hardware extraction error:', error)
     return NextResponse.json({ error: 'Failed to extract hardware data' }, { status: 500 })
   }

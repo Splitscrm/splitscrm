@@ -9,6 +9,7 @@ import CommunicationLog from "@/components/CommunicationLog";
 import TaskModal from "@/components/TaskModal";
 import { useAuth } from "@/lib/auth-context";
 import LoadingScreen from "@/components/LoadingScreen";
+import { authFetch } from "@/lib/api-client";
 
 export default function LeadDetailPage() {
   const router = useRouter();
@@ -427,18 +428,14 @@ export default function LeadDetailPage() {
   };
 
   const saveOwners = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
     for (const o of owners) {
       const { id, created_at, _ssn_plain, ...updates } = o;
       // If there's a plaintext SSN pending, encrypt it
       if (_ssn_plain) {
         try {
-          const res = await fetch("/api/encrypt-ssn", {
+          const res = await authFetch("/api/encrypt-ssn", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${session?.access_token}`,
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ssn: _ssn_plain }),
           });
           const data = await res.json();
@@ -589,13 +586,9 @@ export default function LeadDetailPage() {
     if (!owner.ssn_encrypted) return;
     setRevealingIdx(idx);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch("/api/decrypt-ssn", {
+      const res = await authFetch("/api/decrypt-ssn", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ encrypted: owner.ssn_encrypted, deal_owner_id: owner.id }),
       });
       const data = await res.json();

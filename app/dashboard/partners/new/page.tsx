@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import PricingPreview from '@/components/PricingPreview'
+import { authFetch } from '@/lib/api-client'
 import Sidebar from '@/components/Sidebar'
 
 export default function AddPartnerPage() {
@@ -35,7 +36,7 @@ export default function AddPartnerPage() {
       const formData = new FormData()
       formData.append('pdf', file)
 
-      const res = await fetch('/api/extract-pricing', {
+      const res = await authFetch('/api/extract-pricing', {
         method: 'POST',
         body: formData,
       })

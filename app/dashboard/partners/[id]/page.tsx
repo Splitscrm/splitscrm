@@ -8,6 +8,7 @@ import PricingPreview from '@/components/PricingPreview';
 import Sidebar from "@/components/Sidebar";
 import { useAuth } from "@/lib/auth-context";
 import LoadingScreen from "@/components/LoadingScreen";
+import { authFetch } from "@/lib/api-client";
 
 export default function PartnerDetailPage() {
   const router = useRouter();
@@ -452,7 +453,7 @@ export default function PartnerDetailPage() {
                       try {
                         const formData = new FormData();
                         formData.append("pdf", file);
-                        const res = await fetch("/api/extract-hardware", { method: "POST", body: formData });
+                        const res = await authFetch("/api/extract-hardware", { method: "POST", body: formData });
                         const data = await res.json();
                         if (data.hardware && Array.isArray(data.hardware) && data.hardware.length > 0) {
                           setHwPreview(data.hardware);
@@ -619,7 +620,7 @@ export default function PartnerDetailPage() {
                       try {
                         const formData = new FormData();
                         formData.append("pdf", file);
-                        const res = await fetch("/api/extract-software", { method: "POST", body: formData });
+                        const res = await authFetch("/api/extract-software", { method: "POST", body: formData });
                         const data = await res.json();
                         if (data.software && Array.isArray(data.software) && data.software.length > 0) {
                           setSwPreview(data.software);

@@ -1,26 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { decrypt } from "@/lib/encryption";
-
-const ALLOWED_ROLES = ["owner", "manager"];
+import { getAuthenticatedUser, requireRole } from "@/lib/api-auth";
 
 export async function POST(req: NextRequest) {
   try {
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const { user, supabase } = await getAuthenticatedUser(req);
 
     const { encrypted, deal_owner_id } = await req.json();
     if (!encrypted || typeof encrypted !== "string") {
@@ -36,12 +20,12 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (!memberData) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ error: "No active organization membership" }, { status: 403 });
     }
 
     const hasExplicitPerm = memberData.permissions?.decrypt_ssn === true;
-    if (!ALLOWED_ROLES.includes(memberData.role) && !hasExplicitPerm) {
-      return NextResponse.json({ error: "Forbidden: insufficient permissions" }, { status: 403 });
+    if (!["owner", "manager"].includes(memberData.role) && !hasExplicitPerm) {
+      return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
     }
 
     const plaintext = decrypt(encrypted);
@@ -56,6 +40,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ssn: plaintext });
   } catch (err: any) {
+    if (err?.status === 401 || err?.status === 403) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error("Decrypt SSN error:", err);
     return NextResponse.json({ error: "Decryption failed" }, { status: 500 });
   }

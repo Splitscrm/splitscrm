@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { getAuthenticatedUser } from '@/lib/api-auth'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -7,6 +8,8 @@ const anthropic = new Anthropic({
 
 export async function POST(req: NextRequest) {
   try {
+    await getAuthenticatedUser(req)
+
     const formData = await req.formData()
     const pdf = formData.get('pdf') as File
 
@@ -122,7 +125,10 @@ Return ONLY valid JSON with no markdown or extra text. Use this structure (inclu
     const pricing = JSON.parse(clean)
 
     return NextResponse.json({ pricing })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.status === 401 || error?.status === 403) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('PDF extraction error:', error)
     return NextResponse.json({ error: 'Failed to extract pricing' }, { status: 500 })
   }

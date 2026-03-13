@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { getAuthenticatedUser } from '@/lib/api-auth'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -7,6 +8,8 @@ const anthropic = new Anthropic({
 
 export async function POST(req: NextRequest) {
   try {
+    await getAuthenticatedUser(req)
+
     const formData = await req.formData()
     const pdf = formData.get('pdf') as File
 
@@ -63,7 +66,10 @@ Extract every distinct software product, gateway, or integration mentioned. If p
     const software = JSON.parse(clean)
 
     return NextResponse.json({ software: Array.isArray(software) ? software : [software] })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.status === 401 || error?.status === 403) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
     console.error('Software extraction error:', error)
     return NextResponse.json({ error: 'Failed to extract software data' }, { status: 500 })
   }
