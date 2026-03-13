@@ -977,15 +977,32 @@ export default function LeadDetailPage() {
 
                 <div className={sectionClass}>
                   <h4 className="font-semibold mb-4 text-emerald-600">Hardware & Software</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                    <div><label className={labelClass}>Terminal Type</label><select value={deal.terminal_type || ""} onChange={(e) => updateDealField("terminal_type", e.target.value)} className={inputClass}><option value="">Select...</option><option value="dejavoo">Dejavoo</option><option value="pax">Pax</option></select></div>
-                    <div><label className={labelClass}>Terminal Cost ($)</label><input type="number" step="0.01" value={deal.terminal_cost || ""} onChange={(e) => updateDealField("terminal_cost", e.target.value)} className={inputClass} /></div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                    <div>
+                      <label className={labelClass}>Hardware Needed</label>
+                      <select value={deal.terminal_type || ""} onChange={(e) => updateDealField("terminal_type", e.target.value)} className={inputClass}>
+                        <option value="">Select...</option>
+                        <option value="terminal">Terminal</option>
+                        <option value="mobile_reader">Mobile Reader</option>
+                        <option value="pos_system">POS System</option>
+                        <option value="pin_pad">Pin Pad</option>
+                        <option value="printer">Printer</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <div><label className={labelClass}>Preferred Model</label><input type="text" value={deal.preferred_model || ""} onChange={(e) => updateDealField("preferred_model", e.target.value)} className={inputClass} placeholder="e.g. Dejavoo QD4" /></div>
+                    <div><label className={labelClass}>Hardware Model</label><input type="text" value={deal.hardware_model || ""} onChange={(e) => updateDealField("hardware_model", e.target.value)} className={inputClass} /></div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                    <div><label className={labelClass}>Quantity</label><input type="number" min="1" value={deal.hardware_quantity || 1} onChange={(e) => updateDealField("hardware_quantity", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>Free Hardware?</label><select value={deal.free_hardware || ""} onChange={(e) => updateDealField("free_hardware", e.target.value)} className={inputClass}><option value="">Select...</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+                    <div><label className={labelClass}>Estimated Cost ($)</label><input type="number" step="0.01" value={deal.terminal_cost || ""} onChange={(e) => updateDealField("terminal_cost", e.target.value)} className={inputClass} /></div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div><label className={labelClass}>Gateway Name</label><input type="text" value={deal.gateway_name || ""} onChange={(e) => updateDealField("gateway_name", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>Gateway API</label><input type="text" value={deal.gateway_api || ""} onChange={(e) => updateDealField("gateway_api", e.target.value)} className={inputClass} /></div>
                   </div>
+                  <p className="text-xs text-slate-400 mt-3">Hardware availability and pricing will be confirmed when submitting to a partner.</p>
                 </div>
 
                 <div className={sectionClass}>
