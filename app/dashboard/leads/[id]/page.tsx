@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
@@ -44,6 +44,9 @@ export default function LeadDetailPage() {
   const [showStatementModal, setShowStatementModal] = useState(false);
   const [statementUploading, setStatementUploading] = useState(false);
   const [uploadedStatements, setUploadedStatements] = useState<any[]>([]);
+  const [partners, setPartners] = useState<any[]>([]);
+  const [showPartnerSwitchModal, setShowPartnerSwitchModal] = useState(false);
+  const pendingPartnerSwitch = useRef<{ partnerId: string; scheduleIdx: number | null } | null>(null);
   const toggleGroup = (key: string) => setOpenGroups(prev => ({ ...prev, [key]: !prev[key] }));
 
   const docTypes = [
@@ -123,6 +126,9 @@ export default function LeadDetailPage() {
         if (actData) setActivities(actData);
         const { data: taskData } = await supabase.from("tasks").select("id, title, due_date, priority, status").eq("lead_id", leadData.id).eq("status", "pending").order("due_date", { ascending: true });
         if (taskData) setLeadTasks(taskData);
+        // Fetch partners for partner pricing dropdown
+        const { data: partnerData } = await supabase.from("partners").select("id, name, pricing_data").eq("status", "active").order("name");
+        if (partnerData) setPartners(partnerData);
       }
       console.log("Setting loading false");
       setLoading(false);
@@ -272,6 +278,8 @@ export default function LeadDetailPage() {
       else if (dealData.free_hardware === "no") merchantInsert.free_equipment = "no";
       if (dealData.hardware_items) merchantInsert.hardware_items = dealData.hardware_items;
       if (dealData.software_items) merchantInsert.software_items = dealData.software_items;
+      if (dealData.partner_pricing_overrides) merchantInsert.partner_pricing_overrides = dealData.partner_pricing_overrides;
+      if (dealData.partner_id) merchantInsert.partner_id = dealData.partner_id;
     }
     // Auto-populate summary pricing fields
     if (merchantInsert.ic_plus_visa_pct) {
@@ -296,6 +304,82 @@ export default function LeadDetailPage() {
   };
 
   const updateDealField = (field: string, value: any) => { setDeal({ ...deal, [field]: value }); };
+
+  // Partner pricing: fields that overlap between deal base pricing and partner schedule keys
+  const MAPPED_FIELDS = new Set([
+    "pricing_type", "ic_plus_visa_pct", "ic_plus_mc_pct", "ic_plus_amex_pct", "ic_plus_disc_pct",
+    "ic_plus_visa_txn", "ic_plus_mc_txn", "ic_plus_amex_txn", "ic_plus_disc_txn",
+    "dual_pricing_rate", "dual_pricing_txn_fee", "flat_rate_pct", "flat_rate_txn_cost",
+    "fee_chargeback", "fee_retrieval", "fee_arbitration", "fee_voice_auth", "fee_ebt_auth", "fee_ach_reject",
+    "monthly_fee_statement", "pci_compliance_monthly", "pci_compliance_annual",
+    "monthly_fee_custom_name", "monthly_fee_custom_amount", "interchange_remittance",
+    "visa_rate", "mc_rate", "amex_rate", "disc_rate", "per_txn_fee", "monthly_fee", "pci_fee",
+  ]);
+
+  const humanizeKey = (key: string) => key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  const selectedPartner = partners.find((p) => p.id === deal?.partner_id);
+  const selectedSchedule = selectedPartner?.pricing_data?.[deal?.partner_schedule_index ?? -1] || null;
+  const extraFields = selectedSchedule
+    ? Object.entries(selectedSchedule).filter(([k]) => !MAPPED_FIELDS.has(k) && k !== "schedule_name" && k !== "label")
+    : [];
+
+  const hasOverrides = deal?.partner_pricing_overrides && Object.keys(deal.partner_pricing_overrides).length > 0;
+
+  const handlePartnerChange = (newPartnerId: string) => {
+    if (hasOverrides && newPartnerId !== deal.partner_id) {
+      pendingPartnerSwitch.current = { partnerId: newPartnerId, scheduleIdx: null };
+      setShowPartnerSwitchModal(true);
+      return;
+    }
+    applyPartnerSwitch(newPartnerId, null);
+  };
+
+  const handleScheduleChange = (newIdx: number | null) => {
+    if (hasOverrides && newIdx !== deal.partner_schedule_index) {
+      pendingPartnerSwitch.current = { partnerId: deal.partner_id, scheduleIdx: newIdx };
+      setShowPartnerSwitchModal(true);
+      return;
+    }
+    applyScheduleSwitch(newIdx);
+  };
+
+  const applyPartnerSwitch = (partnerId: string, scheduleIdx: number | null) => {
+    setDeal((prev: any) => ({
+      ...prev,
+      partner_id: partnerId || null,
+      partner_schedule_index: scheduleIdx,
+      partner_pricing_overrides: null,
+    }));
+  };
+
+  const applyScheduleSwitch = (scheduleIdx: number | null) => {
+    setDeal((prev: any) => ({
+      ...prev,
+      partner_schedule_index: scheduleIdx,
+      partner_pricing_overrides: null,
+    }));
+  };
+
+  const confirmPartnerSwitch = () => {
+    if (pendingPartnerSwitch.current) {
+      const { partnerId, scheduleIdx } = pendingPartnerSwitch.current;
+      if (partnerId !== deal.partner_id) {
+        applyPartnerSwitch(partnerId, scheduleIdx);
+      } else {
+        applyScheduleSwitch(scheduleIdx);
+      }
+    }
+    pendingPartnerSwitch.current = null;
+    setShowPartnerSwitchModal(false);
+  };
+
+  const updateOverride = (key: string, value: string) => {
+    setDeal((prev: any) => ({
+      ...prev,
+      partner_pricing_overrides: { ...(prev.partner_pricing_overrides || {}), [key]: value },
+    }));
+  };
 
   const formatEIN = (val: string) => {
     const nums = val.replace(/[^0-9]/g, "").slice(0, 9);
@@ -695,6 +779,32 @@ export default function LeadDetailPage() {
               <div className="flex items-center gap-3">
                 {dealMsg && <span className="text-emerald-600 text-sm">{dealMsg}</span>}
                 {canEdit && <button onClick={async () => { await saveDeal(); await saveOwners(); }} disabled={dealSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition disabled:opacity-50">{dealSaving ? "Saving..." : "Save Deal"}</button>}
+              </div>
+            </div>
+
+            {/* Partner Selection */}
+            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Partner</label>
+                  <select value={deal.partner_id || ""} onChange={(e) => handlePartnerChange(e.target.value)} className={inputClass}>
+                    <option value="">No Partner Selected</option>
+                    {partners.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                {deal.partner_id && selectedPartner?.pricing_data?.length > 0 && (
+                  <div>
+                    <label className={labelClass}>Pricing Schedule</label>
+                    <select value={deal.partner_schedule_index ?? ""} onChange={(e) => handleScheduleChange(e.target.value === "" ? null : parseInt(e.target.value))} className={inputClass}>
+                      <option value="">Select schedule...</option>
+                      {selectedPartner.pricing_data.map((s: any, i: number) => (
+                        <option key={i} value={i}>{s.schedule_name || s.label || `Schedule ${i + 1}`}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1126,6 +1236,27 @@ export default function LeadDetailPage() {
                     <div><label className={labelClass}>Average Residual</label><input type="number" step="0.01" value={deal.average_residual || ""} onChange={(e) => updateDealField("average_residual", e.target.value)} className={inputClass} /></div>
                   </div>
                 </div>
+
+                {/* Partner Schedule — only when partner + schedule selected */}
+                {selectedSchedule && extraFields.length > 0 && (
+                  <div className={sectionClass}>
+                    <h4 className="font-semibold mb-1 text-emerald-600">Partner Schedule</h4>
+                    <p className="text-xs text-slate-400 mb-4">{selectedPartner?.name} — {selectedSchedule.schedule_name || selectedSchedule.label || `Schedule ${(deal.partner_schedule_index ?? 0) + 1}`}</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {extraFields.map(([key, defaultVal]) => (
+                        <div key={key}>
+                          <label className={labelClass}>{humanizeKey(key)}</label>
+                          <input
+                            type="text"
+                            value={deal.partner_pricing_overrides?.[key] ?? (defaultVal as string) ?? ""}
+                            onChange={(e) => updateOverride(key, e.target.value)}
+                            className={inputClass}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1245,6 +1376,19 @@ export default function LeadDetailPage() {
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
               <button onClick={convertToMerchant} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition disabled:opacity-50">{saving ? "Creating..." : "Confirm & Create Merchant"}</button>
               <button onClick={() => setShowModal("")} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPartnerSwitchModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-8 border border-slate-200 shadow-sm w-full max-w-md mx-4">
+            <h3 className="text-lg font-bold mb-4">Switch Partner Pricing?</h3>
+            <p className="text-slate-500 text-sm mb-4">Switching partners will clear partner-specific pricing. Continue?</p>
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+              <button onClick={confirmPartnerSwitch} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition">Continue</button>
+              <button onClick={() => { pendingPartnerSwitch.current = null; setShowPartnerSwitchModal(false); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">Cancel</button>
             </div>
           </div>
         </div>

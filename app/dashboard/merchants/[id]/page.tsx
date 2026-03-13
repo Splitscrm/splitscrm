@@ -926,6 +926,21 @@ export default function MerchantDetailPage() {
             </div>
             )}
 
+            {/* Partner Schedule (read-only, from deal conversion) */}
+            {merchant.partner_pricing_overrides && Object.keys(merchant.partner_pricing_overrides).length > 0 && (
+              <div className={sectionClass + ' mb-4'}>
+                <h4 className="text-sm font-semibold text-slate-700 mb-3">Partner Schedule</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {Object.entries(merchant.partner_pricing_overrides).map(([key, val]) => (
+                    <div key={key}>
+                      <label className={labelClass}>{key.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</label>
+                      <p className="text-sm text-slate-900 bg-slate-50 px-4 py-3 rounded-lg border border-slate-200">{val as string}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* GROUP 3 — Contract & Equipment */}
             <div onClick={() => toggleGroup('contract')} className={`flex justify-between items-center cursor-pointer bg-white rounded-xl p-4 border border-slate-200 shadow-sm mb-2 ${openGroups.contract ? 'border-l-4 border-l-emerald-500' : ''}`}>
               <h3 className="font-semibold">Contract & Equipment</h3>
