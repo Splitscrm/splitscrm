@@ -821,7 +821,7 @@ export default function ReportsPage() {
                   <LineChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                    <YAxis tick={{ fontSize: 12 }} stroke="#94a3b8" tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                    <YAxis tick={{ fontSize: 12 }} stroke="#94a3b8" tickFormatter={(v: any) => `$${(Number(v) / 1000).toFixed(0)}k`} />
                     <Tooltip formatter={(value: any) => fmt(Number(value))} />
                     <Line type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} name="Net Revenue" />
                   </LineChart>
@@ -841,7 +841,7 @@ export default function ReportsPage() {
                   <LineChart data={multiSeriesChart}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                    <YAxis tick={{ fontSize: 12 }} stroke="#94a3b8" tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                    <YAxis tick={{ fontSize: 12 }} stroke="#94a3b8" tickFormatter={(v: any) => `$${(Number(v) / 1000).toFixed(0)}k`} />
                     <Tooltip formatter={(value: any) => fmt(Number(value))} />
                     <Legend />
                     {partnerSeriesNames.map((name, i) => (
