@@ -726,8 +726,8 @@ export default function ReportsPage() {
   // ── Sort arrow helper ──────────────────────────────────────────────────
 
   const SortArrow = ({ col, current, asc }: { col: string; current: string; asc: boolean }) => {
-    if (col !== current) return <span className="text-slate-300 ml-1">&#8597;</span>
-    return <span className="text-emerald-500 ml-1">{asc ? '&#9650;' : '&#9660;'}</span>
+    if (col !== current) return <span className="text-slate-300 ml-1">{'\u2195'}</span>
+    return <span className="text-emerald-500 ml-1">{asc ? '\u25B2' : '\u25BC'}</span>
   }
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -979,7 +979,7 @@ export default function ReportsPage() {
                           onClick={() => toggleExpand(row.partnerId)}
                         >
                           <td className="px-4 py-3 font-medium">
-                            <span className="mr-1.5 text-slate-400">{expandedPartners.has(row.partnerId) ? '&#9660;' : '&#9654;'}</span>
+                            <span className="mr-1.5 text-slate-400">{expandedPartners.has(row.partnerId) ? '\u25BC' : '\u25B6'}</span>
                             {row.partnerName}
                           </td>
                           <td className="px-4 py-3">{row.activeMerchants}</td>
@@ -1000,11 +1000,11 @@ export default function ReportsPage() {
                                   </div>
                                 ))}
                                 {row.merchantCounts[row.merchantCounts.length - 1] > row.merchantCounts[0] ? (
-                                  <span className="text-emerald-500 text-xs ml-1">&#9650;</span>
+                                  <span className="text-emerald-500 text-xs ml-1">{'\u25B2'}</span>
                                 ) : row.merchantCounts[row.merchantCounts.length - 1] < row.merchantCounts[0] ? (
-                                  <span className="text-red-500 text-xs ml-1">&#9660;</span>
+                                  <span className="text-red-500 text-xs ml-1">{'\u25BC'}</span>
                                 ) : (
-                                  <span className="text-slate-400 text-xs ml-1">&#8212;</span>
+                                  <span className="text-slate-400 text-xs ml-1">{'\u2014'}</span>
                                 )}
                               </div>
                             ) : '-'}
