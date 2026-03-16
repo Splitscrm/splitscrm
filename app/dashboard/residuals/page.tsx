@@ -174,6 +174,15 @@ export default function ResidualsPage() {
   const [deleteTargetImport, setDeleteTargetImport] = useState<ImportRecord | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  // Rep code matching state
+  const [repMatchResults, setRepMatchResults] = useState<{ code: string; userId: string | null; count: number; revenue: number }[]>([])
+  const [repUnmatched, setRepUnmatched] = useState<{ code: string; count: number; revenue: number; assignTo: string }[]>([])
+  const [repOrgAgents, setRepOrgAgents] = useState<{ user_id: string; name: string; role: string }[]>([])
+  const [repMatchSaving, setRepMatchSaving] = useState(false)
+  const [lastImportId, setLastImportId] = useState<string | null>(null)
+  const [repAutoMatched, setRepAutoMatched] = useState(0)
+  const [repManualMatched, setRepManualMatched] = useState(0)
+
   // Matching modal state
   const [showMatchModal, setShowMatchModal] = useState(false)
   const [matchMerchants, setMatchMerchants] = useState<any[]>([])
@@ -509,12 +518,126 @@ export default function ResidualsPage() {
       }
 
       supabase.from('user_onboarding').update({ first_residual_imported: true, updated_at: new Date().toISOString() }).eq('user_id', userId)
+      setLastImportId(importRec.id)
+
+      // ── Rep code auto-matching ────────────────────────────────
+      // Collect unique agent codes from imported records
+      const agentCodes = new Map<string, { count: number; revenue: number }>()
+      for (const r of records) {
+        const code = r.agent_id_external
+        if (!code || typeof code !== 'string' || !code.trim()) continue
+        const key = code.trim()
+        const entry = agentCodes.get(key) || { count: 0, revenue: 0 }
+        entry.count++
+        entry.revenue += r.net_revenue || 0
+        agentCodes.set(key, entry)
+      }
+
+      let autoCount = 0
+      const unmatchedList: { code: string; count: number; revenue: number; assignTo: string }[] = []
+
+      if (agentCodes.size > 0 && selectedPartnerId) {
+        // Look up active rep codes for this partner
+        const { data: repCodes } = await supabase
+          .from('agent_rep_codes')
+          .select('rep_code, user_id')
+          .eq('partner_id', selectedPartnerId)
+          .eq('org_id', member?.org_id)
+          .eq('status', 'active')
+
+        const repCodeMap = new Map<string, string>()
+        for (const rc of repCodes || []) {
+          repCodeMap.set(rc.rep_code, rc.user_id)
+        }
+
+        // Match and update records
+        for (const [code, stats] of agentCodes) {
+          const matchedUserId = repCodeMap.get(code)
+          if (matchedUserId) {
+            // Auto-match: update all records with this code
+            await supabase
+              .from('residual_records')
+              .update({ agent_user_id: matchedUserId })
+              .eq('import_id', importRec.id)
+              .eq('agent_id_external', code)
+            autoCount += stats.count
+          } else {
+            unmatchedList.push({ code, count: stats.count, revenue: stats.revenue, assignTo: '' })
+          }
+        }
+      } else if (agentCodes.size > 0) {
+        // No partner selected — all codes are unmatched
+        for (const [code, stats] of agentCodes) {
+          unmatchedList.push({ code, count: stats.count, revenue: stats.revenue, assignTo: '' })
+        }
+      }
+
+      setRepAutoMatched(autoCount)
+      setRepManualMatched(0)
+      setRepUnmatched(unmatchedList)
+
+      // Fetch org agents for assignment dropdown
+      if (member?.org_id) {
+        const { data: members } = await supabase
+          .from('org_members')
+          .select('user_id, role')
+          .eq('org_id', member.org_id)
+          .eq('status', 'active')
+        const agents = (members || []).filter(m => ['agent', 'sub_agent', 'master_agent', 'owner', 'manager'].includes(m.role) && m.user_id)
+        if (agents.length > 0) {
+          const { data: profiles } = await supabase
+            .from('user_profiles')
+            .select('user_id, full_name, email')
+            .in('user_id', agents.map(a => a.user_id))
+          const enriched = agents.map(a => {
+            const p = (profiles || []).find(pr => pr.user_id === a.user_id)
+            return { user_id: a.user_id, name: p?.full_name || p?.email || a.user_id.slice(0, 8), role: a.role }
+          })
+          setRepOrgAgents(enriched)
+        }
+      }
+
       setImportSuccess(true)
-      setWizardStep(4)
+      // If there are unmatched codes, show matching step; otherwise go to success
+      setWizardStep(unmatchedList.length > 0 ? 4 : 5)
     } catch (err: any) {
       setImportError(err.message || 'Import failed')
     }
     setImporting(false)
+  }
+
+  const handleRepAssignments = async () => {
+    if (!lastImportId || !member?.org_id) return
+    setRepMatchSaving(true)
+    let manualCount = 0
+
+    for (const item of repUnmatched) {
+      if (!item.assignTo) continue
+      // Update records
+      await supabase
+        .from('residual_records')
+        .update({ agent_user_id: item.assignTo })
+        .eq('import_id', lastImportId)
+        .eq('agent_id_external', item.code)
+
+      // Create agent_rep_codes entry for future auto-matching
+      if (selectedPartnerId) {
+        await supabase.from('agent_rep_codes').upsert({
+          org_id: member.org_id,
+          user_id: item.assignTo,
+          partner_id: selectedPartnerId,
+          rep_code: item.code,
+          status: 'active',
+          effective_date: new Date().toISOString().split('T')[0],
+        }, { onConflict: 'org_id, partner_id, rep_code' })
+      }
+
+      manualCount += item.count
+    }
+
+    setRepManualMatched(manualCount)
+    setRepMatchSaving(false)
+    setWizardStep(5)
   }
 
   const finishImport = () => {
@@ -964,27 +1087,117 @@ export default function ResidualsPage() {
     )
   }
 
-  const renderSuccessStep = () => (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 max-w-lg mx-auto text-center">
-      <div className="text-5xl mb-4">✅</div>
-      <h3 className="text-xl font-bold text-slate-900 mb-2">Import Complete</h3>
-      <p className="text-slate-500 mb-2">
-        Successfully imported {(hasTotalsRow ? allRows.length - 1 : allRows.length).toLocaleString()} records from{' '}
-        <span className="font-medium text-slate-700">{fileName}</span>
-      </p>
-      {processorName && (
-        <p className="text-slate-400 text-sm mb-6">
-          Column mapping saved for {processorName} — future imports will be even faster.
+  const renderRepMatchStep = () => {
+    const fmtDollar = (val: number) => val.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 })
+
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 max-w-3xl mx-auto">
+        <h3 className="text-xl font-bold text-slate-900 mb-1">Match Agent Rep Codes</h3>
+        <p className="text-sm text-slate-500 mb-4">
+          {repAutoMatched > 0 && <span className="text-emerald-600 font-medium">{repAutoMatched} records auto-matched. </span>}
+          {repUnmatched.length} unrecognized rep code{repUnmatched.length !== 1 ? 's' : ''} found. Assign them to team members or skip.
         </p>
-      )}
-      <button
-        onClick={finishImport}
-        className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-lg font-medium transition"
-      >
-        Done
-      </button>
-    </div>
-  )
+
+        <div className="overflow-x-auto mb-6">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-slate-500 border-b border-slate-200">
+                <th className="px-4 py-2.5 font-medium">Rep Code</th>
+                <th className="px-4 py-2.5 font-medium">Records</th>
+                <th className="px-4 py-2.5 font-medium">Revenue</th>
+                <th className="px-4 py-2.5 font-medium">Assign To</th>
+              </tr>
+            </thead>
+            <tbody>
+              {repUnmatched.map((item, idx) => (
+                <tr key={item.code} className="border-b border-slate-100">
+                  <td className="px-4 py-2.5 font-mono text-emerald-700 font-medium">{item.code}</td>
+                  <td className="px-4 py-2.5">{item.count}</td>
+                  <td className="px-4 py-2.5">{fmtDollar(item.revenue)}</td>
+                  <td className="px-4 py-2.5">
+                    <select
+                      value={item.assignTo}
+                      onChange={e => {
+                        const updated = [...repUnmatched]
+                        updated[idx] = { ...item, assignTo: e.target.value }
+                        setRepUnmatched(updated)
+                      }}
+                      className="text-sm px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500 w-full max-w-[220px]"
+                    >
+                      <option value="">Skip / Unassigned</option>
+                      {repOrgAgents.map(a => (
+                        <option key={a.user_id} value={a.user_id}>{a.name}</option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:justify-between gap-3">
+          <button
+            onClick={() => setWizardStep(5)}
+            className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-6 py-2.5 rounded-lg text-sm font-medium transition"
+          >
+            Skip All
+          </button>
+          <button
+            onClick={handleRepAssignments}
+            disabled={repMatchSaving || repUnmatched.every(u => !u.assignTo)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
+          >
+            {repMatchSaving ? 'Saving...' : 'Save Assignments'}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const renderSuccessStep = () => {
+    const totalRecords = hasTotalsRow ? allRows.length - 1 : allRows.length
+    const unassigned = totalRecords - repAutoMatched - repManualMatched
+
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 max-w-lg mx-auto text-center">
+        <div className="text-5xl mb-4">✅</div>
+        <h3 className="text-xl font-bold text-slate-900 mb-2">Import Complete</h3>
+        <p className="text-slate-500 mb-4">
+          Successfully imported {totalRecords.toLocaleString()} records from{' '}
+          <span className="font-medium text-slate-700">{fileName}</span>
+        </p>
+
+        {(repAutoMatched > 0 || repManualMatched > 0) && (
+          <div className="bg-slate-50 rounded-lg p-4 mb-4 text-sm text-left">
+            <p className="font-medium text-slate-700 mb-2">Agent Matching Summary</p>
+            <div className="space-y-1 text-slate-600">
+              {repAutoMatched > 0 && <p>Auto-matched: <span className="font-medium text-emerald-600">{repAutoMatched} records</span></p>}
+              {repManualMatched > 0 && <p>Manually assigned: <span className="font-medium text-blue-600">{repManualMatched} records</span></p>}
+              {unassigned > 0 && <p>Unassigned: <span className="text-slate-400">{unassigned} records</span></p>}
+            </div>
+            {repManualMatched > 0 && selectedPartnerId && (
+              <p className="text-xs text-slate-400 mt-2">
+                Newly assigned codes will auto-match on future imports from this partner.
+              </p>
+            )}
+          </div>
+        )}
+
+        {processorName && (
+          <p className="text-slate-400 text-sm mb-6">
+            Column mapping saved for {processorName} — future imports will be even faster.
+          </p>
+        )}
+        <button
+          onClick={finishImport}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-lg font-medium transition"
+        >
+          Done
+        </button>
+      </div>
+    )
+  }
 
   const renderDetailView = () => {
     const imp = imports.find(i => i.id === selectedImportId)
@@ -1302,7 +1515,8 @@ export default function ResidualsPage() {
             {wizardStep === 1 && renderUploadStep()}
             {wizardStep === 2 && renderMappingStep()}
             {wizardStep === 3 && renderReviewStep()}
-            {wizardStep === 4 && renderSuccessStep()}
+            {wizardStep === 4 && renderRepMatchStep()}
+            {wizardStep === 5 && renderSuccessStep()}
           </>
         )}
       </div>
