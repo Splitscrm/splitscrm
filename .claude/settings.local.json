@@ -156,7 +156,9 @@
       "Bash(grep -A5 -B5 \"\\\\\"ssn\\\\\"\\\\|social\" C:/Users/ealvr/isocrm/package.json 2>/dev/null || echo \"No SSN in package.json\")",
       "Bash(find C:/Users/ealvr/isocrm -type f \\\\\\( -name \"*.backup\" -o -name \"*.dump\" -o -name \"*.sql\" -o -name \"*.csv\" \\\\\\) 2>/dev/null | head -20)",
       "Bash(grep -n \"type.*password\\\\|input.*password\" C:/Users/ealvr/isocrm/app/dashboard/leads/[id]/page.tsx)",
-      "Bash(wc -l C:/Users/ealvr/isocrm/app/dashboard/leads/[id]/page.tsx)"
+      "Bash(wc -l C:/Users/ealvr/isocrm/app/dashboard/leads/[id]/page.tsx)",
+      "Bash(find /c/Users/ealvr/isocrm -type f -name \"*.sql\" 2>/dev/null | head -20)",
+      "Bash(grep -r \"CREATE POLICY\\\\|ALTER TABLE.*ENABLE ROW LEVEL\" /c/Users/ealvr/isocrm --include=\"*.md\" 2>/dev/null | head -20)"
     ]
   }
 }
