@@ -370,6 +370,22 @@ export default function ResidualsPage() {
           }
         })
 
+        // Calculate derived fields if not directly mapped
+        const gi = record.gross_income ?? 0
+        const te = record.total_expenses ?? 0
+        if (record.net_revenue == null && (record.gross_income != null || record.total_expenses != null)) {
+          record.net_revenue = gi - te
+        }
+        const sa = record.sales_amount ?? 0
+        const ca = record.credit_amount ?? 0
+        if (record.net_volume == null && (record.sales_amount != null || record.credit_amount != null)) {
+          record.net_volume = sa - ca
+        }
+        if (record.iso_net == null && record.net_revenue != null) {
+          const payout = record.agent_payout ?? 0
+          record.iso_net = (record.net_revenue ?? 0) - payout
+        }
+
         return record
       })
 
@@ -419,13 +435,14 @@ export default function ResidualsPage() {
         })
       }
 
-      // Update import with totals
+      // Update import with totals and mark completed
       await supabase
         .from('residual_imports')
         .update({
           total_net: totalNet,
           total_revenue: totalRev,
           total_expenses: totalExp,
+          status: 'completed',
         })
         .eq('id', importRec.id)
 
