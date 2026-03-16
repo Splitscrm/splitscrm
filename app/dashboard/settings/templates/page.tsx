@@ -75,7 +75,7 @@ export default function TemplatesPage() {
 
       const { data } = await supabase
         .from("email_templates")
-        .select("*")
+        .select("id, user_id, name, category, subject, body, created_at")
         .eq("user_id", user.id)
         .order("created_at");
 
@@ -99,7 +99,7 @@ export default function TemplatesPage() {
   const fetchTemplates = async () => {
     const { data } = await supabase
       .from("email_templates")
-      .select("*")
+      .select("id, user_id, name, category, subject, body, created_at")
       .eq("user_id", userId)
       .order("created_at");
     setTemplates(data || []);

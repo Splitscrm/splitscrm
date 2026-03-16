@@ -243,7 +243,7 @@ export default function ResidualsPage() {
     setDetailSearch('')
     const { data, error } = await supabase
       .from('residual_records')
-      .select('*')
+      .select('id, merchant_id, merchant_id_external, dba_name, fee_category, sales_amount, credit_amount, interchange_cost, total_expenses, gross_income, agent_id_external')
       .eq('import_id', imp.id)
       .order('created_at')
     setDetailRecords(data || [])
@@ -582,7 +582,7 @@ export default function ResidualsPage() {
     // Refresh detail records
     const { data } = await supabase
       .from('residual_records')
-      .select('*')
+      .select('id, merchant_id, merchant_id_external, dba_name, fee_category, sales_amount, credit_amount, interchange_cost, total_expenses, gross_income, agent_id_external')
       .eq('import_id', selectedImportId)
       .order('created_at')
     setDetailRecords(data || [])

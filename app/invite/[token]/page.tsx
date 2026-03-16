@@ -38,7 +38,7 @@ export default function InvitePage() {
       // Fetch invitation
       const { data: inv } = await supabase
         .from("org_invitations")
-        .select("*")
+        .select("id, org_id, email, role, invited_by")
         .eq("token", token)
         .eq("status", "pending")
         .maybeSingle();

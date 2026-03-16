@@ -86,7 +86,7 @@ export default function LeadDetailPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
       setUserId(user.id);
-      const { data: leadData } = await supabase.from("leads").select("*").eq("id", params.id).single();
+      const { data: leadData } = await supabase.from("leads").select("id, assigned_to, user_id, status, business_name, contact_name, email, phone, website, monthly_volume, notes, created_at, updated_at, follow_up_date, unqualified_reason, unqualified_reason_other, recycled_reason").eq("id", params.id).single();
       if (leadData) {
         // Permission check: non-owner/manager can only see their own leads
         if (!isOwnerOrManager && leadData.assigned_to !== user.id && leadData.user_id !== user.id) {
@@ -95,7 +95,7 @@ export default function LeadDetailPage() {
           return;
         }
         setLead(leadData);
-        const { data: dealData } = await supabase.from("deals").select("*").eq("lead_id", leadData.id).single();
+        const { data: dealData } = await supabase.from("deals").select("id, lead_id, user_id, created_at, updated_at, business_legal_name, dba_name, legal_street, legal_city, legal_state, legal_zip, entity_type, ein_itin, cp_pct, cnp_pct, currently_takes_cards, monthly_volume, average_ticket, high_ticket, amex_volume, amex_esa, pin_debit, ebt, funding_type, bank_routing, bank_account, bank_account_type, processing_terminated, filed_bankruptcy, pricing_type, ic_plus_visa_pct, ic_plus_mc_pct, ic_plus_amex_pct, ic_plus_disc_pct, ic_plus_visa_txn, ic_plus_mc_txn, ic_plus_amex_txn, ic_plus_disc_txn, interchange_remittance, dual_pricing_rate, dual_pricing_txn_fee, flat_rate_pct, flat_rate_txn_cost, fee_chargeback, fee_retrieval, fee_arbitration, fee_voice_auth, fee_ebt_auth, fee_ach_reject, monthly_fee_statement, pci_compliance_monthly, pci_compliance_annual, monthly_fee_custom_name, monthly_fee_custom_amount, hardware_items, software_items, rep_codes, forecasted_residuals, last_month_residual_actuals, average_residual, partner_id, partner_schedule_index, partner_pricing_overrides, free_hardware, terminal_type, hardware_model, preferred_model, hardware_quantity, terminal_cost, gateway_name, gateway_api, fee_gateway_monthly, fee_gateway_txn").eq("lead_id", leadData.id).single();
         if (dealData) {
           // Migrate legacy single-item hardware/software fields to JSONB arrays
           if (!dealData.hardware_items && (dealData.terminal_type || dealData.hardware_model || dealData.preferred_model)) {
@@ -116,9 +116,9 @@ export default function LeadDetailPage() {
             }];
           }
           setDeal(dealData);
-          const { data: ownerData } = await supabase.from("deal_owners").select("*").eq("deal_id", dealData.id).order("created_at");
+          const { data: ownerData } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at").eq("deal_id", dealData.id).order("created_at");
           if (ownerData) setOwners(ownerData);
-          const { data: docData } = await supabase.from("deal_documents").select("*").eq("deal_id", dealData.id).order("created_at");
+          const { data: docData } = await supabase.from("deal_documents").select("id, file_url, file_name, doc_type, created_at").eq("deal_id", dealData.id).order("created_at");
           if (docData) {
             setDocuments(docData);
             // Generate signed URLs for all documents
@@ -132,7 +132,7 @@ export default function LeadDetailPage() {
             setSignedUrls(urls);
           }
         }
-        const { data: actData } = await supabase.from("activity_log").select("*").eq("lead_id", leadData.id).order("created_at", { ascending: false }).limit(50);
+        const { data: actData } = await supabase.from("activity_log").select("id, description, created_at").eq("lead_id", leadData.id).order("created_at", { ascending: false }).limit(50);
         if (actData) setActivities(actData);
         const { data: taskData } = await supabase.from("tasks").select("id, title, due_date, priority, status").eq("lead_id", leadData.id).eq("status", "pending").order("due_date", { ascending: true });
         if (taskData) setLeadTasks(taskData);
@@ -182,14 +182,14 @@ export default function LeadDetailPage() {
   const createDealAndUpdateStatus = async () => {
     setSaving(true);
     const oldStatus = lead.status;
-    const existing = await supabase.from("deals").select("*").eq("lead_id", params.id).single();
+    const existing = await supabase.from("deals").select("id, lead_id, user_id, created_at, updated_at, business_legal_name, dba_name, legal_street, legal_city, legal_state, legal_zip, entity_type, ein_itin, cp_pct, cnp_pct, currently_takes_cards, monthly_volume, average_ticket, high_ticket, amex_volume, amex_esa, pin_debit, ebt, funding_type, bank_routing, bank_account, bank_account_type, processing_terminated, filed_bankruptcy, pricing_type, ic_plus_visa_pct, ic_plus_mc_pct, ic_plus_amex_pct, ic_plus_disc_pct, ic_plus_visa_txn, ic_plus_mc_txn, ic_plus_amex_txn, ic_plus_disc_txn, interchange_remittance, dual_pricing_rate, dual_pricing_txn_fee, flat_rate_pct, flat_rate_txn_cost, fee_chargeback, fee_retrieval, fee_arbitration, fee_voice_auth, fee_ebt_auth, fee_ach_reject, monthly_fee_statement, pci_compliance_monthly, pci_compliance_annual, monthly_fee_custom_name, monthly_fee_custom_amount, hardware_items, software_items, rep_codes, forecasted_residuals, last_month_residual_actuals, average_residual, partner_id, partner_schedule_index, partner_pricing_overrides, free_hardware, terminal_type, hardware_model, preferred_model, hardware_quantity, terminal_cost, gateway_name, gateway_api, fee_gateway_monthly, fee_gateway_txn").eq("lead_id", params.id).single();
     if (existing.data) {
       // Deal already exists — restore local state if needed
       if (!deal) {
         setDeal(existing.data);
-        const { data: ownerData } = await supabase.from("deal_owners").select("*").eq("deal_id", existing.data.id).order("created_at");
+        const { data: ownerData } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at").eq("deal_id", existing.data.id).order("created_at");
         if (ownerData) setOwners(ownerData);
-        const { data: docData } = await supabase.from("deal_documents").select("*").eq("deal_id", existing.data.id).order("created_at");
+        const { data: docData } = await supabase.from("deal_documents").select("id, file_url, file_name, doc_type, created_at").eq("deal_id", existing.data.id).order("created_at");
         if (docData) setDocuments(docData);
       }
     } else {
@@ -232,7 +232,7 @@ export default function LeadDetailPage() {
 
   const convertToMerchant = async () => {
     setSaving(true);
-    const { data: dealData } = await supabase.from("deals").select("*").eq("lead_id", lead.id).single();
+    const { data: dealData } = await supabase.from("deals").select("id, lead_id, user_id, created_at, updated_at, business_legal_name, dba_name, legal_street, legal_city, legal_state, legal_zip, entity_type, ein_itin, cp_pct, cnp_pct, currently_takes_cards, monthly_volume, average_ticket, high_ticket, amex_volume, amex_esa, pin_debit, ebt, funding_type, bank_routing, bank_account, bank_account_type, processing_terminated, filed_bankruptcy, pricing_type, ic_plus_visa_pct, ic_plus_mc_pct, ic_plus_amex_pct, ic_plus_disc_pct, ic_plus_visa_txn, ic_plus_mc_txn, ic_plus_amex_txn, ic_plus_disc_txn, interchange_remittance, dual_pricing_rate, dual_pricing_txn_fee, flat_rate_pct, flat_rate_txn_cost, fee_chargeback, fee_retrieval, fee_arbitration, fee_voice_auth, fee_ebt_auth, fee_ach_reject, monthly_fee_statement, pci_compliance_monthly, pci_compliance_annual, monthly_fee_custom_name, monthly_fee_custom_amount, hardware_items, software_items, rep_codes, forecasted_residuals, last_month_residual_actuals, average_residual, partner_id, partner_schedule_index, partner_pricing_overrides, free_hardware, terminal_type, hardware_model, preferred_model, hardware_quantity, terminal_cost, gateway_name, gateway_api, fee_gateway_monthly, fee_gateway_txn").eq("lead_id", lead.id).single();
     const merchantInsert: Record<string, any> = {
       user_id: userId,
       lead_id: lead.id,

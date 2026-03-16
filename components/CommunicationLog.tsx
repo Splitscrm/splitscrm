@@ -93,8 +93,8 @@ export default function CommunicationLog({
     if (merchantId && linkedLeadId) {
       // Fetch both merchant and linked lead communications
       const [merchantRes, leadRes] = await Promise.all([
-        supabase.from("communications").select("*").eq("merchant_id", merchantId),
-        supabase.from("communications").select("*").eq("lead_id", linkedLeadId),
+        supabase.from("communications").select("id, type, direction, contact_name, subject, body, duration_seconds, logged_at, lead_id, merchant_id").eq("merchant_id", merchantId),
+        supabase.from("communications").select("id, type, direction, contact_name, subject, body, duration_seconds, logged_at, lead_id, merchant_id").eq("lead_id", linkedLeadId),
       ]);
       const merged = [...(merchantRes.data || []), ...(leadRes.data || [])];
       // Deduplicate by id, then sort by logged_at desc
@@ -102,7 +102,7 @@ export default function CommunicationLog({
       unique.sort((a, b) => new Date(b.logged_at).getTime() - new Date(a.logged_at).getTime());
       setComms(unique);
     } else {
-      let query = supabase.from("communications").select("*").order("logged_at", { ascending: false });
+      let query = supabase.from("communications").select("id, type, direction, contact_name, subject, body, duration_seconds, logged_at, lead_id, merchant_id").order("logged_at", { ascending: false });
       if (leadId) query = query.eq("lead_id", leadId);
       else if (merchantId) query = query.eq("merchant_id", merchantId);
       const { data } = await query;

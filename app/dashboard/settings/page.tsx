@@ -189,7 +189,7 @@ export default function SettingsPage() {
       // Try to fetch existing profile
       const { data } = await supabase
         .from('user_profiles')
-        .select('*')
+        .select('id, user_id, full_name, company_name, phone, timezone, notification_lead_assigned, notification_stage_changes, notification_chargeback_alerts, notification_residual_ready, notification_weekly_summary')
         .eq('user_id', user.id)
         .single()
 
@@ -213,7 +213,7 @@ export default function SettingsPage() {
       // Fetch templates
       const { data: tplData } = await supabase
         .from('email_templates')
-        .select('*')
+        .select('id, user_id, name, category, subject, body, created_at')
         .eq('user_id', user.id)
         .order('created_at')
 
@@ -349,7 +349,7 @@ export default function SettingsPage() {
   const fetchTemplates = async () => {
     const { data } = await supabase
       .from('email_templates')
-      .select('*')
+      .select('id, user_id, name, category, subject, body, created_at')
       .eq('user_id', userId)
       .order('created_at')
     setTemplates(data || [])

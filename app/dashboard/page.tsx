@@ -191,7 +191,7 @@ export default function Dashboard() {
       // Check onboarding status
       const { data: onboardingData } = await supabase
         .from('user_onboarding')
-        .select('*')
+        .select('wizard_completed, onboarding_dismissed, profile_completed, first_partner_added, first_pricing_uploaded, first_residual_imported, first_lead_added')
         .eq('user_id', user.id)
         .single()
 

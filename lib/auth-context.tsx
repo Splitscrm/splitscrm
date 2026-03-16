@@ -108,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Find org membership
       const { data: memberRow } = await supabase
         .from("org_members")
-        .select("*")
+        .select("id, org_id, user_id, role, permissions")
         .eq("user_id", currentUser.id)
         .maybeSingle();
 
@@ -118,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Fetch organization separately (avoids RLS issues with join)
         const { data: orgData } = await supabase
           .from("organizations")
-          .select("*")
+          .select("id, plan_limits")
           .eq("id", memberRow.org_id)
           .single();
 
@@ -131,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (userEmail) {
           const { data: pendingInvite } = await supabase
             .from("org_invitations")
-            .select("*")
+            .select("id")
             .eq("email", userEmail)
             .eq("status", "pending")
             .maybeSingle();

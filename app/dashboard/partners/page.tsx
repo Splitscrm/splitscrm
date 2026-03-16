@@ -49,7 +49,7 @@ export default function PartnersPage() {
     const fetchPartners = async () => {
       const { data } = await supabase
         .from("partners")
-        .select("*")
+        .select("id, name, contact_name, email, relationship_manager, status, created_at")
         .order("created_at", { ascending: false });
       if (data) setPartners(data);
       setLoading(false);

@@ -59,21 +59,21 @@ export default function PartnerDetailPage() {
     const fetchData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
-      const { data: p } = await supabase.from("partners").select("*").eq("id", params.id).single();
+      const { data: p } = await supabase.from("partners").select("id, created_at, name, relationship_manager, status, support_phone, rm_phone, email, website, residual_split, restricted_split_pct, notes, pricing_data, user_id").eq("id", params.id).single();
       if (p) {
         setPartner(p);
-        const { data: b } = await supabase.from("partner_sponsor_banks").select("*").eq("partner_id", p.id).order("created_at");
+        const { data: b } = await supabase.from("partner_sponsor_banks").select("id, created_at, partner_id, bank_name, cutoff_timezone, next_day_funding, batch_cutoff_time, same_day_funding, same_day_cutoff_time, accepted_mcc_codes, restricted_mcc_codes").eq("partner_id", p.id).order("created_at");
         if (b) {
           setBanks(b);
           fetchMpasForBanks(b.map((bank: any) => bank.id));
         }
-        const { data: h } = await supabase.from("partner_hardware").select("*").eq("partner_id", p.id).order("created_at");
+        const { data: h } = await supabase.from("partner_hardware").select("id, created_at, partner_id, hardware_type, hardware_name, manufacturer, model, cost, msrp, free_placement").eq("partner_id", p.id).order("created_at");
         if (h) setHardware(h);
-        const { data: s } = await supabase.from("partner_software").select("*").eq("partner_id", p.id).order("created_at");
+        const { data: s } = await supabase.from("partner_software").select("id, created_at, partner_id, software_name, software_type, manufacturer, monthly_cost, per_transaction_cost, notes").eq("partner_id", p.id).order("created_at");
         if (s) setSoftware(s);
-        const { data: u } = await supabase.from("partner_underwriting").select("*").eq("partner_id", p.id).order("created_at");
+        const { data: u } = await supabase.from("partner_underwriting").select("id, created_at, partner_id, guideline_name, description, max_volume, max_ticket, restricted_industries").eq("partner_id", p.id).order("created_at");
         if (u) setUnderwriting(u);
-        const { data: pr } = await supabase.from("partner_pricing").select("*").eq("partner_id", p.id).order("created_at");
+        const { data: pr } = await supabase.from("partner_pricing").select("id, created_at, partner_id, schedule_name, pricing_model, discount_rate, per_transaction_fee, monthly_fee").eq("partner_id", p.id).order("created_at");
         if (pr) setPricing(pr);
       }
       setLoading(false);
@@ -126,7 +126,7 @@ export default function PartnerDetailPage() {
     if (bankIds.length === 0) return;
     const { data } = await supabase
       .from("sponsor_bank_mpas")
-      .select("*")
+      .select("id, created_at, sponsor_bank_id, file_name, file_url, storage_path")
       .in("sponsor_bank_id", bankIds)
       .order("created_at", { ascending: false });
     const grouped: Record<string, any[]> = {};
@@ -140,7 +140,7 @@ export default function PartnerDetailPage() {
   const fetchMpasForBank = async (bankId: string) => {
     const { data } = await supabase
       .from("sponsor_bank_mpas")
-      .select("*")
+      .select("id, created_at, sponsor_bank_id, file_name, file_url, storage_path")
       .eq("sponsor_bank_id", bankId)
       .order("created_at", { ascending: false });
     setBankMpas(prev => ({ ...prev, [bankId]: data || [] }));
@@ -251,7 +251,7 @@ export default function PartnerDetailPage() {
     if (agreementsFetched || !partner) return;
     const { data } = await supabase
       .from("partner_agreements")
-      .select("*")
+      .select("id, file_name, file_url, storage_path, agreement_type, description, uploaded_at, created_at")
       .eq("partner_id", partner.id)
       .order("uploaded_at", { ascending: false });
     if (data) setAgreements(data);

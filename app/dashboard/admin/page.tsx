@@ -200,11 +200,11 @@ export default function AdminPage() {
 
   const fetchOrganizations = async () => {
     setLoading(true);
-    const { data: orgData } = await supabase.from("organizations").select("*").order("created_at", { ascending: false });
+    const { data: orgData } = await supabase.from("organizations").select("id, name, slug, plan, plan_limits, created_at").order("created_at", { ascending: false });
     if (orgData) {
       setOrgs(orgData);
       // Fetch all members for all orgs
-      const { data: members } = await supabase.from("org_members").select("*").order("joined_at", { ascending: false });
+      const { data: members } = await supabase.from("org_members").select("id, org_id, user_id, invited_email, role, status, permissions, joined_at").order("joined_at", { ascending: false });
       if (members) {
         const grouped: Record<string, any[]> = {};
         for (const m of members) {
@@ -239,7 +239,7 @@ export default function AdminPage() {
 
   const fetchAllUsers = async () => {
     if (usersFetched) return;
-    const { data: members } = await supabase.from("org_members").select("*").order("joined_at", { ascending: false });
+    const { data: members } = await supabase.from("org_members").select("id, org_id, user_id, invited_email, role, status, permissions, joined_at").order("joined_at", { ascending: false });
     if (members) {
       // Enrich with org names
       const { data: orgData } = await supabase.from("organizations").select("id, name");
@@ -262,7 +262,7 @@ export default function AdminPage() {
   };
 
   const fetchInvitations = async () => {
-    const { data } = await supabase.from("org_invitations").select("*").order("created_at", { ascending: false });
+    const { data } = await supabase.from("org_invitations").select("id, org_id, email, role, status, created_at, expires_at, token").order("created_at", { ascending: false });
     if (data) {
       const { data: orgData } = await supabase.from("organizations").select("id, name");
       const orgMap: Record<string, string> = {};
@@ -346,7 +346,7 @@ export default function AdminPage() {
     const link = `${window.location.origin}/invite/${token}`;
     setInviteLink(link);
     // Refresh members for this org
-    const { data: members } = await supabase.from("org_members").select("*").eq("org_id", orgId).order("joined_at", { ascending: false });
+    const { data: members } = await supabase.from("org_members").select("id, org_id, user_id, invited_email, role, status, permissions, joined_at").eq("org_id", orgId).order("joined_at", { ascending: false });
     if (members) setOrgMembers((prev) => ({ ...prev, [orgId]: members }));
     showMsg("Invitation sent!");
   };

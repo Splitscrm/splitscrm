@@ -173,7 +173,7 @@ export default function LeadsPage() {
     if (!user) return
     let query = supabase
       .from('leads')
-      .select('*')
+      .select('id, business_name, contact_name, email, phone, status, monthly_volume, notes, created_at, updated_at, follow_up_date, assigned_to, user_id, website, source, state')
       .order('created_at', { ascending: false })
 
     if (!isOwnerOrManager) {
@@ -337,7 +337,7 @@ export default function LeadsPage() {
   const fetchPreviewActivities = useCallback(async (leadId: string) => {
     const { data } = await supabase
       .from('activity_log')
-      .select('*')
+      .select('id, description, created_at')
       .eq('lead_id', leadId)
       .order('created_at', { ascending: false })
       .limit(5)

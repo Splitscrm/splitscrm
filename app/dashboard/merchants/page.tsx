@@ -121,7 +121,7 @@ export default function MerchantsPage() {
     if (!user) return;
     let query = supabase
       .from("merchants")
-      .select("*")
+      .select("id, business_name, contact_name, email, phone, mid, processor, status, monthly_volume, assigned_to, user_id, created_at, business_state, pricing_type, chargeback_ratio, notes")
       .order("created_at", { ascending: false });
 
     if (!isOwnerOrManager) {

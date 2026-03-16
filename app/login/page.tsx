@@ -10,7 +10,7 @@ async function acceptInviteIfPresent(token: string | null, userId: string) {
   if (!token) return
   const { data: inv } = await supabase
     .from('org_invitations')
-    .select('*')
+    .select('id, org_id, email, role')
     .eq('token', token)
     .eq('status', 'pending')
     .maybeSingle()
