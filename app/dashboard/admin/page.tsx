@@ -227,6 +227,16 @@ export default function AdminPage() {
     setLoading(false);
   };
 
+  const getDisplayName = (member: any) => {
+    const profile = member.user_id ? allProfiles[member.user_id] : null;
+    return profile?.full_name || member.invited_email || profile?.email || "Unknown";
+  };
+
+  const getDisplayEmail = (member: any) => {
+    const profile = member.user_id ? allProfiles[member.user_id] : null;
+    return member.invited_email || profile?.email || "—";
+  };
+
   const fetchAllUsers = async () => {
     if (usersFetched) return;
     const { data: members } = await supabase.from("org_members").select("*").order("joined_at", { ascending: false });
@@ -737,12 +747,11 @@ export default function AdminPage() {
                         <p className="text-xs text-slate-400">No members.</p>
                       ) : (
                         members.map((m) => {
-                          const profile = m.user_id ? allProfiles[m.user_id] : null;
-                          const displayName = profile?.full_name || m.invited_email || profile?.email || "Unknown";
                           return (
                             <div key={m.id} className="flex items-center justify-between py-2 border-b border-slate-50">
                               <div className="flex items-center gap-2">
-                                <span className="text-sm text-slate-700">{displayName}</span>
+                                <span className="text-sm text-slate-700">{getDisplayName(m)}</span>
+                                <span className="text-xs text-slate-400">{getDisplayEmail(m)}</span>
                                 <span className={`text-xs px-2 py-0.5 rounded-full ${roleColors[m.role] || "bg-slate-100 text-slate-600"}`}>
                                   {roleLabels[m.role] || m.role}
                                 </span>
@@ -848,17 +857,13 @@ export default function AdminPage() {
                       .filter((m) => {
                         if (!userSearch) return true;
                         const q = userSearch.toLowerCase();
-                        const profile = m.user_id ? allProfiles[m.user_id] : null;
-                        const name = profile?.full_name || "";
-                        const email = m.invited_email || profile?.email || "";
-                        return name.toLowerCase().includes(q) || email.toLowerCase().includes(q);
+                        return getDisplayName(m).toLowerCase().includes(q) || getDisplayEmail(m).toLowerCase().includes(q);
                       })
                       .map((m) => {
-                        const profile = m.user_id ? allProfiles[m.user_id] : null;
                         return (
                           <tr key={m.id} className="border-t border-slate-100 hover:bg-slate-50">
-                            <td className="px-4 py-3 text-slate-700">{profile?.full_name || "—"}</td>
-                            <td className="px-4 py-3 text-slate-600">{m.invited_email || profile?.email || "—"}</td>
+                            <td className="px-4 py-3 text-slate-700">{getDisplayName(m)}</td>
+                            <td className="px-4 py-3 text-slate-600">{getDisplayEmail(m)}</td>
                             <td className="px-4 py-3 text-slate-600">{m.org_name}</td>
                             <td className="px-4 py-3">
                               <span className={`text-xs px-2 py-0.5 rounded-full ${roleColors[m.role] || "bg-slate-100 text-slate-600"}`}>

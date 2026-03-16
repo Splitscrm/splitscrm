@@ -178,6 +178,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setOrg(result.org);
         }
       }
+      // Ensure user_profiles row exists (for new signups via OAuth)
+      const { data: existingProfile } = await supabase
+        .from("user_profiles")
+        .select("user_id")
+        .eq("user_id", currentUser.id)
+        .maybeSingle();
+
+      if (!existingProfile) {
+        const meta = currentUser.user_metadata || {};
+        const fullName = meta.full_name || meta.name || "";
+        const email = currentUser.email || "";
+        await supabase.from("user_profiles").insert({
+          user_id: currentUser.id,
+          full_name: fullName || null,
+          email: email || null,
+        });
+      }
     } catch (err) {
       console.error("Auth context error:", err);
     }
