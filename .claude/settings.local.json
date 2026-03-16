@@ -169,7 +169,9 @@
       "Bash(find:*)",
       "Bash(git push:*)",
       "Bash(grep:*)",
-      "Bash(git diff:*)"
+      "Bash(git diff:*)",
+      "Bash(npm list:*)",
+      "Bash(npm install:*)"
     ]
   }
 }
