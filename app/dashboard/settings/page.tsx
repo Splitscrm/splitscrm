@@ -438,11 +438,11 @@ export default function SettingsPage() {
     if (userIds.length > 0) {
       const { data: profiles } = await supabase
         .from('user_profiles')
-        .select('user_id, full_name')
+        .select('user_id, full_name, email')
         .in('user_id', userIds)
       if (profiles) {
         for (const p of profiles) {
-          profileMap[p.user_id] = { full_name: p.full_name }
+          profileMap[p.user_id] = { full_name: p.full_name, email: p.email }
         }
       }
     }
@@ -455,7 +455,7 @@ export default function SettingsPage() {
       status: m.status,
       invited_email: m.invited_email,
       profile_name: m.user_id && profileMap[m.user_id] ? profileMap[m.user_id].full_name : null,
-      profile_email: m.invited_email || (m.user_id === authUser?.id ? email : null),
+      profile_email: m.invited_email || profileMap[m.user_id]?.email || (m.user_id === authUser?.id ? email : null),
     }))
 
     setTeamMembers(enriched)
