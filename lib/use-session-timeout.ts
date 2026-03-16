@@ -13,9 +13,9 @@ export function useSessionTimeout() {
   const [showWarning, setShowWarning] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(300);
 
-  const warningTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const logoutTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const countdownRef = useRef<ReturnType<typeof setInterval>>();
+  const warningTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const logoutTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval>>(null);
   const lastThrottleRef = useRef(0);
   const isWarningRef = useRef(false);
 
