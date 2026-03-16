@@ -27,6 +27,15 @@ export default function PartnerDetailPage() {
   const [merchantResiduals, setMerchantResiduals] = useState<Record<string, { ytd: number; lastMonth: number }>>({});
   const [merchantsLoading, setMerchantsLoading] = useState(false);
   const [merchantsFetched, setMerchantsFetched] = useState(false);
+  // Rep codes
+  const [partnerRepCodes, setPartnerRepCodes] = useState<any[]>([]);
+  const [repCodesFetched, setRepCodesFetched] = useState(false);
+  const [repProfiles, setRepProfiles] = useState<Record<string, string>>({});
+  const [showRepModal, setShowRepModal] = useState(false);
+  const [repForm, setRepForm] = useState({ user_id: '', rep_code: '', label: '', split_pct: '', effective_date: '', notes: '' });
+  const [repSaving, setRepSaving] = useState(false);
+  const [repError, setRepError] = useState('');
+  const [repAgents, setRepAgents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -51,6 +60,7 @@ export default function PartnerDetailPage() {
     { key: "pricing", label: "Pricing" },
     { key: "merchants", label: "Merchants" },
     { key: "agreements", label: "Agreements" },
+    { key: "repcodes", label: "Rep Codes" },
   ];
 
   useEffect(() => {
@@ -258,6 +268,82 @@ export default function PartnerDetailPage() {
     setAgreementsFetched(true);
   };
 
+  const fetchRepCodes = async () => {
+    if (repCodesFetched || !partner || !member?.org_id) return;
+    const { data } = await supabase
+      .from("agent_rep_codes")
+      .select("id, user_id, rep_code, label, status, split_pct, effective_date, end_date, notes")
+      .eq("partner_id", partner.id)
+      .eq("org_id", member.org_id)
+      .order("created_at", { ascending: false });
+    setPartnerRepCodes(data || []);
+    // Fetch agent names
+    const uids = [...new Set((data || []).map((r: any) => r.user_id).filter(Boolean))];
+    if (uids.length > 0) {
+      const { data: profiles } = await supabase.from("user_profiles").select("user_id, full_name, email").in("user_id", uids);
+      const map: Record<string, string> = {};
+      for (const p of profiles || []) map[p.user_id] = p.full_name || p.email || p.user_id.slice(0, 8);
+      setRepProfiles(map);
+    }
+    // Fetch agents for add modal
+    if (member?.org_id) {
+      const { data: members } = await supabase.from("org_members").select("user_id, role").eq("org_id", member.org_id).eq("status", "active");
+      const agents = (members || []).filter(m => ["agent", "sub_agent", "master_agent"].includes(m.role) && m.user_id);
+      if (agents.length > 0) {
+        const { data: agentProfiles } = await supabase.from("user_profiles").select("user_id, full_name, email").in("user_id", agents.map(a => a.user_id));
+        const enriched = agents.map(a => {
+          const p = (agentProfiles || []).find(p => p.user_id === a.user_id);
+          return { ...a, name: p?.full_name || p?.email || a.user_id.slice(0, 8) };
+        });
+        setRepAgents(enriched);
+        // Update profiles map
+        const newMap = { ...repProfiles };
+        for (const p of agentProfiles || []) newMap[p.user_id] = p.full_name || p.email || p.user_id.slice(0, 8);
+        setRepProfiles(newMap);
+      }
+    }
+    setRepCodesFetched(true);
+  };
+
+  const handleSavePartnerRepCode = async () => {
+    if (!repForm.rep_code.trim()) { setRepError("Rep code is required"); return; }
+    if (!repForm.user_id) { setRepError("Agent is required"); return; }
+    setRepSaving(true);
+    setRepError("");
+    const { error } = await supabase.from("agent_rep_codes").insert({
+      org_id: member?.org_id,
+      user_id: repForm.user_id,
+      partner_id: partner.id,
+      rep_code: repForm.rep_code.trim(),
+      label: repForm.label.trim() || null,
+      split_pct: repForm.split_pct ? parseFloat(repForm.split_pct) : null,
+      effective_date: repForm.effective_date || null,
+      notes: repForm.notes.trim() || null,
+      status: "active",
+    });
+    setRepSaving(false);
+    if (error) {
+      setRepError(error.message.includes("unique") ? "This rep code already exists for this partner." : error.message);
+      return;
+    }
+    setShowRepModal(false);
+    setRepCodesFetched(false);
+    fetchRepCodes();
+    showMsg("Rep code added!");
+  };
+
+  const handleDeactivatePartnerRepCode = async (rc: any) => {
+    if (!confirm(`Deactivate rep code "${rc.rep_code}"?`)) return;
+    await supabase.from("agent_rep_codes").update({
+      status: "inactive",
+      end_date: new Date().toISOString().split("T")[0],
+      updated_at: new Date().toISOString(),
+    }).eq("id", rc.id);
+    setRepCodesFetched(false);
+    fetchRepCodes();
+    showMsg("Rep code deactivated.");
+  };
+
   const inputClass = "w-full bg-white text-slate-900 px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-base";
   const labelClass = "text-base text-slate-500 block mb-1";
   const cardClass = "bg-white rounded-xl p-6 border border-slate-200 shadow-sm mb-4";
@@ -334,9 +420,9 @@ export default function PartnerDetailPage() {
         <div className="flex flex-nowrap gap-2 mb-6 border-b border-slate-200 pb-2 overflow-x-auto">
           {tabs.map((t) => {
             const pricingDataCount = Array.isArray(partner?.pricing_data) ? partner.pricing_data.length : 0;
-            const count = t.key === "banks" ? banks.length : t.key === "hardware" ? hardware.length : t.key === "software" ? software.length : t.key === "underwriting" ? underwriting.length : t.key === "merchants" ? partnerMerchants.length : t.key === "agreements" ? agreements.length : t.key === "pricing" ? pricing.length + pricingDataCount : 0;
+            const count = t.key === "banks" ? banks.length : t.key === "hardware" ? hardware.length : t.key === "software" ? software.length : t.key === "underwriting" ? underwriting.length : t.key === "merchants" ? partnerMerchants.length : t.key === "agreements" ? agreements.length : t.key === "repcodes" ? partnerRepCodes.length : t.key === "pricing" ? pricing.length + pricingDataCount : 0;
             return (
-              <button key={t.key} onClick={() => { setActiveTab(t.key); if (t.key === "merchants") fetchMerchants(); if (t.key === "agreements") fetchAgreements(); }} className={`px-4 py-2 rounded-t-lg text-sm font-medium transition whitespace-nowrap ${activeTab === t.key ? "bg-white text-slate-900 border-b-2 border-emerald-500" : "text-slate-400 hover:text-slate-900"}`}>
+              <button key={t.key} onClick={() => { setActiveTab(t.key); if (t.key === "merchants") fetchMerchants(); if (t.key === "agreements") fetchAgreements(); if (t.key === "repcodes") fetchRepCodes(); }} className={`px-4 py-2 rounded-t-lg text-sm font-medium transition whitespace-nowrap ${activeTab === t.key ? "bg-white text-slate-900 border-b-2 border-emerald-500" : "text-slate-400 hover:text-slate-900"}`}>
                 {t.label} ({count})
               </button>
             );
@@ -1049,6 +1135,126 @@ export default function PartnerDetailPage() {
                   </div>
                 </div>
               ))
+            )}
+          </div>
+        )}
+
+        {/* REP CODES TAB */}
+        {activeTab === "repcodes" && (
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Rep Codes</h3>
+              <button onClick={() => { setRepForm({ user_id: '', rep_code: '', label: '', split_pct: '', effective_date: '', notes: '' }); setRepError(''); setShowRepModal(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">+ Add Rep Code</button>
+            </div>
+
+            {partnerRepCodes.length === 0 ? (
+              <p className="text-sm text-slate-400">No rep codes for this partner yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-500 border-b border-slate-200">
+                      <th className="px-4 py-2.5 font-medium">Agent</th>
+                      <th className="px-4 py-2.5 font-medium">Rep Code</th>
+                      <th className="px-4 py-2.5 font-medium">Label</th>
+                      <th className="px-4 py-2.5 font-medium">Status</th>
+                      <th className="px-4 py-2.5 font-medium">Split %</th>
+                      <th className="px-4 py-2.5 font-medium">Effective</th>
+                      <th className="px-4 py-2.5 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {partnerRepCodes.map((rc) => (
+                      <tr key={rc.id} className="border-b border-slate-100 hover:bg-slate-50">
+                        <td className="px-4 py-2.5 font-medium">{repProfiles[rc.user_id] || rc.user_id?.slice(0, 8)}</td>
+                        <td className="px-4 py-2.5 font-mono text-emerald-700">{rc.rep_code}</td>
+                        <td className="px-4 py-2.5 text-slate-500">{rc.label || "-"}</td>
+                        <td className="px-4 py-2.5">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${rc.status === "active" ? "bg-emerald-50 text-emerald-700" : rc.status === "transferred" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-500"}`}>{rc.status}</span>
+                        </td>
+                        <td className="px-4 py-2.5">{rc.split_pct != null ? `${rc.split_pct}%` : "-"}</td>
+                        <td className="px-4 py-2.5 text-slate-500">{rc.effective_date || "-"}</td>
+                        <td className="px-4 py-2.5">
+                          {rc.status === "active" && (
+                            <button onClick={() => handleDeactivatePartnerRepCode(rc)} className="text-red-500 hover:text-red-600 text-xs font-medium">Deactivate</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Agents without codes at this partner */}
+            {repAgents.length > 0 && (() => {
+              const assignedUids = new Set(partnerRepCodes.filter(rc => rc.status === "active").map(rc => rc.user_id));
+              const unassigned = repAgents.filter(a => !assignedUids.has(a.user_id));
+              if (unassigned.length === 0) return null;
+              return (
+                <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-sm font-medium text-amber-800 mb-2">Agents without a rep code at this partner:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {unassigned.map(a => (
+                      <span key={a.user_id} className="bg-white border border-amber-300 text-amber-800 text-xs px-2.5 py-1 rounded-full">{a.name}</span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Add Rep Code Modal */}
+            {showRepModal && (
+              <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-md mx-4">
+                  <div className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-slate-900">Add Rep Code</h3>
+                      <button onClick={() => setShowRepModal(false)} className="text-slate-400 hover:text-slate-600">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+                    <div className="space-y-4">
+                      <div>
+                        <label className={labelClass}>Agent</label>
+                        <select value={repForm.user_id} onChange={e => setRepForm({ ...repForm, user_id: e.target.value })} className={inputClass}>
+                          <option value="">Select agent...</option>
+                          {repAgents.map(a => <option key={a.user_id} value={a.user_id}>{a.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelClass}>Rep Code</label>
+                        <input type="text" value={repForm.rep_code} onChange={e => setRepForm({ ...repForm, rep_code: e.target.value })} className={inputClass} placeholder="e.g. ABC123" />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Label (optional)</label>
+                        <input type="text" value={repForm.label} onChange={e => setRepForm({ ...repForm, label: e.target.value })} className={inputClass} placeholder="e.g. John's code" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className={labelClass}>Split %</label>
+                          <input type="number" min="0" max="100" step="0.01" value={repForm.split_pct} onChange={e => setRepForm({ ...repForm, split_pct: e.target.value })} className={inputClass} />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Effective Date</label>
+                          <input type="date" value={repForm.effective_date} onChange={e => setRepForm({ ...repForm, effective_date: e.target.value })} className={inputClass} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className={labelClass}>Notes</label>
+                        <textarea value={repForm.notes} onChange={e => setRepForm({ ...repForm, notes: e.target.value })} className={`${inputClass} resize-none`} rows={2} />
+                      </div>
+                      {repError && <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-2.5 rounded-lg text-sm">{repError}</div>}
+                      <div className="flex justify-end gap-3 pt-2">
+                        <button onClick={() => setShowRepModal(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">Cancel</button>
+                        <button onClick={handleSavePartnerRepCode} disabled={repSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
+                          {repSaving ? "Saving..." : "Add Rep Code"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         )}

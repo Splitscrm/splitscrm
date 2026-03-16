@@ -155,6 +155,18 @@ export default function SettingsPage() {
   const [tplSaving, setTplSaving] = useState(false)
   const [tplMsg, setTplMsg] = useState('')
 
+  // Rep code state
+  const [repCodes, setRepCodes] = useState<any[]>([])
+  const [repPartnersCache, setRepPartnersCache] = useState<any[]>([])
+  const [showRepModal, setShowRepModal] = useState(false)
+  const [repEditing, setRepEditing] = useState<any>(null)
+  const [repForm, setRepForm] = useState({ user_id: '', partner_id: '', rep_code: '', label: '', split_pct: '', effective_date: '', notes: '' })
+  const [repSaving, setRepSaving] = useState(false)
+  const [repError, setRepError] = useState('')
+  const [repMsg, setRepMsg] = useState('')
+  const [repFilterAgent, setRepFilterAgent] = useState('')
+  const [repFilterPartner, setRepFilterPartner] = useState('')
+
   // Team state
   const [teamOrgData, setTeamOrgData] = useState<any>(null)
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
@@ -462,11 +474,127 @@ export default function SettingsPage() {
     setTeamLoading(false)
   }, [member?.org_id, authUser?.id, email])
 
+  const fetchRepCodes = useCallback(async () => {
+    if (!member?.org_id) return
+    const { data } = await supabase
+      .from('agent_rep_codes')
+      .select('id, org_id, user_id, partner_id, rep_code, label, status, effective_date, end_date, split_pct, notes, created_at')
+      .eq('org_id', member.org_id)
+      .order('created_at', { ascending: false })
+    setRepCodes(data || [])
+    // Cache partners for dropdowns
+    const { data: pData } = await supabase
+      .from('partners')
+      .select('id, name')
+      .order('name')
+    setRepPartnersCache(pData || [])
+  }, [member?.org_id])
+
   useEffect(() => {
     if (activeTab === 'Team' && member?.org_id) {
       fetchTeamMembers()
+      fetchRepCodes()
     }
-  }, [activeTab, member?.org_id, fetchTeamMembers])
+  }, [activeTab, member?.org_id, fetchTeamMembers, fetchRepCodes])
+
+  // Also fetch rep codes on Profile tab for agent self-service
+  useEffect(() => {
+    if (activeTab === 'Profile' && member?.org_id) {
+      fetchRepCodes()
+    }
+  }, [activeTab, member?.org_id, fetchRepCodes])
+
+  const openRepModal = (editing?: any) => {
+    if (editing) {
+      setRepEditing(editing)
+      setRepForm({
+        user_id: editing.user_id || '',
+        partner_id: editing.partner_id || '',
+        rep_code: editing.rep_code || '',
+        label: editing.label || '',
+        split_pct: editing.split_pct != null ? String(editing.split_pct) : '',
+        effective_date: editing.effective_date || '',
+        notes: editing.notes || '',
+      })
+    } else {
+      setRepEditing(null)
+      setRepForm({ user_id: '', partner_id: '', rep_code: '', label: '', split_pct: '', effective_date: '', notes: '' })
+    }
+    setRepError('')
+    setShowRepModal(true)
+  }
+
+  const handleSaveRepCode = async () => {
+    if (!repForm.rep_code.trim()) { setRepError('Rep code is required'); return }
+    if (!repForm.partner_id) { setRepError('Partner is required'); return }
+    if (!repForm.user_id) { setRepError('Agent is required'); return }
+    setRepSaving(true)
+    setRepError('')
+
+    const payload: any = {
+      org_id: member?.org_id,
+      user_id: repForm.user_id,
+      partner_id: repForm.partner_id,
+      rep_code: repForm.rep_code.trim(),
+      label: repForm.label.trim() || null,
+      split_pct: repForm.split_pct ? parseFloat(repForm.split_pct) : null,
+      effective_date: repForm.effective_date || null,
+      notes: repForm.notes.trim() || null,
+      status: 'active',
+      updated_at: new Date().toISOString(),
+    }
+
+    if (repEditing) {
+      const { error } = await supabase.from('agent_rep_codes').update(payload).eq('id', repEditing.id)
+      if (error) {
+        setRepError(error.message.includes('unique') ? 'This rep code already exists for this partner in your org.' : error.message)
+        setRepSaving(false)
+        return
+      }
+    } else {
+      const { error } = await supabase.from('agent_rep_codes').insert(payload)
+      if (error) {
+        setRepError(error.message.includes('unique') ? 'This rep code already exists for this partner in your org.' : error.message)
+        setRepSaving(false)
+        return
+      }
+    }
+
+    setRepSaving(false)
+    setShowRepModal(false)
+    setRepMsg(repEditing ? 'Rep code updated' : 'Rep code added')
+    setTimeout(() => setRepMsg(''), 2000)
+    fetchRepCodes()
+  }
+
+  const handleDeactivateRepCode = async (rc: any) => {
+    if (!confirm(`Deactivate rep code "${rc.rep_code}"?`)) return
+    await supabase.from('agent_rep_codes').update({
+      status: 'inactive',
+      end_date: new Date().toISOString().split('T')[0],
+      updated_at: new Date().toISOString(),
+    }).eq('id', rc.id)
+    setRepMsg('Rep code deactivated')
+    setTimeout(() => setRepMsg(''), 2000)
+    fetchRepCodes()
+  }
+
+  const getAgentName = (uid: string) => {
+    const tm = teamMembers.find(m => m.user_id === uid)
+    return tm?.profile_name || tm?.invited_email || uid.slice(0, 8)
+  }
+
+  const getPartnerName = (pid: string) => {
+    return repPartnersCache.find(p => p.id === pid)?.name || 'Unknown'
+  }
+
+  const agentMembers = teamMembers.filter(m => ['agent', 'sub_agent', 'master_agent'].includes(m.role) && m.user_id)
+
+  const filteredRepCodes = repCodes.filter(rc => {
+    if (repFilterAgent && rc.user_id !== repFilterAgent) return false
+    if (repFilterPartner && rc.partner_id !== repFilterPartner) return false
+    return true
+  })
 
   const handleRoleChange = async (memberId: string, newRole: string) => {
     await supabase.from('org_members').update({ role: newRole }).eq('id', memberId)
@@ -615,6 +743,7 @@ export default function SettingsPage() {
         <div className="max-w-3xl">
           {/* PROFILE TAB */}
           {activeTab === 'Profile' && (
+            <>
             <div className={cardClass}>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 mb-4">
                 <h3 className="text-lg font-semibold">Profile</h3>
@@ -693,6 +822,44 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+
+            {/* MY REP CODES (agent self-service, read-only) */}
+            {['agent', 'sub_agent', 'master_agent'].includes(settingsRole) && repCodes.length > 0 && (
+              <div className={cardClass + ' mt-6'}>
+                <h3 className="text-lg font-semibold mb-4">My Rep Codes</h3>
+                {repCodes.filter(rc => rc.user_id === authUser?.id).length === 0 ? (
+                  <p className="text-sm text-slate-400">No rep codes assigned to you yet.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-slate-500 border-b border-slate-200">
+                          <th className="px-4 py-2.5 font-medium">Partner</th>
+                          <th className="px-4 py-2.5 font-medium">Rep Code</th>
+                          <th className="px-4 py-2.5 font-medium">Label</th>
+                          <th className="px-4 py-2.5 font-medium">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {repCodes.filter(rc => rc.user_id === authUser?.id).map(rc => (
+                          <tr key={rc.id} className="border-b border-slate-100">
+                            <td className="px-4 py-2.5">{getPartnerName(rc.partner_id)}</td>
+                            <td className="px-4 py-2.5 font-mono text-emerald-700">{rc.rep_code}</td>
+                            <td className="px-4 py-2.5 text-slate-500">{rc.label || '-'}</td>
+                            <td className="px-4 py-2.5">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${rc.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                                {rc.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
           )}
 
           {/* NOTIFICATIONS TAB */}
@@ -985,6 +1152,148 @@ export default function SettingsPage() {
                       </div>
                     )
                   })}
+                </div>
+              )}
+
+              {/* REP CODES SECTION */}
+              <div className="mt-10 pt-8 border-t border-slate-200">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900">Rep Codes</h3>
+                    <p className="text-sm text-slate-500 mt-0.5">Manage agent rep codes across partners</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {repMsg && <span className="text-sm text-emerald-600">{repMsg}</span>}
+                    <button
+                      onClick={() => openRepModal()}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150"
+                    >
+                      + Add Rep Code
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filters */}
+                <div className="flex flex-wrap gap-3 mb-4">
+                  <select value={repFilterAgent} onChange={e => setRepFilterAgent(e.target.value)} className="text-sm px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
+                    <option value="">All Agents</option>
+                    {agentMembers.map(m => <option key={m.user_id} value={m.user_id!}>{m.profile_name || m.invited_email || 'Unknown'}</option>)}
+                  </select>
+                  <select value={repFilterPartner} onChange={e => setRepFilterPartner(e.target.value)} className="text-sm px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
+                    <option value="">All Partners</option>
+                    {repPartnersCache.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+
+                {filteredRepCodes.length === 0 ? (
+                  <p className="text-sm text-slate-400 py-4">No rep codes found. Add one to get started.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-slate-500 border-b border-slate-200">
+                          <th className="px-4 py-2.5 font-medium">Agent</th>
+                          <th className="px-4 py-2.5 font-medium">Partner</th>
+                          <th className="px-4 py-2.5 font-medium">Rep Code</th>
+                          <th className="px-4 py-2.5 font-medium">Label</th>
+                          <th className="px-4 py-2.5 font-medium">Status</th>
+                          <th className="px-4 py-2.5 font-medium">Split %</th>
+                          <th className="px-4 py-2.5 font-medium">Effective</th>
+                          <th className="px-4 py-2.5 font-medium">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredRepCodes.map(rc => (
+                          <tr key={rc.id} className="border-b border-slate-100 hover:bg-slate-50">
+                            <td className="px-4 py-2.5 font-medium">{getAgentName(rc.user_id)}</td>
+                            <td className="px-4 py-2.5">{getPartnerName(rc.partner_id)}</td>
+                            <td className="px-4 py-2.5 font-mono text-emerald-700">{rc.rep_code}</td>
+                            <td className="px-4 py-2.5 text-slate-500">{rc.label || '-'}</td>
+                            <td className="px-4 py-2.5">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${rc.status === 'active' ? 'bg-emerald-50 text-emerald-700' : rc.status === 'transferred' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                                {rc.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5">{rc.split_pct != null ? `${rc.split_pct}%` : '-'}</td>
+                            <td className="px-4 py-2.5 text-slate-500">{rc.effective_date || '-'}</td>
+                            <td className="px-4 py-2.5">
+                              <div className="flex gap-2">
+                                <button onClick={() => openRepModal(rc)} className="text-emerald-600 hover:text-emerald-700 text-xs font-medium">Edit</button>
+                                {rc.status === 'active' && (
+                                  <button onClick={() => handleDeactivateRepCode(rc)} className="text-red-500 hover:text-red-600 text-xs font-medium">Deactivate</button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* REP CODE MODAL */}
+              {showRepModal && (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-md mx-4">
+                    <div className="p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-slate-900">{repEditing ? 'Edit Rep Code' : 'Add Rep Code'}</h3>
+                        <button onClick={() => setShowRepModal(false)} className="text-slate-400 hover:text-slate-600">
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="space-y-4">
+                        <div>
+                          <label className={labelClass}>Agent</label>
+                          <select value={repForm.user_id} onChange={e => setRepForm({ ...repForm, user_id: e.target.value })} className={inputClass}>
+                            <option value="">Select agent...</option>
+                            {agentMembers.map(m => <option key={m.user_id} value={m.user_id!}>{m.profile_name || m.invited_email || 'Unknown'} ({ROLE_LABELS[m.role]})</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={labelClass}>Partner</label>
+                          <select value={repForm.partner_id} onChange={e => setRepForm({ ...repForm, partner_id: e.target.value })} className={inputClass}>
+                            <option value="">Select partner...</option>
+                            {repPartnersCache.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={labelClass}>Rep Code</label>
+                          <input type="text" value={repForm.rep_code} onChange={e => setRepForm({ ...repForm, rep_code: e.target.value })} className={inputClass} placeholder="e.g. ABC123" />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Label (optional)</label>
+                          <input type="text" value={repForm.label} onChange={e => setRepForm({ ...repForm, label: e.target.value })} className={inputClass} placeholder="e.g. John's Fiserv code" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className={labelClass}>Split % Override</label>
+                            <input type="number" min="0" max="100" step="0.01" value={repForm.split_pct} onChange={e => setRepForm({ ...repForm, split_pct: e.target.value })} className={inputClass} placeholder="e.g. 50" />
+                          </div>
+                          <div>
+                            <label className={labelClass}>Effective Date</label>
+                            <input type="date" value={repForm.effective_date} onChange={e => setRepForm({ ...repForm, effective_date: e.target.value })} className={inputClass} />
+                          </div>
+                        </div>
+                        <div>
+                          <label className={labelClass}>Notes (optional)</label>
+                          <textarea value={repForm.notes} onChange={e => setRepForm({ ...repForm, notes: e.target.value })} className={`${inputClass} resize-none`} rows={3} placeholder="Any notes..." />
+                        </div>
+                        {repError && (
+                          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-2.5 rounded-lg text-sm">{repError}</div>
+                        )}
+                        <div className="flex flex-col sm:flex-row sm:justify-end gap-3 pt-2">
+                          <button onClick={() => setShowRepModal(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150">Cancel</button>
+                          <button onClick={handleSaveRepCode} disabled={repSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150 disabled:opacity-50">
+                            {repSaving ? 'Saving...' : repEditing ? 'Update' : 'Add Rep Code'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 

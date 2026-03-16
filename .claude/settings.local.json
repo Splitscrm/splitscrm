@@ -171,7 +171,8 @@
       "Bash(grep:*)",
       "Bash(git diff:*)",
       "Bash(npm list:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(wc:*)"
     ]
   }
 }
