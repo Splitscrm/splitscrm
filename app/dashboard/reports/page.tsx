@@ -18,6 +18,8 @@ interface ResidualRecord {
   total_expenses: number
   net_revenue: number
   sales_amount: number
+  net_volume: number
+  iso_net: number
   merchant_id: string | null
   merchant_id_external: string | null
   dba_name: string | null
@@ -199,7 +201,7 @@ export default function ReportsPage() {
           const batch = importIds.slice(i, i + 20)
           const { data: recData } = await supabase
             .from('residual_records')
-            .select('report_month, gross_income, total_expenses, net_revenue, sales_amount, merchant_id, merchant_id_external, dba_name, import_id')
+            .select('report_month, gross_income, total_expenses, net_revenue, sales_amount, net_volume, iso_net, merchant_id, merchant_id_external, dba_name, import_id')
             .in('import_id', batch)
           if (recData) allRecords.push(...recData)
         }
@@ -478,7 +480,7 @@ export default function ReportsPage() {
         partnerMerchants[pid][mid] = { name: r.dba_name || mid, mid: r.merchant_id_external || mid, revenue: 0, volume: 0 }
       }
       partnerMerchants[pid][mid].revenue += r.net_revenue || 0
-      partnerMerchants[pid][mid].volume += r.sales_amount || 0
+      partnerMerchants[pid][mid].volume += r.net_volume || r.sales_amount || 0
     }
 
     // Merchant count per partner per month (for trend)
