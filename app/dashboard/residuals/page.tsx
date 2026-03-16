@@ -241,13 +241,11 @@ export default function ResidualsPage() {
     setViewMode('detail')
     setDetailLoading(true)
     setDetailSearch('')
-    console.log('Fetching records for import:', imp.id)
     const { data, error } = await supabase
       .from('residual_records')
       .select('*')
       .eq('import_id', imp.id)
       .order('created_at')
-    console.log('Records result:', data, error)
     setDetailRecords(data || [])
     setDetailLoading(false)
   }
@@ -382,7 +380,6 @@ export default function ResidualsPage() {
         .eq('user_id', userId)
 
       if (userMerchants && userMerchants.length > 0) {
-        console.log('Merchants for matching:', userMerchants.map(m => ({ id: m.id, name: m.business_name, mid: m.mid })))
         for (const record of records) {
           if (record.merchant_id) continue
           const midExt = record.merchant_id_external
@@ -402,7 +399,6 @@ export default function ResidualsPage() {
               break
             }
           }
-          console.log('Matching record:', { mid: record.merchant_id_external, dba: record.dba_name, matchedTo: record.merchant_id || 'none' })
         }
       }
 
@@ -453,9 +449,7 @@ export default function ResidualsPage() {
             const updatedMidStr = [...existingMids, ...toAdd].join(', ')
             await supabase.from('merchants').update({ mid: updatedMidStr }).eq('id', merchantId)
             merchant.mid = updatedMidStr
-            for (const mid of toAdd) {
-              console.log('Auto-populated MID:', mid, '→ merchant:', merchant.business_name)
-            }
+
           }
         }
       }
@@ -469,7 +463,6 @@ export default function ResidualsPage() {
         const merchant = userMerchants?.find(m => m.id === merchantId)
         if (merchant && merchant.status === 'pending') {
           await supabase.from('merchants').update({ status: 'active' }).eq('id', merchantId)
-          console.log('Activated merchant:', merchantId, '- confirmed processing via residual import')
         }
       }
 
@@ -581,7 +574,6 @@ export default function ResidualsPage() {
       if (merchant && merchant.status === 'pending') {
         await supabase.from('merchants').update({ status: 'active' }).eq('id', merchantId)
         merchant.status = 'active'
-        console.log('Activated merchant:', merchantId, '- confirmed processing via residual import')
       }
 
       matchedCount++

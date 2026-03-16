@@ -343,8 +343,6 @@ export default function Dashboard() {
           .eq('import_id', latestImportRow.id)
 
         if (records) {
-          console.log('Residual records sample (first 3):', records.slice(0, 3))
-
           let totalGrossIncome = 0
           let totalExpenses = 0
           for (const r of records) {
@@ -450,9 +448,6 @@ export default function Dashboard() {
         }
       }
 
-      if (totalBackfilled > 0) {
-        console.log(`Backfilled org_id/assigned_to on ${totalBackfilled} records`)
-      }
     }
     backfill()
   }, [user, org?.id])

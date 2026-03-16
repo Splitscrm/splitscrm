@@ -158,7 +158,14 @@
       "Bash(grep -n \"type.*password\\\\|input.*password\" C:/Users/ealvr/isocrm/app/dashboard/leads/[id]/page.tsx)",
       "Bash(wc -l C:/Users/ealvr/isocrm/app/dashboard/leads/[id]/page.tsx)",
       "Bash(find /c/Users/ealvr/isocrm -type f -name \"*.sql\" 2>/dev/null | head -20)",
-      "Bash(grep -r \"CREATE POLICY\\\\|ALTER TABLE.*ENABLE ROW LEVEL\" /c/Users/ealvr/isocrm --include=\"*.md\" 2>/dev/null | head -20)"
+      "Bash(grep -r \"CREATE POLICY\\\\|ALTER TABLE.*ENABLE ROW LEVEL\" /c/Users/ealvr/isocrm --include=\"*.md\" 2>/dev/null | head -20)",
+      "Bash(grep -n \"pipeline\\\\|stage\\\\|status\" /c/Users/ealvr/isocrm/app/dashboard/leads/\\\\[id\\\\]/page.tsx | head -50)",
+      "Bash(grep -o \"updateField\\('[^']*'\" /c/Users/ealvr/isocrm/app/dashboard/merchants/\\\\[id\\\\]/page.tsx | sort -u)",
+      "Bash(grep -o \"updateField\\('[^']*'\" /c/Users/ealvr/isocrm/app/dashboard/leads/\\\\[id\\\\]/page.tsx | sort -u)",
+      "Bash(grep -o \"updateDealField\\('[^']*'\" /c/Users/ealvr/isocrm/app/dashboard/leads/\\\\[id\\\\]/page.tsx | head -1 && grep -oE \"setDeal\\\\\\(\\\\{.*\\\\}\\\\\\)\" /c/Users/ealvr/isocrm/app/dashboard/leads/\\\\[id\\\\]/page.tsx | head -5)",
+      "Bash(grep -E \"deal\\\\.|deal\\\\[\" /c/Users/ealvr/isocrm/app/dashboard/leads/\\\\[id\\\\]/page.tsx | grep -oE \"\\\\.[a-z_]+\" | sort -u | head -100)",
+      "Bash(find /c/Users/ealvr/isocrm -name \"*.sql\" -o -name \"schema.*\" -o -name \"migrations\" -type d 2>/dev/null | head -20)",
+      "Bash(find /c/Users/ealvr/isocrm/supabase -type f -name \"*.sql\" | xargs ls -lt | head -30)"
     ]
   }
 }

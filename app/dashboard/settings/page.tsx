@@ -542,13 +542,10 @@ export default function SettingsPage() {
       invited_email: inviteEmail.toLowerCase().trim(),
       parent_member_id: inviteParent || null,
     }
-    console.log("Inserting org_member:", orgMemberInsert)
     const { data: memberInsertData, error: memberInsertError } = await supabase
       .from('org_members')
       .insert(orgMemberInsert)
       .select()
-    console.log("Org member insert result:", memberInsertData, memberInsertError)
-
     const link = `${window.location.origin}/invite/${token}`
     setInviteLink(link)
     setInviteMsg(`Invitation created for ${inviteEmail}`)

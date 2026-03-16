@@ -321,8 +321,6 @@ export default function MerchantDetailPage() {
     setError('')
 
     const { id, created_at, user_id, lead_id, ...updates } = merchant
-    console.log('Merchant update payload:', updates)
-    console.log('mid value:', updates.mid)
     const { error: updateError } = await supabase.from('merchants').update(updates).eq('id', merchant.id)
 
     if (updateError) {

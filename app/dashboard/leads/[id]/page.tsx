@@ -81,22 +81,17 @@ export default function LeadDetailPage() {
   const unqualifiedReasons = ["Bad credit", "High risk industry", "Insufficient volume", "TMF/MATCH list", "Fraudulent activity", "Other"];
 
   useEffect(() => {
-    console.log("Lead useEffect triggered, authLoading:", authLoading, "authUser:", authUser?.id);
     if (authLoading) return;
     const fetchData = async () => {
-      console.log("Fetching lead data...");
       const { data: { user } } = await supabase.auth.getUser();
-      console.log("User:", user?.id);
       if (!user) { router.push("/login"); return; }
       setUserId(user.id);
       const { data: leadData } = await supabase.from("leads").select("*").eq("id", params.id).single();
-      console.log("Lead data:", leadData);
       if (leadData) {
         // Permission check: non-owner/manager can only see their own leads
         if (!isOwnerOrManager && leadData.assigned_to !== user.id && leadData.user_id !== user.id) {
           setPermissionDenied(true);
           setLoading(false);
-          console.log("Setting loading false (permission denied)");
           return;
         }
         setLead(leadData);
@@ -145,7 +140,6 @@ export default function LeadDetailPage() {
         const { data: partnerData } = await supabase.from("partners").select("id, name, pricing_data").eq("status", "active").order("name");
         if (partnerData) setPartners(partnerData);
       }
-      console.log("Setting loading false");
       setLoading(false);
     };
     fetchData();
@@ -307,7 +301,6 @@ export default function LeadDetailPage() {
     const customFee = parseFloat(merchantInsert.monthly_fee_custom_amount) || 0;
     const pciFee = parseFloat(merchantInsert.pci_compliance_monthly) || (merchantInsert.pci_compliance_annual ? parseFloat(merchantInsert.pci_compliance_annual) / 12 : 0) || 0;
     merchantInsert.monthly_fees = statementFee + customFee + pciFee;
-    console.log("Merchant insert object:", merchantInsert);
     const { data: merchant, error: merchantError } = await supabase.from("merchants").insert(merchantInsert).select().single();
     if (merchantError) { setSaving(false); return; }
     await supabase.from("leads").update({ status: "converted", updated_at: new Date().toISOString() }).eq("id", params.id);
