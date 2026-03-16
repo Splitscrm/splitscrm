@@ -34,6 +34,9 @@ type Lead = {
   created_at: string
   updated_at: string
   follow_up_date?: string
+  assigned_to?: string
+  website?: string
+  source?: string
 }
 
 const statusColors: Record<string, string> = {
@@ -74,6 +77,54 @@ function relativeTime(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+interface LeadFilters {
+  statuses: Set<string>
+  assignedTo: string
+  dateFrom: string
+  dateTo: string
+  businessName: string
+  contactName: string
+  email: string
+  phone: string
+  state: string
+  source: string
+  volumeMin: string
+  volumeMax: string
+  hasFollowUp: string
+}
+
+const emptyFilters: LeadFilters = {
+  statuses: new Set(),
+  assignedTo: '',
+  dateFrom: '',
+  dateTo: '',
+  businessName: '',
+  contactName: '',
+  email: '',
+  phone: '',
+  state: '',
+  source: '',
+  volumeMin: '',
+  volumeMax: '',
+  hasFollowUp: '',
+}
+
+function countActiveFilters(f: LeadFilters): number {
+  let n = 0
+  if (f.statuses.size > 0) n++
+  if (f.assignedTo) n++
+  if (f.dateFrom || f.dateTo) n++
+  if (f.businessName) n++
+  if (f.contactName) n++
+  if (f.email) n++
+  if (f.phone) n++
+  if (f.state) n++
+  if (f.source) n++
+  if (f.volumeMin || f.volumeMax) n++
+  if (f.hasFollowUp) n++
+  return n
+}
+
 export default function LeadsPage() {
   const router = useRouter()
   const { user, member, loading: authLoading } = useAuth()
@@ -82,6 +133,11 @@ export default function LeadsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [sort, setSort] = useState('newest')
+
+  // Advanced filters
+  const [showFilters, setShowFilters] = useState(false)
+  const [filters, setFilters] = useState<LeadFilters>({ ...emptyFilters, statuses: new Set() })
+  const [orgMembers, setOrgMembers] = useState<{ id: string; name: string }[]>([])
 
   const role = member?.role || ''
   const isOwnerOrManager = role === 'owner' || role === 'manager'
@@ -110,6 +166,7 @@ export default function LeadsPage() {
     if (authLoading) return
     if (!user) { router.push('/login'); return }
     fetchLeads()
+    fetchOrgMembers()
   }, [authLoading, user?.id])
 
   const fetchLeads = async () => {
@@ -126,6 +183,28 @@ export default function LeadsPage() {
     const { data } = await query
     setLeads(data || [])
     setLoading(false)
+  }
+
+  const fetchOrgMembers = async () => {
+    if (!member?.org_id) return
+    const { data: members } = await supabase
+      .from('org_members')
+      .select('user_id')
+      .eq('org_id', member.org_id)
+      .not('user_id', 'is', null)
+    if (!members) return
+    const userIds = members.map((m: any) => m.user_id)
+    if (userIds.length === 0) return
+    const { data: profiles } = await supabase
+      .from('user_profiles')
+      .select('user_id, full_name, email')
+      .in('user_id', userIds)
+    if (profiles) {
+      setOrgMembers(profiles.map((p: any) => ({
+        id: p.user_id,
+        name: p.full_name || p.email || p.user_id.slice(0, 8),
+      })))
+    }
   }
 
   const updateStatus = async (id: string, status: string) => {
@@ -160,8 +239,6 @@ export default function LeadsPage() {
   const bulkDelete = async () => {
     setBulkDeleting(true)
     const ids = Array.from(selectedIds)
-    // Delete related data first, then leads
-    // Get deal ids for selected leads
     const { data: deals } = await supabase.from('deals').select('id').in('lead_id', ids)
     const dealIds = (deals || []).map((d: any) => d.id)
     if (dealIds.length > 0) {
@@ -183,19 +260,60 @@ export default function LeadsPage() {
   // Clear selection when filters change
   useEffect(() => {
     setSelectedIds(new Set())
-  }, [search, statusFilter, sort])
+  }, [search, statusFilter, sort, filters])
+
+  const activeFilterCount = countActiveFilters(filters)
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
     let result = leads.filter((lead) => {
+      // Global search
       const matchSearch = !q ||
         (lead.business_name || '').toLowerCase().includes(q) ||
         (lead.contact_name || '').toLowerCase().includes(q) ||
         (lead.email || '').toLowerCase().includes(q) ||
         (lead.phone || '').toLowerCase().includes(q) ||
         ((lead as any).website || '').toLowerCase().includes(q)
-      const matchStatus = statusFilter === 'all' || lead.status === statusFilter
-      return matchSearch && matchStatus
+
+      // Status dropdown (legacy, kept for quick access)
+      const matchStatusDropdown = statusFilter === 'all' || lead.status === statusFilter
+
+      // Advanced filters
+      const f = filters
+
+      // Multi-select statuses
+      const matchStatuses = f.statuses.size === 0 || f.statuses.has(lead.status)
+
+      // Assigned to
+      const matchAssigned = !f.assignedTo || lead.assigned_to === f.assignedTo
+
+      // Date range
+      const createdDate = lead.created_at ? new Date(lead.created_at) : null
+      const matchDateFrom = !f.dateFrom || (createdDate && createdDate >= new Date(f.dateFrom))
+      const matchDateTo = !f.dateTo || (createdDate && createdDate <= new Date(f.dateTo + 'T23:59:59'))
+
+      // Text filters
+      const matchBusiness = !f.businessName || (lead.business_name || '').toLowerCase().includes(f.businessName.toLowerCase())
+      const matchContact = !f.contactName || (lead.contact_name || '').toLowerCase().includes(f.contactName.toLowerCase())
+      const matchEmail = !f.email || (lead.email || '').toLowerCase().includes(f.email.toLowerCase())
+      const matchPhone = !f.phone || (lead.phone || '').includes(f.phone)
+      const matchState = !f.state || ((lead as any).state || '').toLowerCase().includes(f.state.toLowerCase())
+      const matchSource = !f.source || ((lead as any).source || '').toLowerCase().includes(f.source.toLowerCase())
+
+      // Volume range
+      const vol = Number(lead.monthly_volume) || 0
+      const matchVolMin = !f.volumeMin || vol >= Number(f.volumeMin)
+      const matchVolMax = !f.volumeMax || vol <= Number(f.volumeMax)
+
+      // Has follow-up
+      const matchFollowUp = !f.hasFollowUp ||
+        (f.hasFollowUp === 'yes' && !!lead.follow_up_date) ||
+        (f.hasFollowUp === 'no' && !lead.follow_up_date)
+
+      return matchSearch && matchStatusDropdown && matchStatuses && matchAssigned &&
+        matchDateFrom && matchDateTo && matchBusiness && matchContact &&
+        matchEmail && matchPhone && matchState && matchSource &&
+        matchVolMin && matchVolMax && matchFollowUp
     })
 
     switch (sort) {
@@ -213,7 +331,7 @@ export default function LeadsPage() {
     }
 
     return result
-  }, [leads, search, statusFilter, sort])
+  }, [leads, search, statusFilter, sort, filters])
 
   // Preview panel logic
   const fetchPreviewActivities = useCallback(async (leadId: string) => {
@@ -227,7 +345,6 @@ export default function LeadsPage() {
   }, [])
 
   const openPreview = (lead: Lead) => {
-    // On mobile, navigate directly
     if (window.innerWidth < 1024) {
       router.push(`/dashboard/leads/${lead.id}`)
       return
@@ -244,7 +361,6 @@ export default function LeadsPage() {
     setPreviewActivities([])
   }
 
-  // Communication modal logic
   const openCommModal = (type: 'call' | 'note') => {
     if (!selectedLead) return
     setCommModal(type)
@@ -289,7 +405,25 @@ export default function LeadsPage() {
     fetchPreviewActivities(selectedLead.id)
   }
 
+  const updateFilter = <K extends keyof LeadFilters>(key: K, value: LeadFilters[K]) => {
+    setFilters(prev => ({ ...prev, [key]: value }))
+  }
+
+  const toggleStatus = (status: string) => {
+    setFilters(prev => {
+      const next = new Set(prev.statuses)
+      if (next.has(status)) next.delete(status)
+      else next.add(status)
+      return { ...prev, statuses: next }
+    })
+  }
+
+  const clearFilters = () => {
+    setFilters({ ...emptyFilters, statuses: new Set() })
+  }
+
   const inputClass = "bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-base focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-slate-900"
+  const filterInputClass = "w-full bg-white text-slate-900 px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm"
   const modalInputClass = "w-full bg-white text-slate-900 px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 text-sm"
 
   return (
@@ -311,36 +445,165 @@ export default function LeadsPage() {
           </Link>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6 flex flex-wrap gap-4 items-center">
-          <input
-            type="text"
-            placeholder="Search leads..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className={`w-full sm:flex-1 min-w-[200px] ${inputClass}`}
-          />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className={`w-full sm:w-auto ${inputClass}`}
-          >
-            <option value="all">All Statuses</option>
-            {Object.entries(statusLabels).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </select>
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value)}
-            className={`w-full sm:w-auto ${inputClass}`}
-          >
-            <option value="newest">Newest First</option>
-            <option value="oldest">Oldest First</option>
-            <option value="name_az">Business Name A-Z</option>
-            <option value="name_za">Business Name Z-A</option>
-          </select>
-          <span className="text-base text-slate-500 ml-auto">{filtered.length} result{filtered.length !== 1 ? 's' : ''}</span>
-          <ExportCSV data={filtered} filename="leads-export" columns={LEAD_EXPORT_COLUMNS} />
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
+          <div className="flex flex-wrap gap-4 items-center">
+            <input
+              type="text"
+              placeholder="Search leads..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className={`w-full sm:flex-1 min-w-[200px] ${inputClass}`}
+            />
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`px-4 py-2.5 rounded-lg text-sm font-medium border transition ${
+                showFilters || activeFilterCount > 0
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+            </button>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className={`w-full sm:w-auto ${inputClass}`}
+            >
+              <option value="all">All Statuses</option>
+              {Object.entries(statusLabels).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value)}
+              className={`w-full sm:w-auto ${inputClass}`}
+            >
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
+              <option value="name_az">Business Name A-Z</option>
+              <option value="name_za">Business Name Z-A</option>
+            </select>
+            <span className="text-base text-slate-500 ml-auto">{filtered.length} result{filtered.length !== 1 ? 's' : ''}</span>
+            <ExportCSV data={filtered} filename="leads-export" columns={LEAD_EXPORT_COLUMNS} />
+          </div>
+
+          {/* Advanced Filter Panel */}
+          {showFilters && (
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-medium text-slate-700">Advanced Filters</span>
+                {activeFilterCount > 0 && (
+                  <button onClick={clearFilters} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">Clear All Filters</button>
+                )}
+              </div>
+
+              {/* Status checkboxes */}
+              <div className="mb-4">
+                <label className="text-xs text-slate-500 block mb-1.5">Stage</label>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(statusLabels).map(([value, label]) => (
+                    <label key={value} className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full cursor-pointer border transition ${
+                      filters.statuses.has(value)
+                        ? `${statusColors[value]} border-current`
+                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={filters.statuses.has(value)}
+                        onChange={() => toggleStatus(value)}
+                        className="sr-only"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {/* Assigned To */}
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Assigned To</label>
+                  <select
+                    value={filters.assignedTo}
+                    onChange={(e) => updateFilter('assignedTo', e.target.value)}
+                    className={filterInputClass}
+                  >
+                    <option value="">All</option>
+                    {orgMembers.map((m) => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Date range */}
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Created From</label>
+                  <input type="date" value={filters.dateFrom} onChange={(e) => updateFilter('dateFrom', e.target.value)} className={filterInputClass} />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Created To</label>
+                  <input type="date" value={filters.dateTo} onChange={(e) => updateFilter('dateTo', e.target.value)} className={filterInputClass} />
+                </div>
+
+                {/* Business Name */}
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Business Name</label>
+                  <input type="text" value={filters.businessName} onChange={(e) => updateFilter('businessName', e.target.value)} placeholder="Contains..." className={filterInputClass} />
+                </div>
+
+                {/* Contact Name */}
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Contact Name</label>
+                  <input type="text" value={filters.contactName} onChange={(e) => updateFilter('contactName', e.target.value)} placeholder="Contains..." className={filterInputClass} />
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Email</label>
+                  <input type="text" value={filters.email} onChange={(e) => updateFilter('email', e.target.value)} placeholder="Contains..." className={filterInputClass} />
+                </div>
+
+                {/* Phone */}
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Phone</label>
+                  <input type="text" value={filters.phone} onChange={(e) => updateFilter('phone', e.target.value)} placeholder="Contains..." className={filterInputClass} />
+                </div>
+
+                {/* State */}
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">State/Region</label>
+                  <input type="text" value={filters.state} onChange={(e) => updateFilter('state', e.target.value)} placeholder="e.g. CA" className={filterInputClass} />
+                </div>
+
+                {/* Source */}
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Source</label>
+                  <input type="text" value={filters.source} onChange={(e) => updateFilter('source', e.target.value)} placeholder="Contains..." className={filterInputClass} />
+                </div>
+
+                {/* Volume range */}
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Volume Min ($)</label>
+                  <input type="number" value={filters.volumeMin} onChange={(e) => updateFilter('volumeMin', e.target.value)} placeholder="0" className={filterInputClass} />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Volume Max ($)</label>
+                  <input type="number" value={filters.volumeMax} onChange={(e) => updateFilter('volumeMax', e.target.value)} placeholder="No limit" className={filterInputClass} />
+                </div>
+
+                {/* Has follow-up */}
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Has Follow-up</label>
+                  <select value={filters.hasFollowUp} onChange={(e) => updateFilter('hasFollowUp', e.target.value)} className={filterInputClass}>
+                    <option value="">Any</option>
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {selectedIds.size > 0 && (
