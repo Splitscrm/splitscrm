@@ -202,9 +202,21 @@ function SignupContent() {
             Already have an account?{' '}
             <Link href="/login" className="text-emerald-600 hover:text-emerald-700 font-medium">Sign in</Link>
           </p>
+
+          <p className="text-center text-xs text-slate-400 mt-4">
+            By signing up, you agree to our{' '}
+            <Link href="/terms" className="text-emerald-600 hover:text-emerald-700">Terms of Service</Link>
+            {' '}and{' '}
+            <Link href="/privacy" className="text-emerald-600 hover:text-emerald-700">Privacy Policy</Link>.
+          </p>
         </div>
 
-        <p className="text-center text-slate-400 text-xs mt-8">&copy; 2026 Splits CRM</p>
+        <div className="flex justify-center gap-4 mt-8">
+          <Link href="/privacy" className="text-slate-400 hover:text-slate-600 text-xs">Privacy Policy</Link>
+          <span className="text-slate-300 text-xs">&middot;</span>
+          <Link href="/terms" className="text-slate-400 hover:text-slate-600 text-xs">Terms of Service</Link>
+        </div>
+        <p className="text-center text-slate-400 text-xs mt-2">&copy; 2026 Splits CRM</p>
       </div>
     </main>
   )

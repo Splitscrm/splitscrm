@@ -468,9 +468,9 @@ export default function LandingPage() {
             <span className="text-slate-400 text-sm">&copy; 2026</span>
           </div>
           <div className="flex gap-6">
-            <a href="#" className="text-slate-400 hover:text-white text-sm transition duration-150">Privacy Policy</a>
-            <a href="#" className="text-slate-400 hover:text-white text-sm transition duration-150">Terms of Service</a>
-            <a href="#" className="text-slate-400 hover:text-white text-sm transition duration-150">Contact</a>
+            <Link href="/privacy" className="text-slate-400 hover:text-white text-sm transition duration-150">Privacy Policy</Link>
+            <Link href="/terms" className="text-slate-400 hover:text-white text-sm transition duration-150">Terms of Service</Link>
+            <a href="mailto:support@splitscrm.com" className="text-slate-400 hover:text-white text-sm transition duration-150">Contact</a>
           </div>
         </div>
       </footer>
