@@ -165,7 +165,8 @@
       "Bash(grep -o \"updateDealField\\('[^']*'\" /c/Users/ealvr/isocrm/app/dashboard/leads/\\\\[id\\\\]/page.tsx | head -1 && grep -oE \"setDeal\\\\\\(\\\\{.*\\\\}\\\\\\)\" /c/Users/ealvr/isocrm/app/dashboard/leads/\\\\[id\\\\]/page.tsx | head -5)",
       "Bash(grep -E \"deal\\\\.|deal\\\\[\" /c/Users/ealvr/isocrm/app/dashboard/leads/\\\\[id\\\\]/page.tsx | grep -oE \"\\\\.[a-z_]+\" | sort -u | head -100)",
       "Bash(find /c/Users/ealvr/isocrm -name \"*.sql\" -o -name \"schema.*\" -o -name \"migrations\" -type d 2>/dev/null | head -20)",
-      "Bash(find /c/Users/ealvr/isocrm/supabase -type f -name \"*.sql\" | xargs ls -lt | head -30)"
+      "Bash(find /c/Users/ealvr/isocrm/supabase -type f -name \"*.sql\" | xargs ls -lt | head -30)",
+      "Bash(find:*)"
     ]
   }
 }

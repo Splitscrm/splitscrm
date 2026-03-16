@@ -1,19 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getAuthenticatedUser } from '@/lib/api-auth'
+import { rateLimit, rateLimitHeaders, rateLimitResponse } from '@/lib/rate-limit'
+
+const RATE_LIMIT = 20
+const WINDOW_MS = 60_000
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
 
 export async function POST(req: NextRequest) {
+  const rl = rateLimit(req, { limit: RATE_LIMIT, windowMs: WINDOW_MS })
+  if (!rl.success) return rateLimitResponse(RATE_LIMIT, rl.resetAt)
+  const headers = rateLimitHeaders(RATE_LIMIT, rl.remaining, rl.resetAt)
+
   try {
     await getAuthenticatedUser(req)
 
-    const { headers, sampleRows, processorName } = await req.json()
+    const { headers: csvHeaders, sampleRows, processorName } = await req.json()
 
-    if (!headers || !sampleRows) {
-      return NextResponse.json({ error: 'Missing headers or sampleRows' }, { status: 400 })
+    if (!csvHeaders || !sampleRows) {
+      return NextResponse.json({ error: 'Missing headers or sampleRows' }, { status: 400, headers })
     }
 
     const response = await anthropic.messages.create({
@@ -24,7 +32,7 @@ export async function POST(req: NextRequest) {
           role: 'user',
           content: `You are a payment processing residual report expert. Given these CSV column headers and sample data rows, map each column to a standardized field name.
 
-Headers: ${JSON.stringify(headers)}
+Headers: ${JSON.stringify(csvHeaders)}
 Sample rows (first 5): ${JSON.stringify(sampleRows)}
 Processor name (if known): ${processorName || 'Unknown'}
 
@@ -82,12 +90,12 @@ Be smart about variations: 'Merch Nbr', 'MID', 'Merchant Number', 'merchant_id' 
       multi_row_per_merchant: result.multi_row_per_merchant ?? false,
       confidence: result.confidence ?? 'medium',
       notes: result.notes ?? '',
-    })
+    }, { headers })
   } catch (error: any) {
     if (error?.status === 401 || error?.status === 403) {
-      return NextResponse.json({ error: error.message }, { status: error.status })
+      return NextResponse.json({ error: error.message }, { status: error.status, headers })
     }
     console.error('Column mapping error:', error)
-    return NextResponse.json({ error: 'Failed to map columns' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to map columns' }, { status: 500, headers })
   }
 }

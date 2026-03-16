@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getAuthenticatedUser } from '@/lib/api-auth'
+import { rateLimit, rateLimitHeaders, rateLimitResponse } from '@/lib/rate-limit'
+
+const RATE_LIMIT = 20
+const WINDOW_MS = 60_000
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
 
 export async function POST(req: NextRequest) {
+  const rl = rateLimit(req, { limit: RATE_LIMIT, windowMs: WINDOW_MS })
+  if (!rl.success) return rateLimitResponse(RATE_LIMIT, rl.resetAt)
+  const headers = rateLimitHeaders(RATE_LIMIT, rl.remaining, rl.resetAt)
+
   try {
     await getAuthenticatedUser(req)
 
@@ -14,7 +22,7 @@ export async function POST(req: NextRequest) {
     const pdf = formData.get('pdf') as File
 
     if (!pdf) {
-      return NextResponse.json({ error: 'No PDF provided' }, { status: 400 })
+      return NextResponse.json({ error: 'No PDF provided' }, { status: 400, headers })
     }
 
     const arrayBuffer = await pdf.arrayBuffer()
@@ -124,12 +132,12 @@ Return ONLY valid JSON with no markdown or extra text. Use this structure (inclu
     const clean = text.replace(/```json|```/g, '').trim()
     const pricing = JSON.parse(clean)
 
-    return NextResponse.json({ pricing })
+    return NextResponse.json({ pricing }, { headers })
   } catch (error: any) {
     if (error?.status === 401 || error?.status === 403) {
-      return NextResponse.json({ error: error.message }, { status: error.status })
+      return NextResponse.json({ error: error.message }, { status: error.status, headers })
     }
     console.error('PDF extraction error:', error)
-    return NextResponse.json({ error: 'Failed to extract pricing' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to extract pricing' }, { status: 500, headers })
   }
 }
