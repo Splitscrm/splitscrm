@@ -280,7 +280,7 @@ export default function LeadDetailPage() {
         monthly_volume: "monthly_volume",
       };
       for (const [dealField, merchantField] of Object.entries(dealToMerchant)) {
-        const val = dealData[dealField];
+        const val = (dealData as Record<string, any>)[dealField];
         if (val != null && val !== "") merchantInsert[merchantField] = val;
       }
       if (dealData.free_hardware === "yes") merchantInsert.free_equipment = "yes";

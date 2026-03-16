@@ -166,7 +166,10 @@
       "Bash(grep -E \"deal\\\\.|deal\\\\[\" /c/Users/ealvr/isocrm/app/dashboard/leads/\\\\[id\\\\]/page.tsx | grep -oE \"\\\\.[a-z_]+\" | sort -u | head -100)",
       "Bash(find /c/Users/ealvr/isocrm -name \"*.sql\" -o -name \"schema.*\" -o -name \"migrations\" -type d 2>/dev/null | head -20)",
       "Bash(find /c/Users/ealvr/isocrm/supabase -type f -name \"*.sql\" | xargs ls -lt | head -30)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(git push:*)",
+      "Bash(grep:*)",
+      "Bash(git diff:*)"
     ]
   }
 }

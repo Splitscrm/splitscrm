@@ -117,7 +117,7 @@ export default function MerchantDetailPage() {
     const updated = { ...merchant }
     let syncedCount = 0
     for (const [dealField, merchantField] of Object.entries(dealToMerchant)) {
-      const dealVal = dealData[dealField]
+      const dealVal = (dealData as Record<string, any>)[dealField]
       const merchantVal = updated[merchantField]
       if (dealVal != null && dealVal !== '' && (merchantVal == null || merchantVal === '')) {
         updated[merchantField] = dealVal
