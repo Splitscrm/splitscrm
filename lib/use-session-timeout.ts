@@ -20,9 +20,9 @@ export function useSessionTimeout() {
   const isWarningRef = useRef(false);
 
   const clearAllTimers = useCallback(() => {
-    clearTimeout(warningTimerRef.current);
-    clearTimeout(logoutTimerRef.current);
-    clearInterval(countdownRef.current);
+    if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+    if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
+    if (countdownRef.current) clearInterval(countdownRef.current);
   }, []);
 
   const doSignOut = useCallback(async () => {
