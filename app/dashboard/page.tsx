@@ -59,6 +59,7 @@ const WIDGET_REGISTRY = [
   { id: 'pipeline', label: 'Sales Pipeline', description: 'Leads by status', section: 'left', alwaysVisible: false },
   { id: 'tasks', label: 'Tasks & Follow-ups', description: 'Upcoming tasks and reminders', section: 'left', alwaysVisible: false },
   { id: 'top_merchants', label: 'Top Merchants', description: 'Most profitable merchants', section: 'left', alwaysVisible: false },
+  { id: 'top_merchants_volume', label: 'Top by Volume', description: 'Highest processing volume merchants', section: 'left', alwaysVisible: false },
   { id: 'merchants_by_processor', label: 'Merchants by Processor', description: 'Processor distribution', section: 'right', alwaysVisible: false },
   { id: 'residual_revenue', label: 'Residual Revenue', description: 'Latest import revenue', section: 'right', alwaysVisible: false },
   { id: 'merchants_by_agent', label: 'Merchants by Agent', description: 'Agent distribution', section: 'right', alwaysVisible: false },
@@ -132,6 +133,7 @@ interface DashboardData {
   residualTotalVolume: number
   agentBreakdown: { agent: string; merchantCount: number }[]
   topMerchants: { merchantIdExternal: string; dbaName: string; netProfit: number; merchantId: string | null }[]
+  topMerchantsByVolume: { merchantIdExternal: string; dbaName: string; volume: number; merchantId: string | null }[]
 }
 
 export default function Dashboard() {
@@ -169,6 +171,7 @@ export default function Dashboard() {
     residualTotalVolume: 0,
     agentBreakdown: [],
     topMerchants: [],
+    topMerchantsByVolume: [],
   })
 
   useEffect(() => {
@@ -335,6 +338,7 @@ export default function Dashboard() {
       let residualTotalVolume = 0
       let agentBreakdown: DashboardData['agentBreakdown'] = []
       let topMerchants: DashboardData['topMerchants'] = []
+      let topMerchantsByVolume: DashboardData['topMerchantsByVolume'] = []
 
       const { data: latestImportRow, error: importErr } = await supabase
         .from('residual_imports')
@@ -354,7 +358,7 @@ export default function Dashboard() {
 
         const { data: records, error: recErr } = await supabase
           .from('residual_records')
-          .select('net_revenue, gross_income, total_expenses, sales_amount, agent_id_external, merchant_id_external, dba_name, merchant_id')
+          .select('net_revenue, gross_income, total_expenses, sales_amount, net_volume, agent_id_external, merchant_id_external, dba_name, merchant_id')
           .eq('import_id', latestImportRow.id)
 
         if (recErr) console.error('Dashboard: residual_records query error', recErr)
@@ -389,6 +393,21 @@ export default function Dashboard() {
           topMerchants = Object.entries(merchantProfitMap)
             .map(([mid, m]) => ({ merchantIdExternal: mid, dbaName: m.dbaName, netProfit: m.netRevenue, merchantId: m.merchantId }))
             .sort((a, b) => b.netProfit - a.netProfit)
+            .slice(0, 5)
+
+          // Top merchants by processing volume
+          const merchantVolumeMap: Record<string, { dbaName: string; volume: number; merchantId: string | null }> = {}
+          for (const r of records) {
+            const key = r.merchant_id_external || r.dba_name || 'Unknown'
+            if (!merchantVolumeMap[key]) {
+              merchantVolumeMap[key] = { dbaName: r.dba_name || r.merchant_id_external || 'Unknown', volume: 0, merchantId: r.merchant_id || null }
+            }
+            merchantVolumeMap[key].volume += r.net_volume || r.sales_amount || 0
+            if (r.merchant_id && !merchantVolumeMap[key].merchantId) merchantVolumeMap[key].merchantId = r.merchant_id
+          }
+          topMerchantsByVolume = Object.entries(merchantVolumeMap)
+            .map(([mid, m]) => ({ merchantIdExternal: mid, dbaName: m.dbaName, volume: m.volume, merchantId: m.merchantId }))
+            .sort((a, b) => b.volume - a.volume)
             .slice(0, 5)
         }
       }
@@ -449,6 +468,7 @@ export default function Dashboard() {
         residualTotalVolume,
         agentBreakdown,
         topMerchants,
+        topMerchantsByVolume,
       })
 
       setLoading(false)
@@ -822,10 +842,42 @@ export default function Dashboard() {
                     {m.merchantId ? (
                       <Link href={`/dashboard/merchants/${m.merchantId}`} className="flex-1 text-emerald-600 font-medium truncate hover:text-emerald-700">{m.dbaName}</Link>
                     ) : (
-                      <span className="flex-1 text-slate-700 font-medium truncate">{m.dbaName}</span>
+                      <span className="flex-1 flex items-center gap-1.5 truncate">
+                        <span className="text-slate-700 font-medium truncate">{m.dbaName}</span>
+                        <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded font-medium shrink-0">Unmatched</span>
+                      </span>
                     )}
                     <span className={`text-right font-medium tabular-nums ${m.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                       {m.netProfit.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+
+      case 'top_merchants_volume':
+        return (
+          <div key="top_merchants_volume" className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+            <h3 className="text-base font-semibold text-slate-900 mb-3">Top 5 Merchants by Processing Volume</h3>
+            {data.topMerchantsByVolume.length === 0 ? (
+              <p className="text-slate-400 text-xs">Import a <Link href="/dashboard/residuals" className="text-emerald-600 hover:text-emerald-700">residual report</Link> to see volume data</p>
+            ) : (
+              <div>
+                {data.topMerchantsByVolume.map((m, i) => (
+                  <div key={m.merchantIdExternal} className={`flex items-center py-2 text-xs ${i < data.topMerchantsByVolume.length - 1 ? 'border-b border-slate-50' : ''} ${i < 3 ? 'bg-blue-50/50 rounded' : ''}`}>
+                    <span className="w-6 text-slate-400 font-medium">{i + 1}</span>
+                    {m.merchantId ? (
+                      <Link href={`/dashboard/merchants/${m.merchantId}`} className="flex-1 text-emerald-600 font-medium truncate hover:text-emerald-700">{m.dbaName}</Link>
+                    ) : (
+                      <span className="flex-1 flex items-center gap-1.5 truncate">
+                        <span className="text-slate-700 font-medium truncate">{m.dbaName}</span>
+                        <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded font-medium shrink-0">Unmatched</span>
+                      </span>
+                    )}
+                    <span className="text-right font-medium tabular-nums text-slate-700">
+                      {m.volume.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 })}
                     </span>
                   </div>
                 ))}
