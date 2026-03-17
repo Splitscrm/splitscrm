@@ -118,9 +118,15 @@ interface TeamMember {
   invited_email: string | null
   profile_name: string | null
   profile_email: string | null
+  parent_member_id: string | null
+  override_pct: number | null
 }
 
-const ALL_TABS = ['Profile', 'Notifications', 'Security', 'Templates', 'Team'] as const
+const ALL_TABS = ['Profile', 'Notifications', 'Security', 'Templates', 'Organization', 'Team'] as const
+
+const ROLE_HIERARCHY: Record<string, number> = {
+  owner: 5, manager: 4, master_agent: 3, agent: 2, sub_agent: 1, referral: 0,
+}
 type Tab = typeof ALL_TABS[number]
 
 export default function SettingsPage() {
@@ -160,7 +166,7 @@ export default function SettingsPage() {
   const [repPartnersCache, setRepPartnersCache] = useState<any[]>([])
   const [showRepModal, setShowRepModal] = useState(false)
   const [repEditing, setRepEditing] = useState<any>(null)
-  const [repForm, setRepForm] = useState({ user_id: '', partner_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', effective_date: '', notes: '' })
+  const [repForm, setRepForm] = useState({ user_id: '', partner_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', house_split_override_pct: '', restricted_split_pct: '', effective_date: '', notes: '' })
   const [repSaving, setRepSaving] = useState(false)
   const [repError, setRepError] = useState('')
   const [repMsg, setRepMsg] = useState('')
@@ -183,9 +189,16 @@ export default function SettingsPage() {
 
   const settingsRole = member?.role || ''
 
+  // Org settings state
+  const [orgHouseSplit, setOrgHouseSplit] = useState('')
+  const [orgClawbackMonths, setOrgClawbackMonths] = useState('6')
+  const [orgSettingsMsg, setOrgSettingsMsg] = useState('')
+  const [orgSettingsSaving, setOrgSettingsSaving] = useState(false)
+
   // Determine visible tabs based on permissions
   const TABS = ALL_TABS.filter((tab) => {
     if (tab === 'Team') return hasPermission('manage_team')
+    if (tab === 'Organization') return settingsRole === 'owner' || settingsRole === 'manager'
     if (tab === 'Templates') return settingsRole === 'owner' || settingsRole === 'manager' || settingsRole === 'agent' || settingsRole === 'master_agent'
     return true
   })
@@ -431,14 +444,18 @@ export default function SettingsPage() {
     // Fetch org data for plan limits
     const { data: fetchedOrg } = await supabase
       .from('organizations')
-      .select('id, name, plan, plan_limits')
+      .select('id, name, plan, plan_limits, default_house_split_pct, default_clawback_window_months')
       .eq('id', member.org_id)
       .single()
     setTeamOrgData(fetchedOrg || null)
+    if (fetchedOrg) {
+      setOrgHouseSplit(fetchedOrg.default_house_split_pct != null ? String(fetchedOrg.default_house_split_pct) : '')
+      setOrgClawbackMonths(String(fetchedOrg.default_clawback_window_months || 6))
+    }
 
     const { data: members } = await supabase
       .from('org_members')
-      .select('id, org_id, user_id, role, status, invited_email')
+      .select('id, org_id, user_id, role, status, invited_email, parent_member_id, override_pct')
       .eq('org_id', member.org_id)
       .order('created_at', { ascending: true })
 
@@ -468,6 +485,8 @@ export default function SettingsPage() {
       invited_email: m.invited_email,
       profile_name: m.user_id && profileMap[m.user_id] ? profileMap[m.user_id].full_name : null,
       profile_email: m.invited_email || profileMap[m.user_id]?.email || (m.user_id === authUser?.id ? email : null),
+      parent_member_id: m.parent_member_id || null,
+      override_pct: m.override_pct ?? null,
     }))
 
     setTeamMembers(enriched)
@@ -478,7 +497,7 @@ export default function SettingsPage() {
     if (!member?.org_id) return
     const { data } = await supabase
       .from('agent_rep_codes')
-      .select('id, org_id, user_id, partner_id, rep_code, label, status, effective_date, end_date, split_pct, bonus_per_deal, notes, created_at')
+      .select('id, org_id, user_id, partner_id, rep_code, label, status, effective_date, end_date, split_pct, bonus_per_deal, house_split_override_pct, restricted_split_pct, notes, created_at')
       .eq('org_id', member.org_id)
       .order('created_at', { ascending: false })
     setRepCodes(data || [])
@@ -491,7 +510,7 @@ export default function SettingsPage() {
   }, [member?.org_id])
 
   useEffect(() => {
-    if (activeTab === 'Team' && member?.org_id) {
+    if ((activeTab === 'Team' || activeTab === 'Organization') && member?.org_id) {
       fetchTeamMembers()
       fetchRepCodes()
     }
@@ -514,12 +533,14 @@ export default function SettingsPage() {
         label: editing.label || '',
         split_pct: editing.split_pct != null ? String(editing.split_pct) : '',
         bonus_per_deal: editing.bonus_per_deal != null ? String(editing.bonus_per_deal) : '',
+        house_split_override_pct: editing.house_split_override_pct != null ? String(editing.house_split_override_pct) : '',
+        restricted_split_pct: editing.restricted_split_pct != null ? String(editing.restricted_split_pct) : '',
         effective_date: editing.effective_date || '',
         notes: editing.notes || '',
       })
     } else {
       setRepEditing(null)
-      setRepForm({ user_id: '', partner_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', effective_date: '', notes: '' })
+      setRepForm({ user_id: '', partner_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', house_split_override_pct: '', restricted_split_pct: '', effective_date: '', notes: '' })
     }
     setRepError('')
     setShowRepModal(true)
@@ -540,6 +561,8 @@ export default function SettingsPage() {
       label: repForm.label.trim() || null,
       split_pct: repForm.split_pct ? parseFloat(repForm.split_pct) : null,
       bonus_per_deal: repForm.bonus_per_deal ? parseFloat(repForm.bonus_per_deal) : null,
+      house_split_override_pct: repForm.house_split_override_pct ? parseFloat(repForm.house_split_override_pct) : null,
+      restricted_split_pct: repForm.restricted_split_pct ? parseFloat(repForm.restricted_split_pct) : null,
       effective_date: repForm.effective_date || null,
       notes: repForm.notes.trim() || null,
       status: 'active',
@@ -598,12 +621,62 @@ export default function SettingsPage() {
     return true
   })
 
+  const handleSaveOrgSettings = async () => {
+    if (!member?.org_id) return
+    setOrgSettingsSaving(true)
+    await supabase.from('organizations').update({
+      default_house_split_pct: orgHouseSplit ? parseFloat(orgHouseSplit) : 0,
+      default_clawback_window_months: parseInt(orgClawbackMonths) || 6,
+    }).eq('id', member.org_id)
+    setOrgSettingsMsg('Settings saved')
+    setTimeout(() => setOrgSettingsMsg(''), 2000)
+    setOrgSettingsSaving(false)
+  }
+
   const handleRoleChange = async (memberId: string, newRole: string) => {
     await supabase.from('org_members').update({ role: newRole }).eq('id', memberId)
     setTeamMsg('Role updated')
     setTimeout(() => setTeamMsg(''), 2000)
     fetchTeamMembers()
   }
+
+  const handleParentChange = async (memberId: string, parentId: string) => {
+    await supabase.from('org_members').update({ parent_member_id: parentId || null }).eq('id', memberId)
+    setTeamMsg('Hierarchy updated')
+    setTimeout(() => setTeamMsg(''), 2000)
+    fetchTeamMembers()
+  }
+
+  const handleOverridePctChange = async (memberId: string, pct: string) => {
+    await supabase.from('org_members').update({ override_pct: pct ? parseFloat(pct) : null }).eq('id', memberId)
+    setTeamMsg('Override updated')
+    setTimeout(() => setTeamMsg(''), 2000)
+    fetchTeamMembers()
+  }
+
+  // Sort team members with hierarchy indentation
+  const sortedTeamMembers = (() => {
+    const byId = new Map(teamMembers.map(m => [m.id, m]))
+    const getDepth = (m: TeamMember): number => {
+      if (!m.parent_member_id) return 0
+      const parent = byId.get(m.parent_member_id)
+      return parent ? 1 + getDepth(parent) : 0
+    }
+    // Sort by role hierarchy desc, then by parent grouping
+    const rootMembers = teamMembers.filter(m => !m.parent_member_id).sort((a, b) => (ROLE_HIERARCHY[b.role] || 0) - (ROLE_HIERARCHY[a.role] || 0))
+    const result: (TeamMember & { depth: number })[] = []
+    const addWithChildren = (m: TeamMember, depth: number) => {
+      result.push({ ...m, depth })
+      const children = teamMembers.filter(c => c.parent_member_id === m.id).sort((a, b) => (ROLE_HIERARCHY[b.role] || 0) - (ROLE_HIERARCHY[a.role] || 0))
+      for (const child of children) addWithChildren(child, depth + 1)
+    }
+    for (const root of rootMembers) addWithChildren(root, 0)
+    // Add any orphans not in tree
+    for (const m of teamMembers) {
+      if (!result.find(r => r.id === m.id)) result.push({ ...m, depth: 0 })
+    }
+    return result
+  })()
 
   const handleRemoveMember = async (memberId: string) => {
     if (!confirm('Remove this team member? They will lose access to the organization.')) return
@@ -1061,6 +1134,41 @@ export default function SettingsPage() {
             </div>
           )}
 
+          {/* ORGANIZATION TAB */}
+          {activeTab === 'Organization' && (
+            <div className={cardClass}>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+                <div>
+                  <h3 className="text-lg font-semibold">Residual & Payout Settings</h3>
+                  <p className="text-sm text-slate-500 mt-0.5">Configure default splits and clawback policies</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {orgSettingsMsg && <span className="text-sm text-emerald-600">{orgSettingsMsg}</span>}
+                  <button onClick={handleSaveOrgSettings} disabled={orgSettingsSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors duration-150 disabled:opacity-50">
+                    {orgSettingsSaving ? 'Saving...' : 'Save Settings'}
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div>
+                  <label className={labelClass}>Default ISO House Split %</label>
+                  <p className="text-xs text-slate-400 mb-1.5">Percentage the ISO keeps before agent splits</p>
+                  <input type="number" min="0" max="100" step="0.01" value={orgHouseSplit} onChange={e => setOrgHouseSplit(e.target.value)} className={inputClass} placeholder="e.g. 10" />
+                </div>
+                <div>
+                  <label className={labelClass}>Default Clawback Window</label>
+                  <p className="text-xs text-slate-400 mb-1.5">Months before agent bonuses are fully vested</p>
+                  <select value={orgClawbackMonths} onChange={e => setOrgClawbackMonths(e.target.value)} className={inputClass}>
+                    <option value="3">3 months</option>
+                    <option value="6">6 months</option>
+                    <option value="9">9 months</option>
+                    <option value="12">12 months</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TEAM TAB */}
           {activeTab === 'Team' && (
             <div>
@@ -1108,16 +1216,18 @@ export default function SettingsPage() {
                 </div>
               ) : (
                 <div>
-                  {teamMembers.map((tm) => {
+                  {sortedTeamMembers.map((tm) => {
                     const isMe = tm.user_id === authUser?.id
                     const displayName = tm.profile_name || tm.invited_email || 'Unknown'
                     const displayEmail = tm.profile_email || tm.invited_email || ''
                     const canManage = hasPermission('manage_team') && !isMe && tm.role !== 'owner'
+                    const parentCandidatesForMember = teamMembers.filter(m => m.id !== tm.id && (ROLE_HIERARCHY[m.role] || 0) > (ROLE_HIERARCHY[tm.role] || 0))
 
                     return (
-                      <div key={tm.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div key={tm.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" style={{ marginLeft: tm.depth * 24 }}>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
+                            {tm.depth > 0 && <span className="text-slate-300 text-sm">{'\u2514'}</span>}
                             <span className="text-base font-semibold text-slate-900 truncate">{displayName}</span>
                             {isMe && <span className="text-xs text-slate-400">(you)</span>}
                             {tm.status === 'invited' && (
@@ -1142,6 +1252,30 @@ export default function SettingsPage() {
                             <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${ROLE_BADGE_STYLES[tm.role] || 'bg-slate-100 text-slate-600'}`}>
                               {ROLE_LABELS[tm.role] || tm.role}
                             </span>
+                          )}
+
+                          {canManage && parentCandidatesForMember.length > 0 && (
+                            <select
+                              value={tm.parent_member_id || ''}
+                              onChange={(e) => handleParentChange(tm.id, e.target.value)}
+                              className="text-xs px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500"
+                            >
+                              <option value="">No manager</option>
+                              {parentCandidatesForMember.map(p => (
+                                <option key={p.id} value={p.id}>{p.profile_name || p.invited_email || 'Unknown'}</option>
+                              ))}
+                            </select>
+                          )}
+
+                          {canManage && tm.role === 'master_agent' && (
+                            <input
+                              type="number" min="0" max="100" step="0.01"
+                              value={tm.override_pct ?? ''}
+                              onChange={(e) => handleOverridePctChange(tm.id, e.target.value)}
+                              className="text-xs px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500 w-20"
+                              placeholder="Override %"
+                              title="Override % on downline production"
+                            />
                           )}
 
                           {canManage && (
@@ -1286,6 +1420,16 @@ export default function SettingsPage() {
                           <div>
                             <label className={labelClass}>Effective Date</label>
                             <input type="date" value={repForm.effective_date} onChange={e => setRepForm({ ...repForm, effective_date: e.target.value })} className={inputClass} />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className={labelClass}>House Split Override %</label>
+                            <input type="number" min="0" max="100" step="0.01" value={repForm.house_split_override_pct} onChange={e => setRepForm({ ...repForm, house_split_override_pct: e.target.value })} className={inputClass} placeholder="Overrides org default" />
+                          </div>
+                          <div>
+                            <label className={labelClass}>Restricted Split %</label>
+                            <input type="number" min="0" max="100" step="0.01" value={repForm.restricted_split_pct} onChange={e => setRepForm({ ...repForm, restricted_split_pct: e.target.value })} className={inputClass} placeholder="High-risk merchant split" />
                           </div>
                         </div>
                         <div>

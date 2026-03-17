@@ -32,7 +32,7 @@ export default function PartnerDetailPage() {
   const [repCodesFetched, setRepCodesFetched] = useState(false);
   const [repProfiles, setRepProfiles] = useState<Record<string, string>>({});
   const [showRepModal, setShowRepModal] = useState(false);
-  const [repForm, setRepForm] = useState({ user_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', effective_date: '', notes: '' });
+  const [repForm, setRepForm] = useState({ user_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', house_split_override_pct: '', restricted_split_pct: '', effective_date: '', notes: '' });
   const [repSaving, setRepSaving] = useState(false);
   const [repError, setRepError] = useState('');
   const [repAgents, setRepAgents] = useState<any[]>([]);
@@ -272,7 +272,7 @@ export default function PartnerDetailPage() {
     if (repCodesFetched || !partner || !member?.org_id) return;
     const { data } = await supabase
       .from("agent_rep_codes")
-      .select("id, user_id, rep_code, label, status, split_pct, bonus_per_deal, effective_date, end_date, notes")
+      .select("id, user_id, rep_code, label, status, split_pct, bonus_per_deal, house_split_override_pct, restricted_split_pct, effective_date, end_date, notes")
       .eq("partner_id", partner.id)
       .eq("org_id", member.org_id)
       .order("created_at", { ascending: false });
@@ -318,6 +318,8 @@ export default function PartnerDetailPage() {
       label: repForm.label.trim() || null,
       split_pct: repForm.split_pct ? parseFloat(repForm.split_pct) : null,
       bonus_per_deal: repForm.bonus_per_deal ? parseFloat(repForm.bonus_per_deal) : null,
+      house_split_override_pct: repForm.house_split_override_pct ? parseFloat(repForm.house_split_override_pct) : null,
+      restricted_split_pct: repForm.restricted_split_pct ? parseFloat(repForm.restricted_split_pct) : null,
       effective_date: repForm.effective_date || null,
       notes: repForm.notes.trim() || null,
       status: "active",
@@ -1145,7 +1147,7 @@ export default function PartnerDetailPage() {
           <div>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold">Rep Codes</h3>
-              <button onClick={() => { setRepForm({ user_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', effective_date: '', notes: '' }); setRepError(''); setShowRepModal(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">+ Add Rep Code</button>
+              <button onClick={() => { setRepForm({ user_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', house_split_override_pct: '', restricted_split_pct: '', effective_date: '', notes: '' }); setRepError(''); setShowRepModal(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">+ Add Rep Code</button>
             </div>
 
             {partnerRepCodes.length === 0 ? (
@@ -1245,6 +1247,16 @@ export default function PartnerDetailPage() {
                         <div>
                           <label className={labelClass}>Effective Date</label>
                           <input type="date" value={repForm.effective_date} onChange={e => setRepForm({ ...repForm, effective_date: e.target.value })} className={inputClass} />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className={labelClass}>House Split Override %</label>
+                          <input type="number" min="0" max="100" step="0.01" value={repForm.house_split_override_pct} onChange={e => setRepForm({ ...repForm, house_split_override_pct: e.target.value })} className={inputClass} placeholder="Overrides org default" />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Restricted Split %</label>
+                          <input type="number" min="0" max="100" step="0.01" value={repForm.restricted_split_pct} onChange={e => setRepForm({ ...repForm, restricted_split_pct: e.target.value })} className={inputClass} placeholder="High-risk split" />
                         </div>
                       </div>
                       <div>

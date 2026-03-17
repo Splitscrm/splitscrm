@@ -677,6 +677,14 @@ export default function MerchantDetailPage() {
                         <option value="pending">Pending</option>
                       </select>
                     </div>
+                    <div>
+                      <label className={labelClass}>Risk Category</label>
+                      <select value={merchant.risk_category || 'standard'} onChange={(e) => updateField('risk_category', e.target.value)} className={inputClass}>
+                        <option value="standard">Standard</option>
+                        <option value="restricted">Restricted</option>
+                        <option value="high_risk">High Risk</option>
+                      </select>
+                    </div>
                   </div>
 
                   <div>
