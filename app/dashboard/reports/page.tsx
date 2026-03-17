@@ -24,6 +24,7 @@ interface ResidualRecord {
   merchant_id_external: string | null
   dba_name: string | null
   import_id: string
+  agent_user_id: string | null
 }
 
 interface ImportRow {
@@ -75,6 +76,9 @@ interface CommRow {
 interface OrgMember {
   user_id: string
   role: string
+  id: string
+  parent_member_id: string | null
+  override_pct: number | null
 }
 
 interface UserProfile {
@@ -160,18 +164,25 @@ export default function ReportsPage() {
   const { user, member, hasPermission, loading: authLoading } = useAuth()
   const isOwnerOrManager = member?.role === 'owner' || member?.role === 'manager'
 
-  const [tab, setTab] = useState<'trending' | 'profitability' | 'pipeline' | 'agents'>('trending')
+  const [tab, setTab] = useState<'trending' | 'profitability' | 'pipeline' | 'agents' | 'payouts'>('trending')
   const [loading, setLoading] = useState(true)
 
   // Raw data
   const [records, setRecords] = useState<ResidualRecord[]>([])
   const [imports, setImports] = useState<ImportRow[]>([])
   const [partners, setPartners] = useState<Partner[]>([])
-  const [merchants, setMerchants] = useState<{ id: string; business_name: string; mid: string; monthly_volume: number; processor: string; status: string; user_id: string; assigned_to: string | null }[]>([])
+  const [merchants, setMerchants] = useState<{ id: string; business_name: string; mid: string; monthly_volume: number; processor: string; status: string; user_id: string; assigned_to: string | null; risk_category: string | null }[]>([])
   const [leads, setLeads] = useState<LeadRow[]>([])
   const [comms, setComms] = useState<CommRow[]>([])
   const [orgMembers, setOrgMembers] = useState<OrgMember[]>([])
   const [profiles, setProfiles] = useState<Record<string, UserProfile>>({})
+
+  // Payout data
+  const [repCodes, setRepCodes] = useState<any[]>([])
+  const [orgHouseSplit, setOrgHouseSplit] = useState(0)
+  const [clawbacks, setClawbacks] = useState<any[]>([])
+  const [payoutMonth, setPayoutMonth] = useState('')
+  const [payoutPartnerFilter, setPayoutPartnerFilter] = useState('')
 
   // ── Fetch data ─────────────────────────────────────────────────────────
 
@@ -201,7 +212,7 @@ export default function ReportsPage() {
           const batch = importIds.slice(i, i + 20)
           const { data: recData } = await supabase
             .from('residual_records')
-            .select('report_month, gross_income, total_expenses, net_revenue, sales_amount, net_volume, iso_net, merchant_id, merchant_id_external, dba_name, import_id')
+            .select('report_month, gross_income, total_expenses, net_revenue, sales_amount, net_volume, iso_net, merchant_id, merchant_id_external, dba_name, import_id, agent_user_id')
             .in('import_id', batch)
           if (recData) allRecords.push(...recData)
         }
@@ -218,7 +229,7 @@ export default function ReportsPage() {
       // Fetch merchants
       let merchantQuery = supabase
         .from('merchants')
-        .select('id, business_name, mid, monthly_volume, processor, status, user_id, assigned_to')
+        .select('id, business_name, mid, monthly_volume, processor, status, user_id, assigned_to, risk_category')
       if (!isOwnerOrManager) merchantQuery = merchantQuery.or(`user_id.eq.${uid},assigned_to.eq.${uid}`)
       const { data: merchData } = await merchantQuery
       setMerchants(merchData || [])
@@ -243,7 +254,7 @@ export default function ReportsPage() {
       if (member?.org_id) {
         const { data: membersData } = await supabase
           .from('org_members')
-          .select('user_id, role')
+          .select('id, user_id, role, parent_member_id, override_pct')
           .eq('org_id', member.org_id)
           .eq('status', 'active')
         setOrgMembers(membersData || [])
@@ -260,10 +271,34 @@ export default function ReportsPage() {
         }
       }
 
+      // Fetch payout data
+      if (member?.org_id) {
+        const { data: orgData } = await supabase
+          .from('organizations')
+          .select('default_house_split_pct')
+          .eq('id', member.org_id)
+          .single()
+        setOrgHouseSplit(orgData?.default_house_split_pct || 0)
+
+        const { data: rcData } = await supabase
+          .from('agent_rep_codes')
+          .select('id, user_id, partner_id, rep_code, split_pct, bonus_per_deal, house_split_override_pct, restricted_split_pct, status')
+          .eq('org_id', member.org_id)
+          .eq('status', 'active')
+        setRepCodes(rcData || [])
+
+        const { data: cbData } = await supabase
+          .from('agent_clawbacks')
+          .select('id, user_id, amount, status')
+          .eq('org_id', member.org_id)
+          .eq('status', 'pending')
+        setClawbacks(cbData || [])
+      }
+
       setLoading(false)
     }
     load()
-  }, [authLoading, user, isOwnerOrManager, router])
+  }, [authLoading, user, isOwnerOrManager, router, member?.org_id])
 
   // ── Derived: import → partner mapping ──────────────────────────────────
 
@@ -723,6 +758,270 @@ export default function ReportsPage() {
     })
   }
 
+  // ── Tab 5: Agent Payouts computations ───────────────────────────────
+
+  // Set default payout month to latest when data loads
+  useMemo(() => {
+    if (sortedMonths.length > 0 && !payoutMonth) setPayoutMonth(sortedMonths[sortedMonths.length - 1])
+  }, [sortedMonths, payoutMonth])
+
+  const merchantMap = useMemo(() => {
+    const m: Record<string, typeof merchants[0]> = {}
+    for (const mer of merchants) m[mer.id] = mer
+    return m
+  }, [merchants])
+
+  const payoutData = useMemo(() => {
+    if (!payoutMonth) return []
+
+    const selectedMonth = payoutMonth
+    const monthRecords = records.filter(r => r.report_month === selectedMonth)
+    const monthImports = imports.filter(i => i.report_month === selectedMonth)
+    const monthImportIds = new Set(monthImports.map(i => i.id))
+    const filteredRecords = monthRecords.filter(r => monthImportIds.has(r.import_id))
+
+    // Build import→partner map
+    const impPartner: Record<string, string> = {}
+    for (const imp of monthImports) {
+      if (imp.partner_id) impPartner[imp.id] = imp.partner_id
+    }
+
+    // Build user→member map
+    const userMemberMap: Record<string, OrgMember> = {}
+    for (const m of orgMembers) if (m.user_id) userMemberMap[m.user_id] = m
+
+    // Build member id→user_id map
+    const memberIdToUser: Record<string, string> = {}
+    for (const m of orgMembers) if (m.user_id) memberIdToUser[m.id] = m.user_id
+
+    // Rep codes by user+partner
+    const rcMap: Record<string, any> = {}
+    for (const rc of repCodes) {
+      rcMap[`${rc.user_id}:${rc.partner_id}`] = rc
+    }
+
+    // Clawback totals by user
+    const clawbackMap: Record<string, number> = {}
+    for (const cb of clawbacks) {
+      clawbackMap[cb.user_id] = (clawbackMap[cb.user_id] || 0) + (cb.amount || 0)
+    }
+
+    // Group records by agent_user_id
+    const agentRecords: Record<string, { records: typeof filteredRecords; partnerId: string }[]> = {}
+    for (const r of filteredRecords) {
+      const uid = r.agent_user_id
+      if (!uid) continue
+      const pid = impPartner[r.import_id] || ''
+      if (payoutPartnerFilter && pid !== payoutPartnerFilter) continue
+      if (!agentRecords[uid]) agentRecords[uid] = []
+      agentRecords[uid].push({ records: [r], partnerId: pid })
+    }
+
+    // Merge records by agent+partner
+    const agentPartnerMerged: Record<string, Record<string, typeof filteredRecords>> = {}
+    for (const [uid, entries] of Object.entries(agentRecords)) {
+      agentPartnerMerged[uid] = {}
+      for (const e of entries) {
+        const pid = e.partnerId
+        if (!agentPartnerMerged[uid][pid]) agentPartnerMerged[uid][pid] = []
+        agentPartnerMerged[uid][pid].push(...e.records)
+      }
+    }
+
+    // Role-based filtering
+    const visibleAgents = new Set<string>()
+    if (isOwnerOrManager) {
+      for (const uid of Object.keys(agentPartnerMerged)) visibleAgents.add(uid)
+    } else if (user) {
+      visibleAgents.add(user.id)
+      // If master agent, add downline
+      const myMember = userMemberMap[user.id]
+      if (myMember) {
+        for (const m of orgMembers) {
+          if (m.parent_member_id === myMember.id && m.user_id) visibleAgents.add(m.user_id)
+        }
+      }
+    }
+
+    // Calculate payouts
+    const results: any[] = []
+    for (const uid of visibleAgents) {
+      const partnerGroups = agentPartnerMerged[uid]
+      if (!partnerGroups) continue
+      const agentMember = userMemberMap[uid]
+      const profile = profiles[uid]
+      const agentName = profile?.full_name || profile?.email || uid.slice(0, 8)
+      const agentRole = agentMember?.role || 'agent'
+
+      for (const [pid, recs] of Object.entries(partnerGroups)) {
+        const rc = rcMap[`${uid}:${pid}`]
+        const partnerName = partnerMap[pid]?.name || 'Unknown'
+
+        let totalGross = 0
+        let totalIsoCut = 0
+        let totalAgentPayout = 0
+        let totalOverride = 0
+        const merchantDetails: any[] = []
+
+        for (const r of recs) {
+          const netRev = r.net_revenue || 0
+          const mer = r.merchant_id ? merchantMap[r.merchant_id] : null
+          const isRestricted = mer?.risk_category && mer.risk_category !== 'standard'
+
+          // 1. ISO house cut
+          const housePct = rc?.house_split_override_pct ?? orgHouseSplit
+          const isoCut = netRev * (housePct / 100)
+          let remainder = netRev - isoCut
+
+          // 2. Master agent override
+          let overrideAmt = 0
+          if (agentMember?.parent_member_id) {
+            const parentUid = memberIdToUser[agentMember.parent_member_id]
+            const parentMember = parentUid ? userMemberMap[parentUid] : null
+            if (parentMember?.override_pct) {
+              overrideAmt = remainder * (parentMember.override_pct / 100)
+              remainder -= overrideAmt
+            }
+          }
+
+          // 3. Agent split
+          const splitPct = isRestricted && rc?.restricted_split_pct
+            ? rc.restricted_split_pct
+            : (rc?.split_pct ?? 0)
+          const agentPay = remainder * (splitPct / 100)
+
+          totalGross += netRev
+          totalIsoCut += isoCut
+          totalOverride += overrideAmt
+          totalAgentPayout += agentPay
+
+          merchantDetails.push({
+            name: r.dba_name || r.merchant_id_external || 'Unknown',
+            mid: r.merchant_id_external || '',
+            partner: partnerName,
+            volume: r.net_volume || r.sales_amount || 0,
+            grossIncome: r.gross_income || 0,
+            expenses: r.total_expenses || 0,
+            netRevenue: netRev,
+            isoCut,
+            splitPct,
+            agentPayout: agentPay,
+            isRestricted,
+          })
+        }
+
+        // Bonus (per new merchant this period — simplified: bonus × merchant count)
+        const bonus = rc?.bonus_per_deal ? (rc.bonus_per_deal * new Set(recs.map(r => r.merchant_id || r.merchant_id_external).filter(Boolean)).size) : 0
+        const clawback = clawbackMap[uid] || 0
+        const netOwed = totalAgentPayout + bonus - clawback
+
+        results.push({
+          userId: uid,
+          agentName,
+          role: agentRole,
+          partnerId: pid,
+          partnerName,
+          merchantCount: new Set(recs.map(r => r.merchant_id || r.merchant_id_external).filter(Boolean)).size,
+          grossRevenue: totalGross,
+          isoCut: totalIsoCut,
+          splitPct: rc?.split_pct ?? 0,
+          residualPayout: totalAgentPayout,
+          bonus,
+          clawback,
+          netOwed,
+          overrideEarned: totalOverride,
+          merchantDetails: merchantDetails.sort((a, b) => b.netRevenue - a.netRevenue),
+        })
+      }
+    }
+
+    return results
+  }, [payoutMonth, records, imports, orgMembers, profiles, repCodes, clawbacks, orgHouseSplit, merchants, merchantMap, partnerMap, isOwnerOrManager, user, payoutPartnerFilter])
+
+  // Master agent downline overrides
+  const downlineOverrides = useMemo(() => {
+    if (!user || !payoutMonth) return []
+    const myMember = orgMembers.find(m => m.user_id === user.id)
+    if (!myMember || !myMember.override_pct) return []
+
+    return payoutData
+      .filter(p => {
+        const agentMember = orgMembers.find(m => m.user_id === p.userId)
+        return agentMember?.parent_member_id === myMember.id
+      })
+      .map(p => ({
+        agentName: p.agentName,
+        payout: p.residualPayout,
+        overridePct: myMember.override_pct || 0,
+        overrideAmount: p.overrideEarned,
+      }))
+  }, [user, payoutMonth, payoutData, orgMembers])
+
+  const [payoutSortCol, setPayoutSortCol] = useState('netOwed')
+  const [payoutSortAsc, setPayoutSortAsc] = useState(false)
+  const [expandedPayouts, setExpandedPayouts] = useState<Set<string>>(new Set())
+
+  const sortedPayoutTable = useMemo(() => {
+    const rows = [...payoutData]
+    rows.sort((a, b) => {
+      const aVal = (a as any)[payoutSortCol]
+      const bVal = (b as any)[payoutSortCol]
+      if (typeof aVal === 'string') return payoutSortAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+      return payoutSortAsc ? aVal - bVal : bVal - aVal
+    })
+    return rows
+  }, [payoutData, payoutSortCol, payoutSortAsc])
+
+  const togglePayoutSort = (col: string) => {
+    if (payoutSortCol === col) setPayoutSortAsc(!payoutSortAsc)
+    else { setPayoutSortCol(col); setPayoutSortAsc(false) }
+  }
+
+  const togglePayoutExpand = (key: string) => {
+    setExpandedPayouts(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const payoutTotals = useMemo(() => {
+    return payoutData.reduce((acc, p) => ({
+      merchantCount: acc.merchantCount + p.merchantCount,
+      grossRevenue: acc.grossRevenue + p.grossRevenue,
+      isoCut: acc.isoCut + p.isoCut,
+      residualPayout: acc.residualPayout + p.residualPayout,
+      bonus: acc.bonus + p.bonus,
+      clawback: acc.clawback + p.clawback,
+      netOwed: acc.netOwed + p.netOwed,
+    }), { merchantCount: 0, grossRevenue: 0, isoCut: 0, residualPayout: 0, bonus: 0, clawback: 0, netOwed: 0 })
+  }, [payoutData])
+
+  const exportPayoutCSV = (detail: boolean) => {
+    if (detail) {
+      const headers = ['Agent', 'Role', 'Partner', 'Merchant', 'MID', 'Net Revenue', 'ISO Cut', 'Split %', 'Agent Payout', 'Risk']
+      const rows = payoutData.flatMap(p => p.merchantDetails.map((m: any) => [
+        p.agentName, p.role, p.partnerName, m.name, m.mid,
+        m.netRevenue.toFixed(2), m.isoCut.toFixed(2), m.splitPct, m.agentPayout.toFixed(2),
+        m.isRestricted ? 'Restricted' : 'Standard',
+      ]))
+      const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `payout-detail-${payoutMonth}.csv`; a.click()
+    } else {
+      const headers = ['Agent', 'Role', 'Partner', 'Merchants', 'Gross Revenue', 'ISO Cut', 'Split %', 'Residual Payout', 'Bonuses', 'Clawbacks', 'Net Owed']
+      const rows = payoutData.map(p => [
+        p.agentName, p.role, p.partnerName, p.merchantCount,
+        p.grossRevenue.toFixed(2), p.isoCut.toFixed(2), p.splitPct, p.residualPayout.toFixed(2),
+        p.bonus.toFixed(2), p.clawback.toFixed(2), p.netOwed.toFixed(2),
+      ])
+      const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `payout-summary-${payoutMonth}.csv`; a.click()
+    }
+  }
+
   // ── Sort arrow helper ──────────────────────────────────────────────────
 
   const SortArrow = ({ col, current, asc }: { col: string; current: string; asc: boolean }) => {
@@ -764,6 +1063,12 @@ export default function ReportsPage() {
               className={`px-4 py-2 rounded-md text-sm font-medium transition ${tab === 'agents' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
             >
               Agent Performance
+            </button>
+            <button
+              onClick={() => setTab('payouts')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition ${tab === 'payouts' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+            >
+              Agent Payouts
             </button>
           </div>
         </div>
@@ -1265,6 +1570,203 @@ export default function ReportsPage() {
                   </table>
                 </div>
               </div>
+            )}
+          </div>
+        ) : tab === 'payouts' ? (
+          /* ═══════════ TAB 5: AGENT PAYOUTS ═══════════ */
+          <div className="space-y-6">
+            {/* Filters */}
+            <div className="flex flex-wrap items-center gap-4">
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">Month</label>
+                <select value={payoutMonth} onChange={e => setPayoutMonth(e.target.value)} className="text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
+                  {sortedMonths.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">Partner</label>
+                <select value={payoutPartnerFilter} onChange={e => setPayoutPartnerFilter(e.target.value)} className="text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
+                  <option value="">All Partners</option>
+                  {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div className="flex-1" />
+              <div className="flex gap-2">
+                <button onClick={() => exportPayoutCSV(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition">Export Summary</button>
+                <button onClick={() => exportPayoutCSV(true)} className="text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition">Export Detail</button>
+              </div>
+            </div>
+
+            {/* Info banners */}
+            {orgHouseSplit === 0 && isOwnerOrManager && (
+              <div className="bg-blue-50 border border-blue-200 text-blue-700 text-sm p-3 rounded-lg">
+                ISO house split is set to 0%. Configure in Settings {'\u2192'} Organization.
+              </div>
+            )}
+
+            {sortedMonths.length === 0 ? (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
+                <p className="text-slate-500">No residual data for this period.</p>
+              </div>
+            ) : payoutData.length === 0 && repCodes.length === 0 ? (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
+                <p className="text-slate-500">No agent payouts calculated.</p>
+                <p className="text-sm text-slate-400 mt-1">Assign rep codes to agents first in Settings {'\u2192'} Team.</p>
+              </div>
+            ) : payoutData.length === 0 ? (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
+                <p className="text-slate-500">No matched agent records for {monthLabel(payoutMonth)}.</p>
+              </div>
+            ) : (
+              <>
+                {/* Summary table */}
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-6 pb-3">
+                    <h2 className="text-lg font-semibold">Payout Summary</h2>
+                    <p className="text-sm text-slate-400 mt-1">{monthLabel(payoutMonth)}</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-t border-slate-100 text-left text-slate-500">
+                          {[
+                            { key: 'agentName', label: 'Agent' },
+                            { key: 'role', label: 'Role' },
+                            { key: 'partnerName', label: 'Partner' },
+                            { key: 'merchantCount', label: 'Merchants' },
+                            { key: 'grossRevenue', label: 'Gross Rev' },
+                            { key: 'isoCut', label: 'ISO Cut' },
+                            { key: 'splitPct', label: 'Split %' },
+                            { key: 'residualPayout', label: 'Payout' },
+                            { key: 'bonus', label: 'Bonuses' },
+                            { key: 'clawback', label: 'Clawbacks' },
+                            { key: 'netOwed', label: 'Net Owed' },
+                          ].map(col => (
+                            <th key={col.key} className="px-3 py-3 font-medium cursor-pointer hover:text-slate-900 whitespace-nowrap" onClick={() => togglePayoutSort(col.key)}>
+                              {col.label}
+                              <SortArrow col={col.key} current={payoutSortCol} asc={payoutSortAsc} />
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedPayoutTable.map(row => {
+                          const rowKey = `${row.userId}:${row.partnerId}`
+                          return (
+                            <>
+                              <tr key={rowKey} className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" onClick={() => togglePayoutExpand(rowKey)}>
+                                <td className="px-3 py-3 font-medium">
+                                  <span className="mr-1 text-slate-400">{expandedPayouts.has(rowKey) ? '\u25BC' : '\u25B6'}</span>
+                                  {row.agentName}
+                                </td>
+                                <td className="px-3 py-3 capitalize text-slate-500">{row.role.replace('_', ' ')}</td>
+                                <td className="px-3 py-3">{row.partnerName}</td>
+                                <td className="px-3 py-3">{row.merchantCount}</td>
+                                <td className="px-3 py-3">{fmt(row.grossRevenue)}</td>
+                                <td className="px-3 py-3 text-red-500">{fmt(row.isoCut)}</td>
+                                <td className="px-3 py-3">{row.splitPct}%</td>
+                                <td className="px-3 py-3">{fmt(row.residualPayout)}</td>
+                                <td className="px-3 py-3 text-emerald-600">{row.bonus > 0 ? fmt(row.bonus) : '\u2014'}</td>
+                                <td className="px-3 py-3 text-red-500">{row.clawback > 0 ? fmt(row.clawback) : '\u2014'}</td>
+                                <td className={`px-3 py-3 font-semibold ${row.netOwed >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmt(row.netOwed)}</td>
+                              </tr>
+                              {expandedPayouts.has(rowKey) && (
+                                <tr key={`${rowKey}-detail`} className="border-t border-slate-50">
+                                  <td colSpan={11} className="px-3 py-0">
+                                    <div className="py-3 pl-6">
+                                      <table className="w-full text-xs">
+                                        <thead>
+                                          <tr className="text-left text-slate-400">
+                                            <th className="pb-2 font-medium">Merchant</th>
+                                            <th className="pb-2 font-medium">MID</th>
+                                            <th className="pb-2 font-medium">Volume</th>
+                                            <th className="pb-2 font-medium">Income</th>
+                                            <th className="pb-2 font-medium">Expenses</th>
+                                            <th className="pb-2 font-medium">Net Rev</th>
+                                            <th className="pb-2 font-medium">ISO Cut</th>
+                                            <th className="pb-2 font-medium">Split %</th>
+                                            <th className="pb-2 font-medium">Payout</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {row.merchantDetails.map((m: any, i: number) => (
+                                            <tr key={i} className="border-t border-slate-50">
+                                              <td className="py-1.5">
+                                                {m.name}
+                                                {m.isRestricted && <span className="ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-100 text-amber-700">High Risk</span>}
+                                              </td>
+                                              <td className="py-1.5 text-slate-500">{m.mid}</td>
+                                              <td className="py-1.5">{m.volume > 0 ? `$${(m.volume / 1000).toFixed(0)}k` : '\u2014'}</td>
+                                              <td className="py-1.5">{fmt(m.grossIncome)}</td>
+                                              <td className="py-1.5">{fmt(m.expenses)}</td>
+                                              <td className="py-1.5">{fmt(m.netRevenue)}</td>
+                                              <td className="py-1.5 text-red-500">{fmt(m.isoCut)}</td>
+                                              <td className="py-1.5">{m.splitPct}%</td>
+                                              <td className="py-1.5 font-medium text-emerald-600">{fmt(m.agentPayout)}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </>
+                          )
+                        })}
+                        {/* Totals row */}
+                        <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
+                          <td className="px-3 py-3" colSpan={3}>Totals</td>
+                          <td className="px-3 py-3">{payoutTotals.merchantCount}</td>
+                          <td className="px-3 py-3">{fmt(payoutTotals.grossRevenue)}</td>
+                          <td className="px-3 py-3 text-red-500">{fmt(payoutTotals.isoCut)}</td>
+                          <td className="px-3 py-3" />
+                          <td className="px-3 py-3">{fmt(payoutTotals.residualPayout)}</td>
+                          <td className="px-3 py-3 text-emerald-600">{payoutTotals.bonus > 0 ? fmt(payoutTotals.bonus) : '\u2014'}</td>
+                          <td className="px-3 py-3 text-red-500">{payoutTotals.clawback > 0 ? fmt(payoutTotals.clawback) : '\u2014'}</td>
+                          <td className={`px-3 py-3 ${payoutTotals.netOwed >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmt(payoutTotals.netOwed)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Master agent downline overrides */}
+                {downlineOverrides.length > 0 && (
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-6 pb-3">
+                      <h2 className="text-lg font-semibold">Downline Overrides</h2>
+                      <p className="text-sm text-slate-400 mt-1">Your override earnings from sub-agent production</p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-t border-slate-100 text-left text-slate-500">
+                            <th className="px-4 py-3 font-medium">Sub-Agent</th>
+                            <th className="px-4 py-3 font-medium">Their Payout</th>
+                            <th className="px-4 py-3 font-medium">Override %</th>
+                            <th className="px-4 py-3 font-medium">Override Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {downlineOverrides.map((d, i) => (
+                            <tr key={i} className="border-t border-slate-100">
+                              <td className="px-4 py-3 font-medium">{d.agentName}</td>
+                              <td className="px-4 py-3">{fmt(d.payout)}</td>
+                              <td className="px-4 py-3">{d.overridePct}%</td>
+                              <td className="px-4 py-3 font-medium text-emerald-600">{fmt(d.overrideAmount)}</td>
+                            </tr>
+                          ))}
+                          <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
+                            <td className="px-4 py-3" colSpan={3}>Total Override Earnings</td>
+                            <td className="px-4 py-3 text-emerald-600">{fmt(downlineOverrides.reduce((s, d) => s + d.overrideAmount, 0))}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         ) : null}
