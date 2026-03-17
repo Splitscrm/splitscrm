@@ -905,6 +905,13 @@ export default function ReportsPage() {
       if (clawback > 0) clawbackUsed.add(uid)
       const netOwed = totalAgentPayout + bonus - clawback
 
+      // Verification: for partner_direct, compare expected vs reported
+      const partnerReported = (isPartnerDirect || codeType === 'override' || codeType === 'direct_sub') ? totalGross : null
+      const expectedCalc = (isPartnerDirect || codeType === 'override' || codeType === 'direct_sub')
+        ? totalGross * ((rc?.split_pct ?? 100) / 100)
+        : totalAgentPayout
+      const verifyDiff = partnerReported != null ? partnerReported - expectedCalc : null
+
       results.push({
         userId: uid, agentName, role: agentRole, partnerId: pid, partnerName,
         codeType, payoutType: rc?.payout_type || 'agent_paid',
@@ -912,6 +919,7 @@ export default function ReportsPage() {
         splitPct: rc?.split_pct ?? (isPartnerDirect ? 100 : 0),
         residualPayout: totalAgentPayout, bonus, clawback, netOwed,
         overrideEarned: totalOverride,
+        partnerReported, expectedCalc, verifyDiff,
         merchantDetails: merchantDetails.sort((a, b) => b.netRevenue - a.netRevenue),
       })
     }
@@ -980,6 +988,37 @@ export default function ReportsPage() {
       netOwed: acc.netOwed + p.netOwed,
     }), { merchantCount: 0, grossRevenue: 0, isoCut: 0, residualPayout: 0, bonus: 0, clawback: 0, netOwed: 0 })
   }, [payoutData])
+
+  // Split verification per partner
+  const splitVerification = useMemo(() => {
+    const byPartner: Record<string, { partnerName: string; agreement: number; house: number; agentSplits: number }> = {}
+    for (const row of payoutData) {
+      if (row.codeType !== 'standard') continue
+      if (!byPartner[row.partnerId]) {
+        const p = partnerMap[row.partnerId]
+        byPartner[row.partnerId] = {
+          partnerName: row.partnerName,
+          agreement: p?.residual_split ?? 0,
+          house: 0,
+          agentSplits: 0,
+        }
+      }
+      byPartner[row.partnerId].agentSplits += row.splitPct || 0
+      // Use the max house cut seen for this partner
+      const rc = repCodes.find(r => r.user_id === row.userId && r.partner_id === row.partnerId && r.code_type === 'standard')
+      const house = rc?.house_split_override_pct ?? orgHouseSplit
+      byPartner[row.partnerId].house = Math.max(byPartner[row.partnerId].house, house)
+    }
+    return Object.entries(byPartner).map(([pid, v]) => ({
+      partnerId: pid,
+      partnerName: v.partnerName,
+      agreement: v.agreement,
+      totalAssigned: v.house + v.agentSplits,
+      house: v.house,
+      agentSplits: v.agentSplits,
+      remaining: v.agreement - v.house - v.agentSplits,
+    }))
+  }, [payoutData, partnerMap, repCodes, orgHouseSplit])
 
   const exportPayoutCSV = (detail: boolean) => {
     const esc = (s: any) => `"${String(s ?? '').replace(/"/g, '""')}"`
@@ -1720,6 +1759,29 @@ export default function ReportsPage() {
                     </table>
                   </div>
                 </div>
+
+                {/* Split verification */}
+                {splitVerification.length > 0 && (
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                    <h2 className="text-lg font-semibold mb-3">Split Verification</h2>
+                    <div className="space-y-2">
+                      {splitVerification.map(sv => {
+                        const isOver = sv.remaining < 0
+                        const isExact = sv.remaining === 0
+                        return (
+                          <div key={sv.partnerId} className={`flex flex-wrap items-center gap-4 p-3 rounded-lg border text-sm ${isOver ? 'border-red-200 bg-red-50' : isExact ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+                            <span className="font-medium text-slate-800">{sv.partnerName}</span>
+                            <span className="text-slate-500">Assigned: <span className="font-medium text-slate-700">{sv.totalAssigned.toFixed(1)}%</span> (House {sv.house}% + Agents {sv.agentSplits}%)</span>
+                            <span className="text-slate-500">Agreement: <span className="font-medium text-slate-700">{sv.agreement}%</span></span>
+                            <span className={`font-medium ${isOver ? 'text-red-700' : isExact ? 'text-emerald-700' : 'text-amber-700'}`}>
+                              {isExact ? '\u2713 Fully allocated' : isOver ? `${Math.abs(sv.remaining).toFixed(1)}% over \u26A0\uFE0F` : `${sv.remaining.toFixed(1)}% unassigned`}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Master agent downline overrides */}
                 {downlineOverrides.length > 0 && (

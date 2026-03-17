@@ -169,6 +169,7 @@ export default function SettingsPage() {
   const [repForm, setRepForm] = useState({ user_id: '', partner_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', house_split_override_pct: '', restricted_split_pct: '', payout_type: 'agent_paid', code_type: 'standard', effective_date: '', notes: '' })
   const [repSaving, setRepSaving] = useState(false)
   const [repError, setRepError] = useState('')
+  const [repWarning, setRepWarning] = useState('')
   const [repMsg, setRepMsg] = useState('')
   const [repFilterAgent, setRepFilterAgent] = useState('')
   const [repFilterPartner, setRepFilterPartner] = useState('')
@@ -504,7 +505,7 @@ export default function SettingsPage() {
     // Cache partners for dropdowns
     const { data: pData } = await supabase
       .from('partners')
-      .select('id, name')
+      .select('id, name, residual_split')
       .order('name')
     setRepPartnersCache(pData || [])
   }, [member?.org_id])
@@ -554,6 +555,30 @@ export default function SettingsPage() {
     if (!repForm.user_id) { setRepError('Agent is required'); return }
     setRepSaving(true)
     setRepError('')
+    setRepWarning('')
+
+    // Validate splits
+    const newSplit = repForm.split_pct ? parseFloat(repForm.split_pct) : 0
+    if (repForm.payout_type === 'agent_paid' && repForm.code_type === 'standard') {
+      const partner = repPartnersCache.find(p => p.id === repForm.partner_id)
+      const partnerAgreement = partner?.residual_split ?? 100
+      const otherSplits = repCodes
+        .filter(rc => rc.partner_id === repForm.partner_id && rc.status === 'active' && rc.code_type === 'standard' && (!repEditing || rc.id !== repEditing.id))
+        .reduce((s: number, rc: any) => s + (rc.split_pct || 0), 0)
+      const housePct = repForm.house_split_override_pct ? parseFloat(repForm.house_split_override_pct) : (teamOrgData?.default_house_split_pct || 0)
+      const totalPct = housePct + otherSplits + newSplit
+      if (totalPct > partnerAgreement) {
+        setRepWarning(`Combined splits (${totalPct.toFixed(1)}%) exceed partner agreement (${partnerAgreement}%). The ISO can only distribute up to ${partnerAgreement}% of gross revenue.`)
+      }
+    } else if (repForm.payout_type === 'partner_direct') {
+      const overrideSplits = repCodes
+        .filter(rc => rc.partner_id === repForm.partner_id && rc.status === 'active' && rc.code_type === 'override' && (!repEditing || rc.id !== repEditing.id))
+        .reduce((s: number, rc: any) => s + (rc.split_pct || 0), 0)
+      const combined = newSplit + overrideSplits
+      if (combined > 100) {
+        setRepWarning(`Combined agent (${newSplit}%) + override (${overrideSplits}%) = ${combined.toFixed(1)}% exceeds 100% of gross revenue.`)
+      }
+    }
 
     const payload: any = {
       org_id: member?.org_id,
@@ -1466,6 +1491,9 @@ export default function SettingsPage() {
                           <label className={labelClass}>Notes (optional)</label>
                           <textarea value={repForm.notes} onChange={e => setRepForm({ ...repForm, notes: e.target.value })} className={`${inputClass} resize-none`} rows={3} placeholder="Any notes..." />
                         </div>
+                        {repWarning && (
+                          <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-2.5 rounded-lg text-sm">{repWarning}</div>
+                        )}
                         {repError && (
                           <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-2.5 rounded-lg text-sm">{repError}</div>
                         )}

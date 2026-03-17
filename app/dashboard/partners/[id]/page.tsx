@@ -305,11 +305,28 @@ export default function PartnerDetailPage() {
     setRepCodesFetched(true);
   };
 
+  const [repWarning, setRepWarning] = useState('');
+
   const handleSavePartnerRepCode = async () => {
     if (!repForm.rep_code.trim()) { setRepError("Rep code is required"); return; }
     if (!repForm.user_id) { setRepError("Agent is required"); return; }
     setRepSaving(true);
     setRepError("");
+    setRepWarning("");
+
+    // Validate splits
+    const newSplit = repForm.split_pct ? parseFloat(repForm.split_pct) : 0;
+    if (repForm.payout_type === "agent_paid" && repForm.code_type === "standard") {
+      const partnerAgreement = partner?.residual_split ?? 100;
+      const otherSplits = partnerRepCodes
+        .filter((rc: any) => rc.status === "active" && rc.code_type === "standard")
+        .reduce((s: number, rc: any) => s + (rc.split_pct || 0), 0);
+      const housePct = repForm.house_split_override_pct ? parseFloat(repForm.house_split_override_pct) : 0;
+      const total = housePct + otherSplits + newSplit;
+      if (total > partnerAgreement) {
+        setRepWarning(`Combined splits (${total.toFixed(1)}%) exceed partner agreement (${partnerAgreement}%).`);
+      }
+    }
     const { error } = await supabase.from("agent_rep_codes").insert({
       org_id: member?.org_id,
       user_id: repForm.user_id,
@@ -1199,6 +1216,32 @@ export default function PartnerDetailPage() {
               </div>
             )}
 
+            {/* Split Summary Card */}
+            {partner && (() => {
+              const partnerAgreement = partner.residual_split ?? 0;
+              const activeStandard = partnerRepCodes.filter((rc: any) => rc.status === 'active' && rc.code_type === 'standard');
+              const totalAgentSplits = activeStandard.reduce((s: number, rc: any) => s + (rc.split_pct || 0), 0);
+              const maxHouse = activeStandard.reduce((max: number, rc: any) => Math.max(max, rc.house_split_override_pct || 0), 0);
+              const housePct = maxHouse || 0;
+              const remaining = partnerAgreement - housePct - totalAgentSplits;
+              const color = remaining < 0 ? 'border-red-200 bg-red-50' : remaining > 0 ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50';
+              const textColor = remaining < 0 ? 'text-red-700' : remaining > 0 ? 'text-amber-700' : 'text-emerald-700';
+              return (
+                <div className={`mt-6 p-4 rounded-lg border ${color}`}>
+                  <p className="text-sm font-medium text-slate-800 mb-2">Split Summary</p>
+                  <div className="flex flex-wrap gap-6 text-sm">
+                    <div><span className="text-slate-500">Partner Agreement:</span> <span className="font-medium">{partnerAgreement}%</span></div>
+                    {housePct > 0 && <div><span className="text-slate-500">ISO House Cut:</span> <span className="font-medium">{housePct}%</span></div>}
+                    <div><span className="text-slate-500">Agent Splits:</span> <span className="font-medium">{totalAgentSplits}%</span></div>
+                    <div><span className={`font-medium ${textColor}`}>
+                      {remaining > 0 ? `${remaining.toFixed(1)}% unassigned` : remaining < 0 ? `${Math.abs(remaining).toFixed(1)}% over-allocated` : 'Fully allocated'}
+                      {remaining < 0 ? ' \u26A0\uFE0F' : remaining === 0 ? ' \u2713' : ''}
+                    </span></div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Agents without codes at this partner */}
             {repAgents.length > 0 && (() => {
               const assignedUids = new Set(partnerRepCodes.filter(rc => rc.status === "active").map(rc => rc.user_id));
@@ -1288,6 +1331,7 @@ export default function PartnerDetailPage() {
                         <label className={labelClass}>Notes</label>
                         <textarea value={repForm.notes} onChange={e => setRepForm({ ...repForm, notes: e.target.value })} className={`${inputClass} resize-none`} rows={2} />
                       </div>
+                      {repWarning && <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-2.5 rounded-lg text-sm">{repWarning}</div>}
                       {repError && <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-2.5 rounded-lg text-sm">{repError}</div>}
                       <div className="flex justify-end gap-3 pt-2">
                         <button onClick={() => setShowRepModal(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">Cancel</button>
