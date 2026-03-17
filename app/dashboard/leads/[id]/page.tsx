@@ -868,83 +868,6 @@ export default function LeadDetailPage() {
           </div>
         </div>
 
-        {/* Communication Log */}
-        <CommunicationLog
-          ref={commLogRef}
-          leadId={lead.id}
-          dealId={deal?.id}
-          contactName={lead.contact_name}
-          contactPhone={lead.phone}
-          contactEmail={lead.email}
-          onTaskCreated={fetchTasks}
-          hideActionBar
-        />
-
-        {/* Task Toast */}
-        {taskToast && (
-          <p className="text-emerald-600 text-sm font-medium mb-2">✅ Follow-up created</p>
-        )}
-
-        {/* Upcoming Tasks */}
-        {leadTasks.length > 0 && (() => {
-          const today = new Date().toISOString().split("T")[0];
-          const tomorrow = new Date(Date.now() + 86400000).toISOString().split("T")[0];
-          const priorityDot: Record<string, string> = { low: "bg-slate-300", medium: "bg-blue-400", high: "bg-amber-400", urgent: "bg-red-500" };
-          const dueLabel = (d: string | null) => {
-            if (!d) return null;
-            if (d < today) return <span className="text-xs text-red-500 font-medium ml-auto">Overdue</span>;
-            if (d === today) return <span className="text-xs text-emerald-600 ml-auto">Today</span>;
-            if (d === tomorrow) return <span className="text-xs text-blue-600 ml-auto">Tomorrow</span>;
-            return <span className="text-xs text-slate-400 ml-auto">{new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>;
-          };
-          return (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
-              <div className="flex justify-between items-center mb-3">
-                <div className="flex items-center">
-                  <span className="text-base font-semibold text-slate-900">Upcoming Tasks</span>
-                  <span className="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full ml-2">{leadTasks.length}</span>
-                </div>
-                <button onClick={() => setShowTaskModal(true)} className="text-emerald-600 hover:text-emerald-700 text-xs font-medium">+ Add</button>
-              </div>
-              <div>
-                {leadTasks.map((task, i) => (
-                  <div
-                    key={task.id}
-                    className={`flex items-center gap-3 py-2 ${i < leadTasks.length - 1 ? "border-b border-slate-50" : ""} transition-opacity duration-300 ${fadingTaskIds.has(task.id) ? "opacity-0" : "opacity-100"}`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4 rounded border-slate-300 cursor-pointer accent-emerald-600"
-                      onChange={async () => {
-                        setFadingTaskIds(prev => new Set(prev).add(task.id));
-                        await supabase.from("tasks").update({ status: "completed" }).eq("id", task.id);
-                        if (userId) {
-                          supabase.from("activity_log").insert({ user_id: userId, lead_id: lead.id, deal_id: deal?.id || null, action_type: "task_completed", description: `Task completed: ${task.title}` });
-                        }
-                        setTimeout(() => setLeadTasks(prev => prev.filter(t => t.id !== task.id)), 300);
-                      }}
-                    />
-                    <div className={`w-2 h-2 rounded-full shrink-0 ${priorityDot[task.priority] || "bg-slate-300"}`} />
-                    <span className="text-xs font-medium text-slate-700 flex-1 truncate">{task.title}</span>
-                    {dueLabel(task.due_date)}
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Task Modal */}
-        {showTaskModal && (
-          <TaskModal
-            onClose={() => setShowTaskModal(false)}
-            onSaved={fetchTasks}
-            leadId={lead.id}
-            dealId={deal?.id}
-            linkedEntityName={lead.business_name}
-          />
-        )}
-
         {/* ═══════════ PRICING, FEES, HARDWARE, SOFTWARE (visible from lead creation) ═══════════ */}
         <div onClick={() => toggleGroup("group3")} className={`flex justify-between items-center cursor-pointer bg-white rounded-xl p-4 border border-slate-200 shadow-sm mb-2 ${openGroups.group3 ? "border-l-4 border-l-emerald-500" : ""}`}>
           <h3 className="text-lg font-semibold text-slate-700">Pricing, Fees & Equipment</h3>
@@ -1145,6 +1068,83 @@ export default function LeadDetailPage() {
             )}
           </div>
         </div>
+        {/* Communication Log */}
+        <CommunicationLog
+          ref={commLogRef}
+          leadId={lead.id}
+          dealId={deal?.id}
+          contactName={lead.contact_name}
+          contactPhone={lead.phone}
+          contactEmail={lead.email}
+          onTaskCreated={fetchTasks}
+          hideActionBar
+        />
+
+        {/* Task Toast */}
+        {taskToast && (
+          <p className="text-emerald-600 text-sm font-medium mb-2">✅ Follow-up created</p>
+        )}
+
+        {/* Upcoming Tasks */}
+        {leadTasks.length > 0 && (() => {
+          const today = new Date().toISOString().split("T")[0];
+          const tomorrow = new Date(Date.now() + 86400000).toISOString().split("T")[0];
+          const priorityDot: Record<string, string> = { low: "bg-slate-300", medium: "bg-blue-400", high: "bg-amber-400", urgent: "bg-red-500" };
+          const dueLabel = (d: string | null) => {
+            if (!d) return null;
+            if (d < today) return <span className="text-xs text-red-500 font-medium ml-auto">Overdue</span>;
+            if (d === today) return <span className="text-xs text-emerald-600 ml-auto">Today</span>;
+            if (d === tomorrow) return <span className="text-xs text-blue-600 ml-auto">Tomorrow</span>;
+            return <span className="text-xs text-slate-400 ml-auto">{new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>;
+          };
+          return (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
+              <div className="flex justify-between items-center mb-3">
+                <div className="flex items-center">
+                  <span className="text-base font-semibold text-slate-900">Upcoming Tasks</span>
+                  <span className="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full ml-2">{leadTasks.length}</span>
+                </div>
+                <button onClick={() => setShowTaskModal(true)} className="text-emerald-600 hover:text-emerald-700 text-xs font-medium">+ Add</button>
+              </div>
+              <div>
+                {leadTasks.map((task, i) => (
+                  <div
+                    key={task.id}
+                    className={`flex items-center gap-3 py-2 ${i < leadTasks.length - 1 ? "border-b border-slate-50" : ""} transition-opacity duration-300 ${fadingTaskIds.has(task.id) ? "opacity-0" : "opacity-100"}`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 rounded border-slate-300 cursor-pointer accent-emerald-600"
+                      onChange={async () => {
+                        setFadingTaskIds(prev => new Set(prev).add(task.id));
+                        await supabase.from("tasks").update({ status: "completed" }).eq("id", task.id);
+                        if (userId) {
+                          supabase.from("activity_log").insert({ user_id: userId, lead_id: lead.id, deal_id: deal?.id || null, action_type: "task_completed", description: `Task completed: ${task.title}` });
+                        }
+                        setTimeout(() => setLeadTasks(prev => prev.filter(t => t.id !== task.id)), 300);
+                      }}
+                    />
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${priorityDot[task.priority] || "bg-slate-300"}`} />
+                    <span className="text-xs font-medium text-slate-700 flex-1 truncate">{task.title}</span>
+                    {dueLabel(task.due_date)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Task Modal */}
+        {showTaskModal && (
+          <TaskModal
+            onClose={() => setShowTaskModal(false)}
+            onSaved={fetchTasks}
+            leadId={lead.id}
+            dealId={deal?.id}
+            linkedEntityName={lead.business_name}
+          />
+        )}
+
 
         {deals.length > 0 && ["qualified_prospect", "submitted", "signed", "converted"].includes(lead.status) && (
           <>
