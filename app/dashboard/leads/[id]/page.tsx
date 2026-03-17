@@ -60,6 +60,9 @@ export default function LeadDetailPage() {
   const dealCreationGuard = useRef(false);
   const [deleteLocationTarget, setDeleteLocationTarget] = useState<any>(null);
   const [deletingLocation, setDeletingLocation] = useState(false);
+  const [agentRepCodes, setAgentRepCodes] = useState<any[]>([]);
+  const [repCodePartners, setRepCodePartners] = useState<Record<string, string>>({});
+  const ensureDealGuard = useRef(false);
   const toggleGroup = (key: string) => setOpenGroups(prev => ({ ...prev, [key]: !prev[key] }));
 
   const docTypes = [
@@ -352,6 +355,43 @@ export default function LeadDetailPage() {
     setCopyFromDealId("");
     setSaving(false);
   };
+
+  // Auto-create a deal when user starts editing pricing fields (before qualified_prospect stage)
+  const ensureDeal = async () => {
+    if (deal || ensureDealGuard.current || !lead || !userId) return;
+    ensureDealGuard.current = true;
+    const { data: existing } = await supabase.from("deals").select("*").eq("lead_id", lead.id).order("created_at").limit(1);
+    if (existing && existing.length > 0) {
+      setDeals(existing);
+      setActiveDealIdx(0);
+      ensureDealGuard.current = false;
+      return;
+    }
+    const { data: newDeal } = await supabase.from("deals").insert({ lead_id: lead.id, user_id: userId, business_legal_name: lead.business_name, dba_name: lead.business_name, is_primary_location: true }).select().single();
+    if (newDeal) { setDeals([newDeal]); setActiveDealIdx(0); }
+    ensureDealGuard.current = false;
+  };
+
+  // Fetch rep codes for the assigned agent
+  useEffect(() => {
+    if (!lead?.assigned_to) { setAgentRepCodes([]); return; }
+    const fetchRepCodes = async () => {
+      const { data } = await supabase.from("agent_rep_codes").select("id, partner_id, rep_code, label, status, split_pct, code_type").eq("user_id", lead.assigned_to);
+      if (data) {
+        setAgentRepCodes(data);
+        const partnerIds = [...new Set(data.map((r: any) => r.partner_id).filter(Boolean))];
+        if (partnerIds.length > 0) {
+          const { data: pData } = await supabase.from("partners").select("id, name").in("id", partnerIds);
+          if (pData) {
+            const map: Record<string, string> = {};
+            for (const p of pData) map[p.id] = p.name;
+            setRepCodePartners(map);
+          }
+        }
+      }
+    };
+    fetchRepCodes();
+  }, [lead?.assigned_to]);
 
   // Partner pricing: fields that overlap between deal base pricing and partner schedule keys
   const MAPPED_FIELDS = new Set([
@@ -875,6 +915,207 @@ export default function LeadDetailPage() {
           />
         )}
 
+        {/* ═══════════ PRICING, FEES, HARDWARE, SOFTWARE (visible from lead creation) ═══════════ */}
+        <div onClick={() => toggleGroup("group3")} className={`flex justify-between items-center cursor-pointer bg-white rounded-xl p-4 border border-slate-200 shadow-sm mb-2 ${openGroups.group3 ? "border-l-4 border-l-emerald-500" : ""}`}>
+          <h3 className="text-lg font-semibold text-slate-700">Pricing, Fees & Equipment</h3>
+          <span className={`text-slate-400 transition-transform duration-200 ${openGroups.group3 ? "rotate-180" : ""}`}>▼</span>
+        </div>
+        <div className="overflow-hidden transition-all duration-300 ease-in-out" style={{ maxHeight: openGroups.group3 ? "5000px" : "0px", opacity: openGroups.group3 ? 1 : 0 }}>
+          <div className="space-y-6 mb-6" onFocus={ensureDeal}>
+
+            {/* Partner Selection */}
+            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Partner</label>
+                  <select value={deal?.partner_id || ""} onChange={(e) => { ensureDeal(); if (deal) handlePartnerChange(e.target.value); }} className={inputClass}>
+                    <option value="">No Partner Selected</option>
+                    {partners.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                {deal?.partner_id && selectedPartner?.pricing_data?.length > 0 && (
+                  <div>
+                    <label className={labelClass}>Pricing Schedule</label>
+                    <select value={deal.partner_schedule_index ?? ""} onChange={(e) => handleScheduleChange(e.target.value === "" ? null : parseInt(e.target.value))} className={inputClass}>
+                      <option value="">Select schedule...</option>
+                      {selectedPartner.pricing_data.map((s: any, i: number) => (
+                        <option key={i} value={i}>{s.schedule_name || s.label || `Schedule ${i + 1}`}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Pricing */}
+            <div className={sectionClass}>
+              <h4 className="font-semibold mb-4 text-emerald-600">Pricing</h4>
+              <div className="mb-4">
+                <label className={labelClass}>Pricing Type</label>
+                <select value={deal?.pricing_type || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("pricing_type", e.target.value); }} className={inputClass}>
+                  <option value="">Select pricing type...</option>
+                  <option value="interchange_plus">Interchange Plus</option>
+                  <option value="dual_pricing">Dual Pricing</option>
+                  <option value="surcharging">Surcharging</option>
+                  <option value="tiered">Tiered</option>
+                  <option value="flat_rate">Flat Rate</option>
+                </select>
+              </div>
+              {deal?.pricing_type === "interchange_plus" && (
+                <div>
+                  <p className="text-sm text-slate-500 mb-2">Percentage Markups (%)</p>
+                  <div className="grid grid-cols-4 gap-4 mb-4">
+                    <div><label className={labelClass}>Visa %</label><input type="number" step="0.01" value={deal.ic_plus_visa_pct || ""} onChange={(e) => updateDealField("ic_plus_visa_pct", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>MC %</label><input type="number" step="0.01" value={deal.ic_plus_mc_pct || ""} onChange={(e) => updateDealField("ic_plus_mc_pct", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>AMEX %</label><input type="number" step="0.01" value={deal.ic_plus_amex_pct || ""} onChange={(e) => updateDealField("ic_plus_amex_pct", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Disc %</label><input type="number" step="0.01" value={deal.ic_plus_disc_pct || ""} onChange={(e) => updateDealField("ic_plus_disc_pct", e.target.value)} className={inputClass} /></div>
+                  </div>
+                  <p className="text-sm text-slate-500 mb-2">Per Transaction ($)</p>
+                  <div className="grid grid-cols-4 gap-4 mb-4">
+                    <div><label className={labelClass}>Visa $</label><input type="number" step="0.01" value={deal.ic_plus_visa_txn || ""} onChange={(e) => updateDealField("ic_plus_visa_txn", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>MC $</label><input type="number" step="0.01" value={deal.ic_plus_mc_txn || ""} onChange={(e) => updateDealField("ic_plus_mc_txn", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>AMEX $</label><input type="number" step="0.01" value={deal.ic_plus_amex_txn || ""} onChange={(e) => updateDealField("ic_plus_amex_txn", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Disc $</label><input type="number" step="0.01" value={deal.ic_plus_disc_txn || ""} onChange={(e) => updateDealField("ic_plus_disc_txn", e.target.value)} className={inputClass} /></div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div><label className={labelClass}>Interchange Remittance</label><select value={deal.interchange_remittance || ""} onChange={(e) => updateDealField("interchange_remittance", e.target.value)} className={inputClass}><option value="">Select...</option><option value="daily">Daily</option><option value="monthly">Monthly</option></select></div>
+                  </div>
+                </div>
+              )}
+              {deal?.pricing_type === "dual_pricing" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div><label className={labelClass}>Dual Pricing Rate (%)</label><input type="number" step="0.01" value={deal.dual_pricing_rate || ""} onChange={(e) => updateDealField("dual_pricing_rate", e.target.value)} className={inputClass} /></div>
+                  <div><label className={labelClass}>Per Transaction Fee ($)</label><input type="number" step="0.01" value={deal.dual_pricing_txn_fee || ""} onChange={(e) => updateDealField("dual_pricing_txn_fee", e.target.value)} className={inputClass} /></div>
+                </div>
+              )}
+              {deal?.pricing_type === "flat_rate" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div><label className={labelClass}>Flat Rate (%)</label><input type="number" step="0.01" value={deal.flat_rate_pct || ""} onChange={(e) => updateDealField("flat_rate_pct", e.target.value)} className={inputClass} /></div>
+                  <div><label className={labelClass}>Per Transaction ($)</label><input type="number" step="0.01" value={deal.flat_rate_txn_cost || ""} onChange={(e) => updateDealField("flat_rate_txn_cost", e.target.value)} className={inputClass} /></div>
+                </div>
+              )}
+              {deal?.pricing_type === "tiered" && (
+                <div className="bg-slate-100 rounded-lg p-4"><p className="text-slate-500 text-sm">Tiered pricing configuration coming soon.</p></div>
+              )}
+            </div>
+
+            {/* Misc Fees */}
+            <div className={sectionClass}>
+              <h4 className="font-semibold mb-4 text-emerald-600">Misc Fees ($)</h4>
+              <div className="grid grid-cols-3 lg:grid-cols-6 gap-4">
+                <div><label className={labelClass}>Chargebacks</label><input type="number" step="0.01" value={deal?.fee_chargeback || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("fee_chargeback", e.target.value); }} className={inputClass} /></div>
+                <div><label className={labelClass}>Retrievals</label><input type="number" step="0.01" value={deal?.fee_retrieval || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("fee_retrieval", e.target.value); }} className={inputClass} /></div>
+                <div><label className={labelClass}>Arbitration</label><input type="number" step="0.01" value={deal?.fee_arbitration || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("fee_arbitration", e.target.value); }} className={inputClass} /></div>
+                <div><label className={labelClass}>Voice Auths</label><input type="number" step="0.01" value={deal?.fee_voice_auth || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("fee_voice_auth", e.target.value); }} className={inputClass} /></div>
+                <div><label className={labelClass}>EBT Auths</label><input type="number" step="0.01" value={deal?.fee_ebt_auth || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("fee_ebt_auth", e.target.value); }} className={inputClass} /></div>
+                <div><label className={labelClass}>ACH Reject</label><input type="number" step="0.01" value={deal?.fee_ach_reject || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("fee_ach_reject", e.target.value); }} className={inputClass} /></div>
+              </div>
+            </div>
+
+            {/* Monthly Fees */}
+            <div className={sectionClass}>
+              <h4 className="font-semibold mb-4 text-emerald-600">Monthly Fees</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div><label className={labelClass}>Statement Fee</label><input type="number" step="0.01" value={deal?.monthly_fee_statement || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("monthly_fee_statement", e.target.value); }} className={inputClass} /></div>
+                <div>
+                  <label className={labelClass}>PCI Type</label>
+                  <select value={deal?.pci_compliance_monthly ? "monthly" : deal?.pci_compliance_annual ? "annual" : ""} onChange={(e) => {
+                    ensureDeal();
+                    if (!deal) return;
+                    const currentAmount = deal.pci_compliance_monthly || deal.pci_compliance_annual || "";
+                    if (e.target.value === "monthly") setDeal({ ...deal, pci_compliance_monthly: currentAmount, pci_compliance_annual: null });
+                    else if (e.target.value === "annual") setDeal({ ...deal, pci_compliance_annual: currentAmount, pci_compliance_monthly: null });
+                    else setDeal({ ...deal, pci_compliance_monthly: null, pci_compliance_annual: null });
+                  }} className={inputClass}>
+                    <option value="">Select...</option><option value="monthly">Monthly</option><option value="annual">Annual</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>PCI Amount ($)</label>
+                  <input type="number" step="0.01" value={deal?.pci_compliance_monthly || deal?.pci_compliance_annual || ""} onChange={(e) => {
+                    ensureDeal();
+                    if (!deal) return;
+                    if (deal.pci_compliance_annual) updateDealField("pci_compliance_annual", e.target.value);
+                    else updateDealField("pci_compliance_monthly", e.target.value);
+                  }} className={inputClass} />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                <div><label className={labelClass}>Custom Fee Name</label><input type="text" value={deal?.monthly_fee_custom_name || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("monthly_fee_custom_name", e.target.value); }} className={inputClass} /></div>
+                <div><label className={labelClass}>Custom Fee Amount</label><input type="number" step="0.01" value={deal?.monthly_fee_custom_amount || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("monthly_fee_custom_amount", e.target.value); }} className={inputClass} /></div>
+              </div>
+            </div>
+
+            {/* Hardware */}
+            <div className={sectionClass}>
+              <h4 className="font-semibold mb-4 text-emerald-600">Hardware</h4>
+              {(deal?.hardware_items || []).map((item: any, idx: number) => (
+                <div key={idx} className="bg-slate-50 rounded-lg p-4 mb-3 border border-slate-200">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-sm font-medium text-slate-700">Hardware {idx + 1}</span>
+                    <button onClick={() => { const items = [...(deal.hardware_items || [])]; items.splice(idx, 1); updateDealField("hardware_items", items); }} className="text-red-400 hover:text-red-500 text-xs">Remove</button>
+                  </div>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+                    <div><label className={labelClass}>Type</label><select value={item.type || ""} onChange={(e) => { const items = [...(deal.hardware_items || [])]; items[idx] = { ...items[idx], type: e.target.value }; updateDealField("hardware_items", items); }} className={inputClass}><option value="">Select...</option><option value="terminal">Terminal</option><option value="mobile_reader">Mobile Reader</option><option value="pos_system">POS System</option><option value="pin_pad">Pin Pad</option><option value="printer">Printer</option><option value="other">Other</option></select></div>
+                    <div><label className={labelClass}>Model</label><input type="text" value={item.model || ""} onChange={(e) => { const items = [...(deal.hardware_items || [])]; items[idx] = { ...items[idx], model: e.target.value }; updateDealField("hardware_items", items); }} className={inputClass} placeholder="e.g. Dejavoo QD4" /></div>
+                    <div><label className={labelClass}>Quantity</label><input type="number" min="1" value={item.quantity || 1} onChange={(e) => { const items = [...(deal.hardware_items || [])]; items[idx] = { ...items[idx], quantity: parseInt(e.target.value) || 1 }; updateDealField("hardware_items", items); }} className={inputClass} /></div>
+                    <div><label className={labelClass}>Cost ($)</label><input type="number" step="0.01" value={item.cost || ""} onChange={(e) => { const items = [...(deal.hardware_items || [])]; items[idx] = { ...items[idx], cost: e.target.value }; updateDealField("hardware_items", items); }} className={inputClass} /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className={labelClass}>Free Placement</label><select value={item.free || ""} onChange={(e) => { const items = [...(deal.hardware_items || [])]; items[idx] = { ...items[idx], free: e.target.value }; updateDealField("hardware_items", items); }} className={inputClass}><option value="">Select...</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+                  </div>
+                </div>
+              ))}
+              <button onClick={() => { ensureDeal(); const items = [...(deal?.hardware_items || [])]; items.push({ type: "", model: "", quantity: 1, cost: "", free: "" }); if (deal) updateDealField("hardware_items", items); }} className="text-emerald-600 hover:text-emerald-700 text-sm font-medium">+ Add Hardware Item</button>
+            </div>
+
+            {/* Software / Gateways */}
+            <div className={sectionClass}>
+              <h4 className="font-semibold mb-4 text-emerald-600">Software / Gateways</h4>
+              {(deal?.software_items || []).map((item: any, idx: number) => (
+                <div key={idx} className="bg-slate-50 rounded-lg p-4 mb-3 border border-slate-200">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-sm font-medium text-slate-700">Software {idx + 1}</span>
+                    <button onClick={() => { const items = [...(deal.software_items || [])]; items.splice(idx, 1); updateDealField("software_items", items); }} className="text-red-400 hover:text-red-500 text-xs">Remove</button>
+                  </div>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div><label className={labelClass}>Name</label><input type="text" value={item.name || ""} onChange={(e) => { const items = [...(deal.software_items || [])]; items[idx] = { ...items[idx], name: e.target.value }; updateDealField("software_items", items); }} className={inputClass} placeholder="e.g. Authorize.net" /></div>
+                    <div><label className={labelClass}>Type</label><select value={item.type || ""} onChange={(e) => { const items = [...(deal.software_items || [])]; items[idx] = { ...items[idx], type: e.target.value }; updateDealField("software_items", items); }} className={inputClass}><option value="">Select...</option><option value="gateway">Gateway</option><option value="pos">POS</option><option value="plugin">Plugin</option><option value="virtual_terminal">Virtual Terminal</option></select></div>
+                    <div><label className={labelClass}>Monthly ($)</label><input type="number" step="0.01" value={item.monthly_cost || ""} onChange={(e) => { const items = [...(deal.software_items || [])]; items[idx] = { ...items[idx], monthly_cost: e.target.value }; updateDealField("software_items", items); }} className={inputClass} /></div>
+                    <div><label className={labelClass}>Per Txn ($)</label><input type="number" step="0.01" value={item.per_txn || ""} onChange={(e) => { const items = [...(deal.software_items || [])]; items[idx] = { ...items[idx], per_txn: e.target.value }; updateDealField("software_items", items); }} className={inputClass} /></div>
+                  </div>
+                </div>
+              ))}
+              <button onClick={() => { ensureDeal(); const items = [...(deal?.software_items || [])]; items.push({ name: "", type: "", monthly_cost: "", per_txn: "" }); if (deal) updateDealField("software_items", items); }} className="text-emerald-600 hover:text-emerald-700 text-sm font-medium">+ Add Software Item</button>
+            </div>
+
+            {/* Partner Schedule — only when partner + schedule selected */}
+            {selectedSchedule && extraFields.length > 0 && (
+              <div className={sectionClass}>
+                <h4 className="font-semibold mb-1 text-emerald-600">Partner Schedule</h4>
+                <p className="text-xs text-slate-400 mb-4">{selectedPartner?.name} — {selectedSchedule.schedule_name || selectedSchedule.label || `Schedule ${(deal?.partner_schedule_index ?? 0) + 1}`}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {extraFields.map(([key, defaultVal]) => (
+                    <div key={key}>
+                      <label className={labelClass}>{humanizeKey(key)}</label>
+                      <input type="text" value={deal?.partner_pricing_overrides?.[key] ?? (defaultVal as string) ?? ""} onChange={(e) => updateOverride(key, e.target.value)} className={inputClass} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Save Pricing button */}
+            {deal && canEdit && (
+              <div className="flex justify-end mb-4">
+                <button onClick={saveDeal} disabled={dealSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">{dealSaving ? "Saving..." : "Save Pricing"}</button>
+              </div>
+            )}
+          </div>
+        </div>
+
         {deals.length > 0 && ["qualified_prospect", "submitted", "signed", "converted"].includes(lead.status) && (
           <>
             {/* Location / Deal header */}
@@ -941,31 +1182,7 @@ export default function LeadDetailPage() {
               </div>
             )}
 
-            {/* Partner Selection */}
-            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm mb-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Partner</label>
-                  <select value={deal.partner_id || ""} onChange={(e) => handlePartnerChange(e.target.value)} className={inputClass}>
-                    <option value="">No Partner Selected</option>
-                    {partners.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                </div>
-                {deal.partner_id && selectedPartner?.pricing_data?.length > 0 && (
-                  <div>
-                    <label className={labelClass}>Pricing Schedule</label>
-                    <select value={deal.partner_schedule_index ?? ""} onChange={(e) => handleScheduleChange(e.target.value === "" ? null : parseInt(e.target.value))} className={inputClass}>
-                      <option value="">Select schedule...</option>
-                      {selectedPartner.pricing_data.map((s: any, i: number) => (
-                        <option key={i} value={i}>{s.schedule_name || s.label || `Schedule ${i + 1}`}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-            </div>
+            {/* Partner Selection moved to top card pricing section */}
 
             {/* GROUP 1 - Business & Transaction Info */}
             <div onClick={() => toggleGroup("group1")} className={`flex justify-between items-center cursor-pointer bg-white rounded-xl p-4 border border-slate-200 shadow-sm mb-2 ${openGroups.group1 ? "border-l-4 border-l-emerald-500" : ""}`}>
@@ -1175,271 +1392,6 @@ export default function LeadDetailPage() {
               </div>
             </div>
 
-            {/* GROUP 3 - Pricing, Hardware & Residuals */}
-            <div onClick={() => toggleGroup("group3")} className={`flex justify-between items-center cursor-pointer bg-white rounded-xl p-4 border border-slate-200 shadow-sm mb-2 ${openGroups.group3 ? "border-l-4 border-l-emerald-500" : ""}`}>
-              <h3 className="text-lg font-semibold text-slate-700">Pricing, Hardware & Residuals</h3>
-              <span className={`text-slate-400 transition-transform duration-200 ${openGroups.group3 ? "rotate-180" : ""}`}>▼</span>
-            </div>
-            <div className="overflow-hidden transition-all duration-300 ease-in-out" style={{ maxHeight: openGroups.group3 ? "5000px" : "0px", opacity: openGroups.group3 ? 1 : 0 }}>
-              <div className="space-y-6 mb-6">
-                <div className={sectionClass}>
-                  <h4 className="font-semibold mb-4 text-emerald-600">Pricing</h4>
-                  <div className="mb-4">
-                    <label className={labelClass}>Pricing Type</label>
-                    <select value={deal.pricing_type || ""} onChange={(e) => updateDealField("pricing_type", e.target.value)} className={inputClass}>
-                      <option value="">Select pricing type...</option>
-                      <option value="interchange_plus">Interchange Plus</option>
-                      <option value="dual_pricing">Dual Pricing</option>
-                      <option value="surcharging">Surcharging</option>
-                      <option value="tiered">Tiered</option>
-                      <option value="flat_rate">Flat Rate</option>
-                    </select>
-                  </div>
-
-                  {deal.pricing_type === "interchange_plus" && (
-                    <div>
-                      <p className="text-sm text-slate-500 mb-2">Percentage Markups (%)</p>
-                      <div className="grid grid-cols-4 gap-4 mb-4">
-                        <div><label className={labelClass}>Visa %</label><input type="number" step="0.01" value={deal.ic_plus_visa_pct || ""} onChange={(e) => updateDealField("ic_plus_visa_pct", e.target.value)} className={inputClass} /></div>
-                        <div><label className={labelClass}>MC %</label><input type="number" step="0.01" value={deal.ic_plus_mc_pct || ""} onChange={(e) => updateDealField("ic_plus_mc_pct", e.target.value)} className={inputClass} /></div>
-                        <div><label className={labelClass}>AMEX %</label><input type="number" step="0.01" value={deal.ic_plus_amex_pct || ""} onChange={(e) => updateDealField("ic_plus_amex_pct", e.target.value)} className={inputClass} /></div>
-                        <div><label className={labelClass}>Disc %</label><input type="number" step="0.01" value={deal.ic_plus_disc_pct || ""} onChange={(e) => updateDealField("ic_plus_disc_pct", e.target.value)} className={inputClass} /></div>
-                      </div>
-                      <p className="text-sm text-slate-500 mb-2">Per Transaction ($)</p>
-                      <div className="grid grid-cols-4 gap-4 mb-4">
-                        <div><label className={labelClass}>Visa $</label><input type="number" step="0.01" value={deal.ic_plus_visa_txn || ""} onChange={(e) => updateDealField("ic_plus_visa_txn", e.target.value)} className={inputClass} /></div>
-                        <div><label className={labelClass}>MC $</label><input type="number" step="0.01" value={deal.ic_plus_mc_txn || ""} onChange={(e) => updateDealField("ic_plus_mc_txn", e.target.value)} className={inputClass} /></div>
-                        <div><label className={labelClass}>AMEX $</label><input type="number" step="0.01" value={deal.ic_plus_amex_txn || ""} onChange={(e) => updateDealField("ic_plus_amex_txn", e.target.value)} className={inputClass} /></div>
-                        <div><label className={labelClass}>Disc $</label><input type="number" step="0.01" value={deal.ic_plus_disc_txn || ""} onChange={(e) => updateDealField("ic_plus_disc_txn", e.target.value)} className={inputClass} /></div>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div><label className={labelClass}>Interchange Remittance</label><select value={deal.interchange_remittance || ""} onChange={(e) => updateDealField("interchange_remittance", e.target.value)} className={inputClass}><option value="">Select...</option><option value="daily">Daily</option><option value="monthly">Monthly</option></select></div>
-                      </div>
-                    </div>
-                  )}
-
-                  {deal.pricing_type === "dual_pricing" && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div><label className={labelClass}>Dual Pricing Rate (%)</label><input type="number" step="0.01" value={deal.dual_pricing_rate || ""} onChange={(e) => updateDealField("dual_pricing_rate", e.target.value)} className={inputClass} /></div>
-                      <div><label className={labelClass}>Per Transaction Fee ($)</label><input type="number" step="0.01" value={deal.dual_pricing_txn_fee || ""} onChange={(e) => updateDealField("dual_pricing_txn_fee", e.target.value)} className={inputClass} /></div>
-                    </div>
-                  )}
-
-                  {deal.pricing_type === "flat_rate" && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div><label className={labelClass}>Flat Rate (%)</label><input type="number" step="0.01" value={deal.flat_rate_pct || ""} onChange={(e) => updateDealField("flat_rate_pct", e.target.value)} className={inputClass} /></div>
-                      <div><label className={labelClass}>Per Transaction ($)</label><input type="number" step="0.01" value={deal.flat_rate_txn_cost || ""} onChange={(e) => updateDealField("flat_rate_txn_cost", e.target.value)} className={inputClass} /></div>
-                    </div>
-                  )}
-
-                  {deal.pricing_type === "tiered" && (
-                    <div className="bg-slate-100 rounded-lg p-4"><p className="text-slate-500 text-sm">Tiered pricing configuration coming soon.</p></div>
-                  )}
-                </div>
-
-                <div className={sectionClass}>
-                  <h4 className="font-semibold mb-4 text-emerald-600">Misc Fees ($)</h4>
-                  <div className="grid grid-cols-3 lg:grid-cols-6 gap-4">
-                    <div><label className={labelClass}>Chargebacks</label><input type="number" step="0.01" value={deal.fee_chargeback || ""} onChange={(e) => updateDealField("fee_chargeback", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Retrievals</label><input type="number" step="0.01" value={deal.fee_retrieval || ""} onChange={(e) => updateDealField("fee_retrieval", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Arbitration</label><input type="number" step="0.01" value={deal.fee_arbitration || ""} onChange={(e) => updateDealField("fee_arbitration", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Voice Auths</label><input type="number" step="0.01" value={deal.fee_voice_auth || ""} onChange={(e) => updateDealField("fee_voice_auth", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>EBT Auths</label><input type="number" step="0.01" value={deal.fee_ebt_auth || ""} onChange={(e) => updateDealField("fee_ebt_auth", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>ACH Reject</label><input type="number" step="0.01" value={deal.fee_ach_reject || ""} onChange={(e) => updateDealField("fee_ach_reject", e.target.value)} className={inputClass} /></div>
-                  </div>
-                </div>
-
-                <div className={sectionClass}>
-                  <h4 className="font-semibold mb-4 text-emerald-600">Monthly Fees</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div><label className={labelClass}>Statement Fee</label><input type="number" step="0.01" value={deal.monthly_fee_statement || ""} onChange={(e) => updateDealField("monthly_fee_statement", e.target.value)} className={inputClass} /></div>
-                    <div>
-                      <label className={labelClass}>PCI Type</label>
-                      <select value={deal.pci_compliance_monthly ? "monthly" : deal.pci_compliance_annual ? "annual" : ""} onChange={(e) => {
-                        const currentAmount = deal.pci_compliance_monthly || deal.pci_compliance_annual || "";
-                        if (e.target.value === "monthly") {
-                          setDeal((prev: any) => ({ ...prev, pci_compliance_monthly: currentAmount, pci_compliance_annual: null }));
-                        } else if (e.target.value === "annual") {
-                          setDeal((prev: any) => ({ ...prev, pci_compliance_annual: currentAmount, pci_compliance_monthly: null }));
-                        } else {
-                          setDeal((prev: any) => ({ ...prev, pci_compliance_monthly: null, pci_compliance_annual: null }));
-                        }
-                      }} className={inputClass}>
-                        <option value="">Select...</option>
-                        <option value="monthly">Monthly</option>
-                        <option value="annual">Annual</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className={labelClass}>PCI Amount ($)</label>
-                      <input type="number" step="0.01" value={deal.pci_compliance_monthly || deal.pci_compliance_annual || ""} onChange={(e) => {
-                        const val = e.target.value;
-                        if (deal.pci_compliance_annual) {
-                          updateDealField("pci_compliance_annual", val);
-                        } else {
-                          updateDealField("pci_compliance_monthly", val);
-                        }
-                      }} className={inputClass} />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                    <div><label className={labelClass}>Custom Fee Name</label><input type="text" value={deal.monthly_fee_custom_name || ""} onChange={(e) => updateDealField("monthly_fee_custom_name", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Custom Fee Amount</label><input type="number" step="0.01" value={deal.monthly_fee_custom_amount || ""} onChange={(e) => updateDealField("monthly_fee_custom_amount", e.target.value)} className={inputClass} /></div>
-                  </div>
-                </div>
-
-                <div className={sectionClass}>
-                  <h4 className="font-semibold mb-4 text-emerald-600">Hardware</h4>
-                  {(deal.hardware_items || []).map((item: any, idx: number) => (
-                    <div key={idx} className="bg-slate-50 rounded-lg p-4 mb-3 border border-slate-200">
-                      <div className="flex justify-between items-center mb-3">
-                        <span className="text-sm font-medium text-slate-700">Hardware {idx + 1}</span>
-                        <button onClick={() => {
-                          const items = [...(deal.hardware_items || [])];
-                          items.splice(idx, 1);
-                          updateDealField("hardware_items", items);
-                        }} className="text-red-400 hover:text-red-500 text-xs">Remove</button>
-                      </div>
-                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
-                        <div>
-                          <label className={labelClass}>Type</label>
-                          <select value={item.type || ""} onChange={(e) => {
-                            const items = [...(deal.hardware_items || [])];
-                            items[idx] = { ...items[idx], type: e.target.value };
-                            updateDealField("hardware_items", items);
-                          }} className={inputClass}>
-                            <option value="">Select...</option>
-                            <option value="terminal">Terminal</option>
-                            <option value="mobile_reader">Mobile Reader</option>
-                            <option value="pos_system">POS System</option>
-                            <option value="pin_pad">Pin Pad</option>
-                            <option value="printer">Printer</option>
-                            <option value="other">Other</option>
-                          </select>
-                        </div>
-                        <div><label className={labelClass}>Model</label><input type="text" value={item.model || ""} onChange={(e) => {
-                          const items = [...(deal.hardware_items || [])];
-                          items[idx] = { ...items[idx], model: e.target.value };
-                          updateDealField("hardware_items", items);
-                        }} className={inputClass} placeholder="e.g. Dejavoo QD4" /></div>
-                        <div><label className={labelClass}>Quantity</label><input type="number" min="1" value={item.quantity || 1} onChange={(e) => {
-                          const items = [...(deal.hardware_items || [])];
-                          items[idx] = { ...items[idx], quantity: parseInt(e.target.value) || 1 };
-                          updateDealField("hardware_items", items);
-                        }} className={inputClass} /></div>
-                        <div><label className={labelClass}>Cost ($)</label><input type="number" step="0.01" value={item.cost || ""} onChange={(e) => {
-                          const items = [...(deal.hardware_items || [])];
-                          items[idx] = { ...items[idx], cost: e.target.value };
-                          updateDealField("hardware_items", items);
-                        }} className={inputClass} /></div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className={labelClass}>Free Placement</label>
-                          <select value={item.free || ""} onChange={(e) => {
-                            const items = [...(deal.hardware_items || [])];
-                            items[idx] = { ...items[idx], free: e.target.value };
-                            updateDealField("hardware_items", items);
-                          }} className={inputClass}>
-                            <option value="">Select...</option>
-                            <option value="yes">Yes</option>
-                            <option value="no">No</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  <button onClick={() => {
-                    const items = [...(deal.hardware_items || [])];
-                    items.push({ type: "", model: "", quantity: 1, cost: "", free: "" });
-                    updateDealField("hardware_items", items);
-                  }} className="text-emerald-600 hover:text-emerald-700 text-sm font-medium">+ Add Hardware Item</button>
-                </div>
-
-                <div className={sectionClass}>
-                  <h4 className="font-semibold mb-4 text-emerald-600">Software / Gateways</h4>
-                  {(deal.software_items || []).map((item: any, idx: number) => (
-                    <div key={idx} className="bg-slate-50 rounded-lg p-4 mb-3 border border-slate-200">
-                      <div className="flex justify-between items-center mb-3">
-                        <span className="text-sm font-medium text-slate-700">Software {idx + 1}</span>
-                        <button onClick={() => {
-                          const items = [...(deal.software_items || [])];
-                          items.splice(idx, 1);
-                          updateDealField("software_items", items);
-                        }} className="text-red-400 hover:text-red-500 text-xs">Remove</button>
-                      </div>
-                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                        <div><label className={labelClass}>Name</label><input type="text" value={item.name || ""} onChange={(e) => {
-                          const items = [...(deal.software_items || [])];
-                          items[idx] = { ...items[idx], name: e.target.value };
-                          updateDealField("software_items", items);
-                        }} className={inputClass} placeholder="e.g. Authorize.net" /></div>
-                        <div>
-                          <label className={labelClass}>Type</label>
-                          <select value={item.type || ""} onChange={(e) => {
-                            const items = [...(deal.software_items || [])];
-                            items[idx] = { ...items[idx], type: e.target.value };
-                            updateDealField("software_items", items);
-                          }} className={inputClass}>
-                            <option value="">Select...</option>
-                            <option value="gateway">Gateway</option>
-                            <option value="pos">POS</option>
-                            <option value="plugin">Plugin</option>
-                            <option value="virtual_terminal">Virtual Terminal</option>
-                          </select>
-                        </div>
-                        <div><label className={labelClass}>Monthly ($)</label><input type="number" step="0.01" value={item.monthly_cost || ""} onChange={(e) => {
-                          const items = [...(deal.software_items || [])];
-                          items[idx] = { ...items[idx], monthly_cost: e.target.value };
-                          updateDealField("software_items", items);
-                        }} className={inputClass} /></div>
-                        <div><label className={labelClass}>Per Txn ($)</label><input type="number" step="0.01" value={item.per_txn || ""} onChange={(e) => {
-                          const items = [...(deal.software_items || [])];
-                          items[idx] = { ...items[idx], per_txn: e.target.value };
-                          updateDealField("software_items", items);
-                        }} className={inputClass} /></div>
-                      </div>
-                    </div>
-                  ))}
-                  <button onClick={() => {
-                    const items = [...(deal.software_items || [])];
-                    items.push({ name: "", type: "", monthly_cost: "", per_txn: "" });
-                    updateDealField("software_items", items);
-                  }} className="text-emerald-600 hover:text-emerald-700 text-sm font-medium">+ Add Software Item</button>
-                </div>
-
-                <div className={sectionClass}>
-                  <h4 className="font-semibold mb-4 text-emerald-600">Residuals & Rep Codes</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div><label className={labelClass}>Rep Codes / Schedule Applied</label><input type="text" value={deal.rep_codes || ""} onChange={(e) => updateDealField("rep_codes", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Forecasted Residuals</label><input type="number" step="0.01" value={deal.forecasted_residuals || ""} onChange={(e) => updateDealField("forecasted_residuals", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Last Month Residual Actuals</label><input type="number" step="0.01" value={deal.last_month_residual_actuals || ""} onChange={(e) => updateDealField("last_month_residual_actuals", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Average Residual</label><input type="number" step="0.01" value={deal.average_residual || ""} onChange={(e) => updateDealField("average_residual", e.target.value)} className={inputClass} /></div>
-                  </div>
-                </div>
-
-                {/* Partner Schedule — only when partner + schedule selected */}
-                {selectedSchedule && extraFields.length > 0 && (
-                  <div className={sectionClass}>
-                    <h4 className="font-semibold mb-1 text-emerald-600">Partner Schedule</h4>
-                    <p className="text-xs text-slate-400 mb-4">{selectedPartner?.name} — {selectedSchedule.schedule_name || selectedSchedule.label || `Schedule ${(deal.partner_schedule_index ?? 0) + 1}`}</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {extraFields.map(([key, defaultVal]) => (
-                        <div key={key}>
-                          <label className={labelClass}>{humanizeKey(key)}</label>
-                          <input
-                            type="text"
-                            value={deal.partner_pricing_overrides?.[key] ?? (defaultVal as string) ?? ""}
-                            onChange={(e) => updateOverride(key, e.target.value)}
-                            className={inputClass}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
 
             {canEdit && (
               <div className="flex justify-end mb-8">
@@ -1472,6 +1424,42 @@ export default function LeadDetailPage() {
             )}
           </div>
         </div>
+      {/* ═══════════ REP CODES SECTION ═══════════ */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
+        <h3 className="text-base font-semibold text-slate-900 mb-3">Agent Rep Codes</h3>
+        {!lead.assigned_to ? (
+          <p className="text-sm text-slate-400">Assign an agent to this lead to see their rep codes.</p>
+        ) : agentRepCodes.length === 0 ? (
+          <p className="text-sm text-slate-400">No rep codes assigned to this agent. <Link href="/dashboard/settings" className="text-emerald-600 hover:text-emerald-700">Manage rep codes in Settings &rarr; Team.</Link></p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-left text-slate-500">
+                  <th className="pb-2 pr-4 font-medium">Partner</th>
+                  <th className="pb-2 pr-4 font-medium">Rep Code</th>
+                  <th className="pb-2 pr-4 font-medium">Label</th>
+                  <th className="pb-2 pr-4 font-medium">Status</th>
+                  <th className="pb-2 pr-4 font-medium">Split %</th>
+                  <th className="pb-2 font-medium">Code Type</th>
+                </tr>
+              </thead>
+              <tbody>
+                {agentRepCodes.map((rc) => (
+                  <tr key={rc.id} className="border-b border-slate-50">
+                    <td className="py-2 pr-4 text-slate-700">{repCodePartners[rc.partner_id] || "—"}</td>
+                    <td className="py-2 pr-4 font-mono text-slate-600">{rc.rep_code || "—"}</td>
+                    <td className="py-2 pr-4 text-slate-600">{rc.label || "—"}</td>
+                    <td className="py-2 pr-4"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${rc.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{rc.status || "—"}</span></td>
+                    <td className="py-2 pr-4 text-slate-700">{rc.split_pct != null ? `${rc.split_pct}%` : "—"}</td>
+                    <td className="py-2 text-slate-600">{rc.code_type || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
       </div>
 
       {showModal === "unqualified" && (
