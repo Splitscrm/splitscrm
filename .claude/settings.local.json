@@ -172,7 +172,8 @@
       "Bash(git diff:*)",
       "Bash(npm list:*)",
       "Bash(npm install:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(node -e \":*)"
     ]
   }
 }

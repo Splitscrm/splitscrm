@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useImperativeHandle, forwardRef } from "react";
 import { supabase } from "@/lib/supabase";
 import TaskModal from "@/components/TaskModal";
+
+export interface CommunicationLogHandle {
+  openModal: (type: "call" | "email" | "note") => void;
+  openTaskModal: () => void;
+}
 
 interface CommunicationLogProps {
   leadId?: string;
@@ -13,6 +18,7 @@ interface CommunicationLogProps {
   contactPhone?: string;
   contactEmail?: string;
   onTaskCreated?: () => void;
+  hideActionBar?: boolean;
 }
 
 interface Communication {
@@ -56,7 +62,7 @@ function formatDuration(seconds: number) {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-export default function CommunicationLog({
+const CommunicationLog = forwardRef<CommunicationLogHandle, CommunicationLogProps>(function CommunicationLog({
   leadId,
   merchantId,
   dealId,
@@ -65,7 +71,8 @@ export default function CommunicationLog({
   contactPhone = "",
   contactEmail = "",
   onTaskCreated,
-}: CommunicationLogProps) {
+  hideActionBar = false,
+}, ref) {
   const [comms, setComms] = useState<Communication[]>([]);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState("");
@@ -82,6 +89,11 @@ export default function CommunicationLog({
   const [modalBody, setModalBody] = useState("");
   const [saving, setSaving] = useState(false);
   const [phoneCopied, setPhoneCopied] = useState(false);
+
+  useImperativeHandle(ref, () => ({
+    openModal: (type: "call" | "email" | "note") => openModal(type),
+    openTaskModal: () => setShowTaskModal(true),
+  }));
 
   // Templates
   const [templates, setTemplates] = useState<any[]>([]);
@@ -204,7 +216,7 @@ export default function CommunicationLog({
   return (
     <div>
       {/* ACTION BAR */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4">
+      {!hideActionBar && <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4">
         <div className="flex items-center gap-3 flex-wrap">
           <button onClick={() => openModal("call")} className={btnBase}>
             <span className="mr-1.5">{"\uD83D\uDCDE"}</span>Log Call
@@ -243,7 +255,7 @@ export default function CommunicationLog({
             <span className="mr-1.5">📋</span>Follow-up
           </button>
         </div>
-      </div>
+      </div>}
 
       {/* COMMUNICATION TIMELINE */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
@@ -452,4 +464,6 @@ export default function CommunicationLog({
       )}
     </div>
   );
-}
+});
+
+export default CommunicationLog;

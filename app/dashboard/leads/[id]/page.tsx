@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
-import CommunicationLog from "@/components/CommunicationLog";
+import CommunicationLog, { type CommunicationLogHandle } from "@/components/CommunicationLog";
 import TaskModal from "@/components/TaskModal";
 import { useAuth } from "@/lib/auth-context";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -58,6 +58,7 @@ export default function LeadDetailPage() {
   const [showPartnerSwitchModal, setShowPartnerSwitchModal] = useState(false);
   const pendingPartnerSwitch = useRef<{ partnerId: string; scheduleIdx: number | null } | null>(null);
   const dealCreationGuard = useRef(false);
+  const commLogRef = useRef<CommunicationLogHandle>(null);
   const [deleteLocationTarget, setDeleteLocationTarget] = useState<any>(null);
   const [deletingLocation, setDeletingLocation] = useState(false);
   const [agentRepCodes, setAgentRepCodes] = useState<any[]>([]);
@@ -762,6 +763,33 @@ export default function LeadDetailPage() {
           <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm mb-6">This lead has been converted to a merchant account.</div>
         )}
 
+        {/* Action buttons */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <button onClick={() => commLogRef.current?.openModal("call")} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-150">
+              <span className="mr-1.5">{"\uD83D\uDCDE"}</span>Log Call
+            </button>
+            {lead.phone && (
+              <span className="text-emerald-600 text-sm font-medium">{lead.phone}</span>
+            )}
+            {lead.email ? (
+              <button onClick={() => { window.open(`mailto:${lead.email}`); setTimeout(() => commLogRef.current?.openModal("email"), 1000); }} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-150">
+                <span className="mr-1.5">{"\u2709\uFE0F"}</span>Send Email
+              </button>
+            ) : (
+              <span className="bg-white border border-slate-200 text-slate-700 rounded-lg px-4 py-2 text-sm font-medium opacity-50 cursor-not-allowed" title="No email on file">
+                <span className="mr-1.5">{"\u2709\uFE0F"}</span>Send Email
+              </span>
+            )}
+            <button onClick={() => commLogRef.current?.openModal("note")} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-150">
+              <span className="mr-1.5">{"\uD83D\uDCDD"}</span>Add Note
+            </button>
+            <button onClick={() => commLogRef.current?.openTaskModal()} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-150">
+              <span className="mr-1.5">📋</span>Follow-up
+            </button>
+          </div>
+        </div>
+
         <div className={sectionClass}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Contact Info</h3>
@@ -842,12 +870,14 @@ export default function LeadDetailPage() {
 
         {/* Communication Log */}
         <CommunicationLog
+          ref={commLogRef}
           leadId={lead.id}
           dealId={deal?.id}
           contactName={lead.contact_name}
           contactPhone={lead.phone}
           contactEmail={lead.email}
           onTaskCreated={fetchTasks}
+          hideActionBar
         />
 
         {/* Task Toast */}
