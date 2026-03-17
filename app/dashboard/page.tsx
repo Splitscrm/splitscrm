@@ -323,13 +323,15 @@ export default function Dashboard() {
       let agentBreakdown: DashboardData['agentBreakdown'] = []
       let topMerchants: DashboardData['topMerchants'] = []
 
-      const { data: latestImportRow } = await supabase
+      const { data: latestImportRow, error: importErr } = await supabase
         .from('residual_imports')
         .select('id, processor_name, report_month')
-        .eq('status', 'imported')
+        .eq('status', 'completed')
         .order('created_at', { ascending: false })
         .limit(1)
         .single()
+
+      if (importErr) console.error('Dashboard: residual_imports query error', importErr)
 
       if (latestImportRow) {
         latestImport = {
@@ -337,20 +339,18 @@ export default function Dashboard() {
           report_month: latestImportRow.report_month,
         }
 
-        const { data: records } = await supabase
+        const { data: records, error: recErr } = await supabase
           .from('residual_records')
-          .select('gross_income, total_expenses, sales_amount, agent_id_external, merchant_id_external, dba_name, merchant_id')
+          .select('net_revenue, gross_income, total_expenses, sales_amount, agent_id_external, merchant_id_external, dba_name, merchant_id')
           .eq('import_id', latestImportRow.id)
 
+        if (recErr) console.error('Dashboard: residual_records query error', recErr)
+
         if (records) {
-          let totalGrossIncome = 0
-          let totalExpenses = 0
           for (const r of records) {
-            totalGrossIncome += r.gross_income || 0
-            totalExpenses += r.total_expenses || 0
+            residualNetRevenue += r.net_revenue || 0
             residualTotalVolume += r.sales_amount || 0
           }
-          residualNetRevenue = totalGrossIncome - totalExpenses
 
           const agentMap: Record<string, Set<string>> = {}
           for (const r of records) {
@@ -363,19 +363,18 @@ export default function Dashboard() {
             .map(([agent, mids]) => ({ agent, merchantCount: mids.size }))
             .sort((a, b) => b.merchantCount - a.merchantCount)
 
-          // Top merchants by profitability
-          const merchantProfitMap: Record<string, { dbaName: string; grossIncome: number; totalExpenses: number; merchantId: string | null }> = {}
+          // Top merchants by profitability — aggregate net_revenue per merchant
+          const merchantProfitMap: Record<string, { dbaName: string; netRevenue: number; merchantId: string | null }> = {}
           for (const r of records) {
             const key = r.merchant_id_external || r.dba_name || 'Unknown'
             if (!merchantProfitMap[key]) {
-              merchantProfitMap[key] = { dbaName: r.dba_name || r.merchant_id_external || 'Unknown', grossIncome: 0, totalExpenses: 0, merchantId: r.merchant_id || null }
+              merchantProfitMap[key] = { dbaName: r.dba_name || r.merchant_id_external || 'Unknown', netRevenue: 0, merchantId: r.merchant_id || null }
             }
-            merchantProfitMap[key].grossIncome += r.gross_income || 0
-            merchantProfitMap[key].totalExpenses += r.total_expenses || 0
+            merchantProfitMap[key].netRevenue += r.net_revenue || 0
             if (r.merchant_id && !merchantProfitMap[key].merchantId) merchantProfitMap[key].merchantId = r.merchant_id
           }
           topMerchants = Object.entries(merchantProfitMap)
-            .map(([mid, m]) => ({ merchantIdExternal: mid, dbaName: m.dbaName, netProfit: m.grossIncome - m.totalExpenses, merchantId: m.merchantId }))
+            .map(([mid, m]) => ({ merchantIdExternal: mid, dbaName: m.dbaName, netProfit: m.netRevenue, merchantId: m.merchantId }))
             .sort((a, b) => b.netProfit - a.netProfit)
             .slice(0, 5)
         }
