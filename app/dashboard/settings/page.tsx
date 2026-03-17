@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
 import LoadingScreen from '@/components/LoadingScreen'
+import { ADDONS, ADDON_MAP, isAddonActive } from '@/lib/addons'
+import FeatureGate from '@/components/FeatureGate'
 
 interface Profile {
   id: string
@@ -122,7 +124,7 @@ interface TeamMember {
   override_pct: number | null
 }
 
-const ALL_TABS = ['Profile', 'Notifications', 'Security', 'Templates', 'Organization', 'Team'] as const
+const ALL_TABS = ['Profile', 'Notifications', 'Security', 'Templates', 'Organization', 'Team', 'Subscription'] as const
 
 const ROLE_HIERARCHY: Record<string, number> = {
   owner: 5, manager: 4, master_agent: 3, agent: 2, sub_agent: 1, referral: 0,
@@ -131,7 +133,7 @@ type Tab = typeof ALL_TABS[number]
 
 export default function SettingsPage() {
   const router = useRouter()
-  const { org, member, hasPermission, user: authUser } = useAuth()
+  const { org, member, hasPermission, user: authUser, refreshAuth } = useAuth()
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>('Profile')
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -201,6 +203,7 @@ export default function SettingsPage() {
     if (tab === 'Team') return hasPermission('manage_team')
     if (tab === 'Organization') return settingsRole === 'owner' || settingsRole === 'manager'
     if (tab === 'Templates') return settingsRole === 'owner' || settingsRole === 'manager' || settingsRole === 'agent' || settingsRole === 'master_agent'
+    if (tab === 'Subscription') return settingsRole === 'owner'
     return true
   })
 
@@ -1283,7 +1286,7 @@ export default function SettingsPage() {
                             </span>
                           )}
 
-                          {canManage && parentCandidatesForMember.length > 0 && (
+                          {canManage && parentCandidatesForMember.length > 0 && isAddonActive(org, 'agent_hierarchy') && (
                             <select
                               value={tm.parent_member_id || ''}
                               onChange={(e) => handleParentChange(tm.id, e.target.value)}
@@ -1296,7 +1299,7 @@ export default function SettingsPage() {
                             </select>
                           )}
 
-                          {canManage && tm.role === 'master_agent' && (
+                          {canManage && tm.role === 'master_agent' && isAddonActive(org, 'agent_hierarchy') && (
                             <input
                               type="number" min="0" max="100" step="0.01"
                               value={tm.override_pct ?? ''}
@@ -1619,8 +1622,200 @@ export default function SettingsPage() {
               )}
             </div>
           )}
+
+          {/* ═══════════ SUBSCRIPTION TAB ═══════════ */}
+          {activeTab === 'Subscription' && (
+            <SubscriptionTab org={org} refreshAuth={refreshAuth} />
+          )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Subscription Tab Component ─────────────────────────────────────────────
+
+const PLAN_PRICES: Record<string, number> = {
+  trial: 0, starter: 49, growth: 149, pro: 399, enterprise: 799,
+}
+
+const PLAN_LABELS: Record<string, string> = {
+  trial: 'Trial', starter: 'Starter', growth: 'Growth', pro: 'Pro', enterprise: 'Enterprise',
+}
+
+function SubscriptionTab({ org, refreshAuth }: { org: any; refreshAuth: () => Promise<void> }) {
+  const [disableModal, setDisableModal] = useState<string | null>(null)
+  const [enableModal, setEnableModal] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const plan = org?.plan || 'trial'
+  const activeAddons: string[] = org?.active_addons || []
+  const billing = org?.addon_billing || {}
+  const baseCost = PLAN_PRICES[plan] ?? 0
+  const addonCost = activeAddons.reduce((sum, key) => sum + (billing[key]?.price || ADDON_MAP[key]?.price || 0), 0)
+
+  async function toggleAddon(key: string, enable: boolean) {
+    if (!org?.id) return
+    setSaving(true)
+    try {
+      const addon = ADDON_MAP[key]
+      if (enable) {
+        const now = new Date().toISOString()
+        const { error } = await supabase
+          .from('organizations')
+          .update({
+            active_addons: [...activeAddons, key],
+            addon_billing: { ...billing, [key]: { activated_at: now, price: addon?.price || 0 } },
+          })
+          .eq('id', org.id)
+        if (!error) await refreshAuth()
+      } else {
+        const newAddons = activeAddons.filter(a => a !== key)
+        const newBilling = { ...billing }
+        delete newBilling[key]
+        const { error } = await supabase
+          .from('organizations')
+          .update({ active_addons: newAddons, addon_billing: newBilling })
+          .eq('id', org.id)
+        if (!error) await refreshAuth()
+      }
+    } finally {
+      setSaving(false)
+      setEnableModal(null)
+      setDisableModal(null)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Current plan */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+        <h3 className="text-lg font-semibold text-slate-900">Current Plan</h3>
+        <div className="mt-3 flex items-baseline gap-3">
+          <span className="text-2xl font-bold text-slate-900">{PLAN_LABELS[plan] || plan}</span>
+          <span className="text-slate-500">${baseCost}/mo</span>
+        </div>
+      </div>
+
+      {/* Active add-ons */}
+      {activeAddons.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+          <h3 className="text-lg font-semibold text-slate-900">Active Add-ons</h3>
+          <div className="mt-3 divide-y divide-slate-100">
+            {activeAddons.map(key => {
+              const addon = ADDON_MAP[key]
+              const info = billing[key]
+              if (!addon) return null
+              return (
+                <div key={key} className="flex items-center justify-between py-3">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">{addon.name}</p>
+                    <p className="text-xs text-slate-400">
+                      Activated {info?.activated_at ? new Date(info.activated_at).toLocaleDateString() : 'N/A'}
+                    </p>
+                  </div>
+                  <span className="text-sm font-medium text-slate-700">${info?.price || addon.price}/mo</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Manage add-ons */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+        <h3 className="text-lg font-semibold text-slate-900">Manage Add-ons</h3>
+        <p className="text-sm text-slate-500 mt-1">Enable or disable add-ons for your organization.</p>
+        <div className="mt-4 divide-y divide-slate-100">
+          {ADDONS.map(addon => {
+            const isActive = isAddonActive(org, addon.key)
+            const isIncluded = addon.includedInPro && (plan === 'pro' || plan === 'enterprise')
+            return (
+              <div key={addon.key} className="flex items-center justify-between py-4">
+                <div className="flex-1 min-w-0 pr-4">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-slate-900">{addon.name}</p>
+                    {isIncluded && (
+                      <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Included</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">{addon.description}</p>
+                  <p className="text-xs font-medium text-slate-600 mt-0.5">${addon.price}/mo</p>
+                </div>
+                {isIncluded ? (
+                  <div className="w-11 h-6 bg-emerald-500 rounded-full relative cursor-not-allowed">
+                    <div className="absolute right-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow" />
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => isActive ? setDisableModal(addon.key) : setEnableModal(addon.key)}
+                    disabled={saving}
+                    className={`w-11 h-6 rounded-full relative transition-colors duration-200 ${isActive ? 'bg-emerald-500' : 'bg-slate-200'}`}
+                  >
+                    <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${isActive ? 'right-0.5' : 'left-0.5'}`} />
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Total cost */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-slate-900">Estimated Monthly Total</h3>
+          <span className="text-2xl font-bold text-emerald-600">${baseCost + addonCost}/mo</span>
+        </div>
+        <div className="mt-2 text-xs text-slate-400 space-y-0.5">
+          <p>Base plan: ${baseCost}/mo</p>
+          {addonCost > 0 && <p>Add-ons: ${addonCost}/mo</p>}
+        </div>
+      </div>
+
+      <p className="text-xs text-slate-400 text-center">
+        Billing is managed manually during beta. You will receive an invoice for any add-ons enabled.
+      </p>
+
+      {/* Enable confirmation modal */}
+      {enableModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setEnableModal(null)}>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl p-6 max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-900">
+              Enable {ADDON_MAP[enableModal]?.name} &mdash; ${ADDON_MAP[enableModal]?.price}/mo
+            </h3>
+            <p className="text-sm text-slate-500 mt-2">
+              This will be added to your monthly subscription. Your next bill will include this charge.
+            </p>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setEnableModal(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150">Cancel</button>
+              <button onClick={() => toggleAddon(enableModal, true)} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150 disabled:opacity-50">
+                {saving ? 'Enabling...' : 'Enable'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Disable confirmation modal */}
+      {disableModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setDisableModal(null)}>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl p-6 max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-900">
+              Disable {ADDON_MAP[disableModal]?.name}?
+            </h3>
+            <p className="text-sm text-slate-500 mt-2">
+              This feature will be locked immediately. You can re-enable it at any time.
+            </p>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setDisableModal(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150">Cancel</button>
+              <button onClick={() => toggleAddon(disableModal, false)} disabled={saving} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150 disabled:opacity-50">
+                {saving ? 'Disabling...' : 'Disable'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

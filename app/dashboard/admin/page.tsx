@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { useAuth } from "@/lib/auth-context";
 import LoadingScreen from "@/components/LoadingScreen";
+import { isAddonActive } from "@/lib/addons";
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   owner: [
@@ -200,7 +201,7 @@ export default function AdminPage() {
 
   const fetchOrganizations = async () => {
     setLoading(true);
-    const { data: orgData } = await supabase.from("organizations").select("id, name, slug, plan, plan_limits, created_at").order("created_at", { ascending: false });
+    const { data: orgData } = await supabase.from("organizations").select("id, name, slug, plan, plan_limits, active_addons, addon_billing, created_at").order("created_at", { ascending: false });
     if (orgData) {
       setOrgs(orgData);
       // Fetch all members for all orgs
@@ -777,7 +778,9 @@ export default function AdminPage() {
                                   <option value="active">Active</option>
                                   <option value="suspended">Suspended</option>
                                 </select>
-                                <button onClick={() => openPermModal(m, o.name)} className="text-xs text-emerald-600 hover:text-emerald-700">Permissions</button>
+                                {isAddonActive(o, 'custom_permissions') && (
+                                  <button onClick={() => openPermModal(m, o.name)} className="text-xs text-emerald-600 hover:text-emerald-700">Permissions</button>
+                                )}
                                 <button onClick={() => removeMember(m.id, o.id)} className="text-xs text-red-400 hover:text-red-500">Remove</button>
                               </div>
                             </div>

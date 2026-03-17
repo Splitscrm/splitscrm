@@ -118,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Fetch organization separately (avoids RLS issues with join)
         const { data: orgData } = await supabase
           .from("organizations")
-          .select("id, plan_limits")
+          .select("id, plan, plan_limits, active_addons, addon_billing")
           .eq("id", memberRow.org_id)
           .single();
 

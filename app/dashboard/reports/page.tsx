@@ -10,6 +10,7 @@ import {
   ResponsiveContainer, BarChart, Bar,
 } from 'recharts'
 import { calcWaterfall, calcMonthAgentCosts } from '@/lib/payout-utils'
+import FeatureGate from '@/components/FeatureGate'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -1389,6 +1390,7 @@ export default function ReportsPage() {
           </div>
         ) : tab === 'profitability' ? (
           /* ═══════════ TAB 2: PARTNER PROFITABILITY ═══════════ */
+          <FeatureGate addonKey="advanced_analytics">
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-6 pb-3">
               <h2 className="text-lg font-semibold">Partner Profitability</h2>
@@ -1635,6 +1637,7 @@ export default function ReportsPage() {
               </>
             )}
           </div>
+          </FeatureGate>
         ) : tab === 'agents' ? (
           /* ═══════════ TAB 4: AGENT PERFORMANCE ═══════════ */
           <div className="space-y-6">
@@ -1756,6 +1759,9 @@ export default function ReportsPage() {
               <div className="flex gap-2">
                 <button onClick={() => exportPayoutCSV(false)} className="text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition">Export Summary</button>
                 <button onClick={() => exportPayoutCSV(true)} className="text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition">Export Detail</button>
+                <FeatureGate addonKey="pdf_statements">
+                  <button disabled className="text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition">Export PDF Statements</button>
+                </FeatureGate>
               </div>
             </div>
 
@@ -1922,8 +1928,9 @@ export default function ReportsPage() {
                   </div>
                 )}
 
-                {/* Master agent downline overrides */}
+                {/* Master agent downline overrides (gated) */}
                 {downlineOverrides.length > 0 && (
+                  <FeatureGate addonKey="agent_hierarchy">
                   <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="p-6 pb-3">
                       <h2 className="text-lg font-semibold">Downline Overrides</h2>
@@ -1956,6 +1963,7 @@ export default function ReportsPage() {
                       </table>
                     </div>
                   </div>
+                  </FeatureGate>
                 )}
               </>
             )}
