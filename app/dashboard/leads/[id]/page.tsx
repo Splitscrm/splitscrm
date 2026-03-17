@@ -80,9 +80,11 @@ export default function LeadDetailPage() {
     { value: "contact_pending", label: "Contact Pending" },
     { value: "pending_qualification", label: "Pending Qualification" },
     { value: "qualified_prospect", label: "Qualified Prospect" },
-    { value: "submitted", label: "Submitted" },
+    { value: "send_for_signature", label: "Send for Signature" },
     { value: "signed", label: "Signed" },
+    { value: "submitted", label: "Submitted" },
     { value: "converted", label: "Converted" },
+    { value: "declined", label: "Declined" },
     { value: "unqualified", label: "Unqualified" },
     { value: "unresponsive", label: "Unresponsive" },
     { value: "recycled", label: "Recycled" },
@@ -177,13 +179,13 @@ export default function LeadDetailPage() {
   };
 
   const handleStatusChange = (newStatus: string) => {
-    const fromSignedOrConverted = lead.status === "signed" || lead.status === "converted";
+    const fromSignedOrConverted = lead.status === "signed" || lead.status === "submitted" || lead.status === "converted";
     if (newStatus === "unqualified") { setShowModal("unqualified"); setModalData({ reason: "", reason_other: "" }); }
+    else if (newStatus === "declined") { setShowModal("declined"); setModalData({ reason: "" }); }
     else if (newStatus === "recycled") { setShowModal("recycled"); setModalData({ reason: "", follow_up_date: "" }); }
-    else if (newStatus === "submitted") { setShowModal("submitted"); setModalData({}); }
     else if (newStatus === "signed") { setShowModal("signed"); setModalData({}); }
     else if (newStatus === "qualified_prospect") { createDealAndUpdateStatus(); }
-    else if (fromSignedOrConverted && newStatus !== "signed" && newStatus !== "converted") {
+    else if (fromSignedOrConverted && !["signed", "submitted", "converted"].includes(newStatus)) {
       setShowModal("backward_from_signed"); setModalData({ targetStatus: newStatus });
     }
     else { updateStatus(newStatus, {}); }
@@ -1146,7 +1148,7 @@ export default function LeadDetailPage() {
         )}
 
 
-        {deals.length > 0 && ["qualified_prospect", "submitted", "signed", "converted"].includes(lead.status) && (
+        {deals.length > 0 && ["qualified_prospect", "send_for_signature", "signed", "submitted", "converted"].includes(lead.status) && (
           <>
             {/* Location / Deal header */}
             <div className="flex justify-between items-center mb-4">
@@ -1530,7 +1532,22 @@ export default function LeadDetailPage() {
             <h3 className="text-lg font-bold mb-4">Submit Application</h3>
             <p className="text-slate-500 text-sm mb-4">Moving to Submitted requires application info. This will open the application form for this lead.</p>
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-              <button onClick={() => updateStatus("submitted", {})} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm transition">Continue to Application</button>
+              <button onClick={() => updateStatus("submitted", {})} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm transition">Continue to Application</button>
+              <button onClick={() => setShowModal("")} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showModal === "declined" && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-8 border border-slate-200 shadow-sm w-full max-w-md mx-4">
+            <h3 className="text-lg font-bold mb-4">Mark as Declined</h3>
+            <div className="space-y-4">
+              <div><label className="text-sm text-slate-500 block mb-1">Reason</label><input type="text" value={modalData.reason} onChange={(e) => setModalData({ ...modalData, reason: e.target.value })} placeholder="Reason for decline" className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" /></div>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mt-6">
+              <button onClick={() => updateStatus("declined", { declined_reason: modalData.reason })} disabled={saving} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm transition disabled:opacity-50">{saving ? "Saving..." : "Confirm"}</button>
               <button onClick={() => setShowModal("")} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">Cancel</button>
             </div>
           </div>

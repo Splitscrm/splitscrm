@@ -148,8 +148,10 @@ export default function NewLeadPage() {
                   <option value="contact_pending">Contact Pending</option>
                   <option value="pending_qualification">Pending Qualification</option>
                   <option value="qualified_prospect">Qualified Prospect</option>
-                  <option value="submitted">Submitted</option>
+                  <option value="send_for_signature">Send for Signature</option>
                   <option value="signed">Signed</option>
+                  <option value="submitted">Submitted</option>
+                  <option value="declined">Declined</option>
                   <option value="unqualified">Unqualified</option>
                   <option value="unresponsive">Unresponsive</option>
                   <option value="recycled">Recycled</option>

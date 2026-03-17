@@ -133,19 +133,21 @@ const COLORS = [
 
 const PIPELINE_STAGES = [
   'new_prospect', 'contact_pending', 'pending_qualification', 'qualified_prospect',
-  'submitted', 'signed', 'converted',
+  'send_for_signature', 'signed', 'submitted', 'converted',
 ] as const
 
-const EXIT_STAGES = ['unqualified', 'unresponsive', 'recycled'] as const
+const EXIT_STAGES = ['declined', 'unqualified', 'unresponsive', 'recycled'] as const
 
 const STATUS_LABELS: Record<string, string> = {
   new_prospect: 'New Prospect',
   contact_pending: 'Contact Pending',
   pending_qualification: 'Pending Qualification',
   qualified_prospect: 'Qualified Prospect',
-  submitted: 'Submitted',
+  send_for_signature: 'Send for Signature',
   signed: 'Signed',
+  submitted: 'Submitted',
   converted: 'Converted',
+  declined: 'Declined',
   unqualified: 'Unqualified',
   unresponsive: 'Unresponsive',
   recycled: 'Recycled',
@@ -156,9 +158,11 @@ const STAGE_COLORS: Record<string, string> = {
   contact_pending: 'bg-sky-500',
   pending_qualification: 'bg-amber-500',
   qualified_prospect: 'bg-emerald-500',
-  submitted: 'bg-violet-500',
-  signed: 'bg-indigo-500',
-  converted: 'bg-emerald-600',
+  send_for_signature: 'bg-blue-600',
+  signed: 'bg-emerald-600',
+  submitted: 'bg-indigo-500',
+  converted: 'bg-emerald-700',
+  declined: 'bg-red-500',
   unqualified: 'bg-red-400',
   unresponsive: 'bg-slate-400',
   recycled: 'bg-orange-400',

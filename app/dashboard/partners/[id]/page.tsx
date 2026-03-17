@@ -130,6 +130,7 @@ export default function PartnerDetailPage() {
 
   // MPA documents state
   const [bankMpas, setBankMpas] = useState<Record<string, any[]>>({});
+  const [bankTemplates, setBankTemplates] = useState<Record<string, any[]>>({});
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [mpaUploading, setMpaUploading] = useState<Record<string, boolean>>({});
 
@@ -146,6 +147,21 @@ export default function PartnerDetailPage() {
       grouped[mpa.sponsor_bank_id].push(mpa);
     }
     setBankMpas(grouped);
+    // Also fetch mpa_templates grouped by sponsor bank name
+    if (partner) {
+      const { data: tpls } = await supabase.from("mpa_templates").select("*").eq("partner_id", partner.id).order("created_at", { ascending: false });
+      if (tpls) {
+        const tplGrouped: Record<string, any[]> = {};
+        for (const t of tpls) {
+          // Group by matching bank id (find bank by name)
+          const matchBank = banks.find(b => b.bank_name === t.sponsor_bank);
+          const key = matchBank?.id || t.sponsor_bank;
+          if (!tplGrouped[key]) tplGrouped[key] = [];
+          tplGrouped[key].push(t);
+        }
+        setBankTemplates(tplGrouped);
+      }
+    }
   };
 
   const fetchMpasForBank = async (bankId: string) => {
@@ -155,6 +171,30 @@ export default function PartnerDetailPage() {
       .eq("sponsor_bank_id", bankId)
       .order("created_at", { ascending: false });
     setBankMpas(prev => ({ ...prev, [bankId]: data || [] }));
+    // Refresh templates too
+    const bank = banks.find(b => b.id === bankId);
+    if (bank && partner) {
+      const { data: tpls } = await supabase.from("mpa_templates").select("*").eq("partner_id", partner.id).eq("sponsor_bank", bank.bank_name).order("created_at", { ascending: false });
+      setBankTemplates(prev => ({ ...prev, [bankId]: tpls || [] }));
+    }
+  };
+
+  const toggleTemplateActive = async (template: any, bankId: string) => {
+    const bank = banks.find(b => b.id === bankId);
+    if (!bank) return;
+    if (!template.is_active) {
+      // Deactivate all others for this bank, activate this one
+      await supabase.from("mpa_templates").update({ is_active: false }).eq("partner_id", partner.id).eq("sponsor_bank", bank.bank_name);
+      await supabase.from("mpa_templates").update({ is_active: true }).eq("id", template.id);
+    } else {
+      await supabase.from("mpa_templates").update({ is_active: false }).eq("id", template.id);
+    }
+    await fetchMpasForBank(bankId);
+  };
+
+  const deleteTemplate = async (template: any, bankId: string) => {
+    await supabase.from("mpa_templates").delete().eq("id", template.id);
+    await fetchMpasForBank(bankId);
   };
 
   const uploadMpa = async (bankId: string, file: File) => {
@@ -177,6 +217,10 @@ export default function PartnerDetailPage() {
 
     const signedUrl = await getSignedUrl(path);
 
+    // Find the bank name for this sponsor bank
+    const bank = banks.find(b => b.id === bankId);
+    const templateName = `${partner.name} - ${bank?.bank_name || "Bank"} - ${file.name}`;
+
     await supabase.from("sponsor_bank_mpas").insert({
       sponsor_bank_id: bankId,
       user_id: user.id,
@@ -184,6 +228,16 @@ export default function PartnerDetailPage() {
       file_url: path,
       storage_path: path,
     });
+
+    // Also create mpa_templates record
+    await supabase.from("mpa_templates").insert({
+      org_id: member?.org_id || null,
+      partner_id: partner.id,
+      sponsor_bank: bank?.bank_name || "",
+      template_name: templateName,
+      template_file_url: path,
+      is_active: true,
+    }).then(() => {}, () => {}); // Ignore error if table doesn't exist yet
 
     await fetchMpasForBank(bankId);
     setMpaUploading(prev => ({ ...prev, [bankId]: false }));
@@ -541,20 +595,37 @@ export default function PartnerDetailPage() {
                 {(bankMpas[b.id] || []).length === 0 ? (
                   <p className="text-xs text-slate-400 mt-2">No MPA templates uploaded</p>
                 ) : (
-                  <div className="mt-2">
-                    {(bankMpas[b.id] || []).map((mpa: any) => (
-                      <div key={mpa.id} className="flex items-center justify-between py-2">
-                        <button onClick={() => openSignedUrl(mpa.storage_path || mpa.file_url)} className="text-sm text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 truncate text-left">
-                          📄 {mpa.file_name}
-                        </button>
-                        <div className="flex items-center gap-3 shrink-0 ml-3">
-                          <span className="text-xs text-slate-400">
-                            {new Date(mpa.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                          </span>
-                          <button onClick={() => deleteMpa(mpa)} className="text-red-400 hover:text-red-500 text-xs">Remove</button>
+                  <div className="mt-2 divide-y divide-slate-50">
+                    {(bankMpas[b.id] || []).map((mpa: any) => {
+                      const template = (bankTemplates[b.id] || []).find((t: any) => t.template_file_url === mpa.storage_path || t.template_file_url === mpa.file_url);
+                      return (
+                        <div key={mpa.id} className="flex items-center justify-between py-2.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <button onClick={() => openSignedUrl(mpa.storage_path || mpa.file_url)} className="text-sm text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 truncate text-left">
+                              📄 {template?.template_name || mpa.file_name}
+                            </button>
+                            {template?.is_active && (
+                              <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-medium shrink-0">Active</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 ml-3">
+                            <span className="text-xs text-slate-400">
+                              {new Date(mpa.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            </span>
+                            {template && (
+                              <button
+                                onClick={() => toggleTemplateActive(template, b.id)}
+                                className={`w-8 h-4 rounded-full relative transition-colors duration-200 ${template.is_active ? "bg-emerald-500" : "bg-slate-200"}`}
+                                title={template.is_active ? "Deactivate" : "Set as active"}
+                              >
+                                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform duration-200 ${template.is_active ? "right-0.5" : "left-0.5"}`} />
+                              </button>
+                            )}
+                            <button onClick={() => { if (template) deleteTemplate(template, b.id); deleteMpa(mpa); }} className="text-red-400 hover:text-red-500 text-xs">Remove</button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
