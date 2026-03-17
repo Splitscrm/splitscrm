@@ -20,6 +20,7 @@ export default function MerchantDetailPage() {
   const [permissionDenied, setPermissionDenied] = useState(false)
   const [merchant, setMerchant] = useState<any>(null)
   const [relatedMerchants, setRelatedMerchants] = useState<any[]>([])
+  const [signedSessions, setSignedSessions] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showTaskModal, setShowTaskModal] = useState(false)
@@ -261,6 +262,12 @@ export default function MerchantDetailPage() {
         if (data.lead_id) {
           const { data: related } = await supabase.from('merchants').select('id, business_name, dba_name, mid, status, monthly_volume, location_name').eq('lead_id', data.lead_id).neq('id', data.id)
           if (related && related.length > 0) setRelatedMerchants(related)
+          // Fetch signed documents via deals for this lead
+          const { data: leadDeals } = await supabase.from('deals').select('id').eq('lead_id', data.lead_id)
+          if (leadDeals && leadDeals.length > 0) {
+            const { data: sessions } = await supabase.from('signature_sessions').select('*').in('deal_id', leadDeals.map((d: any) => d.id)).eq('status', 'signed').order('signed_at', { ascending: false })
+            if (sessions && sessions.length > 0) setSignedSessions(sessions)
+          }
         }
         // Fetch residuals and comms for right column
         fetchResidualHistory(data.id)
@@ -1126,6 +1133,36 @@ export default function MerchantDetailPage() {
                         {(rm.status || 'active').charAt(0).toUpperCase() + (rm.status || 'active').slice(1)}
                       </span>
                       {rm.monthly_volume && <span className="text-xs text-slate-500">${Number(rm.monthly_volume).toLocaleString()}/mo</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Signed Documents */}
+          {signedSessions.length > 0 && (
+            <div className="lg:col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-2">
+              <h3 className="text-base font-semibold text-slate-900 mb-3">Signed Documents</h3>
+              <div className="divide-y divide-slate-50">
+                {signedSessions.map((s: any) => (
+                  <div key={s.id} className="flex flex-col sm:flex-row sm:items-center justify-between py-3 gap-2">
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{s.signer_name}</p>
+                      <p className="text-xs text-slate-500">{s.signer_email}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-slate-400">{new Date(s.signed_at).toLocaleString()}</span>
+                      {s.signer_ip && <span className="text-xs text-slate-300">IP: {s.signer_ip}</span>}
+                      <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-medium">Signed</span>
+                      {s.signature_data && (
+                        <button onClick={() => {
+                          const a = document.createElement('a')
+                          a.href = s.signature_data
+                          a.download = `signature-${s.signer_name.replace(/\s+/g, '-')}.png`
+                          a.click()
+                        }} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">Download</button>
+                      )}
                     </div>
                   </div>
                 ))}

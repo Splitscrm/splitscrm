@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     // Look up session
     const { data: session, error: sessionErr } = await supabase
       .from("signature_sessions")
-      .select("id, status, expires_at, lead_id, deal_id")
+      .select("id, status, expires_at, lead_id, deal_id, org_id, signer_name, signer_email")
       .eq("token", token)
       .single();
 
@@ -72,9 +72,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Failed to save signature" }, { status: 500, headers });
     }
 
-    // Update lead status to 'signed'
+    // Get deal DBA name for the activity log
+    let dbaName = "";
+    if (session.deal_id) {
+      const { data: dealRow } = await supabase.from("deals").select("dba_name, location_name").eq("id", session.deal_id).single();
+      dbaName = dealRow?.location_name || dealRow?.dba_name || "";
+    }
+
+    // Multi-location: only update lead to 'signed' if ALL deals have signed sessions
     if (session.lead_id) {
-      await supabase.from("leads").update({ status: "signed", updated_at: now }).eq("id", session.lead_id);
+      const { data: allDeals } = await supabase.from("deals").select("id").eq("lead_id", session.lead_id);
+      const dealIds = (allDeals || []).map((d: any) => d.id);
+      let allSigned = true;
+      if (dealIds.length > 1) {
+        for (const did of dealIds) {
+          if (did === session.deal_id) continue; // this one is being signed right now
+          const { data: otherSessions } = await supabase.from("signature_sessions").select("status").eq("deal_id", did).eq("status", "signed").limit(1);
+          if (!otherSessions || otherSessions.length === 0) { allSigned = false; break; }
+        }
+      }
+      if (allSigned) {
+        await supabase.from("leads").update({ status: "signed", updated_at: now }).eq("id", session.lead_id);
+      }
+
+      // Create activity log entry
+      await supabase.from("activity_log").insert({
+        org_id: session.org_id,
+        lead_id: session.lead_id,
+        deal_id: session.deal_id,
+        action_type: "mpa_signed",
+        description: `MPA signed by ${session.signer_name} (${session.signer_email})${dbaName ? ` for ${dbaName}` : ""}`,
+      });
     }
 
     return NextResponse.json({ success: true }, { status: 200, headers });
