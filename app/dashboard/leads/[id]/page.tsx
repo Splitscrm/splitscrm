@@ -64,6 +64,16 @@ export default function LeadDetailPage() {
   const [agentRepCodes, setAgentRepCodes] = useState<any[]>([]);
   const [repCodePartners, setRepCodePartners] = useState<Record<string, string>>({});
   const ensureDealGuard = useRef(false);
+
+  // Signature flow state
+  const [sigBanks, setSigBanks] = useState<any[]>([]);
+  const [sigTemplate, setSigTemplate] = useState<any>(null);
+  const [sigSessions, setSigSessions] = useState<Record<string, any[]>>({});
+  const [sigSignerName, setSigSignerName] = useState("");
+  const [sigSignerEmail, setSigSignerEmail] = useState("");
+  const [sigExpiry, setSigExpiry] = useState("7");
+  const [sigSending, setSigSending] = useState(false);
+  const [sigCopied, setSigCopied] = useState<string | null>(null);
   const toggleGroup = (key: string) => setOpenGroups(prev => ({ ...prev, [key]: !prev[key] }));
 
   const docTypes = [
@@ -373,6 +383,103 @@ export default function LeadDetailPage() {
     const { data: newDeal } = await supabase.from("deals").insert({ lead_id: lead.id, user_id: userId, business_legal_name: lead.business_name, dba_name: lead.business_name, is_primary_location: true }).select().single();
     if (newDeal) { setDeals([newDeal]); setActiveDealIdx(0); }
     ensureDealGuard.current = false;
+  };
+
+  // ── Signature flow helpers ───────────────────────────────────────────────
+  const fetchBanksForPartner = async (partnerId: string) => {
+    const { data } = await supabase.from("partner_sponsor_banks").select("id, bank_name").eq("partner_id", partnerId).order("bank_name");
+    setSigBanks(data || []);
+  };
+
+  const fetchTemplateForBank = async (partnerId: string, bankName: string) => {
+    const { data } = await supabase.from("mpa_templates").select("*").eq("partner_id", partnerId).eq("sponsor_bank", bankName).eq("is_active", true).limit(1).maybeSingle();
+    setSigTemplate(data || null);
+  };
+
+  const fetchSigSessions = useCallback(async () => {
+    if (!lead) return;
+    const dealIds = deals.map(d => d.id).filter(Boolean);
+    if (dealIds.length === 0) return;
+    const { data } = await supabase.from("signature_sessions").select("*").in("deal_id", dealIds).order("created_at", { ascending: false });
+    const grouped: Record<string, any[]> = {};
+    for (const s of data || []) {
+      if (!grouped[s.deal_id]) grouped[s.deal_id] = [];
+      grouped[s.deal_id].push(s);
+    }
+    setSigSessions(grouped);
+  }, [lead, deals]);
+
+  useEffect(() => {
+    if (lead?.status === "send_for_signature" && deals.length > 0) {
+      fetchSigSessions();
+      // Pre-fill signer info
+      if (!sigSignerName && lead.contact_name) setSigSignerName(lead.contact_name);
+      if (!sigSignerEmail && lead.email) setSigSignerEmail(lead.email);
+      // Load banks for current deal's partner
+      if (deal?.partner_id) fetchBanksForPartner(deal.partner_id);
+    }
+  }, [lead?.status, deals.length, deal?.partner_id]);
+
+  const handleSigPartnerChange = async (partnerId: string) => {
+    if (!deal) return;
+    updateDealField("partner_id", partnerId);
+    updateDealField("sponsor_bank", null);
+    setSigTemplate(null);
+    if (partnerId) await fetchBanksForPartner(partnerId);
+    else setSigBanks([]);
+  };
+
+  const handleSigBankChange = async (bankName: string) => {
+    if (!deal) return;
+    updateDealField("sponsor_bank", bankName);
+    if (bankName && deal.partner_id) await fetchTemplateForBank(deal.partner_id, bankName);
+    else setSigTemplate(null);
+  };
+
+  const sendForSignature = async (dealId: string) => {
+    if (!lead || !sigSignerEmail || !sigSignerName) return;
+    setSigSending(true);
+    const token = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + parseInt(sigExpiry) * 24 * 60 * 60 * 1000).toISOString();
+    await supabase.from("signature_sessions").insert({
+      org_id: member?.org_id || null,
+      deal_id: dealId,
+      lead_id: lead.id,
+      token,
+      signer_name: sigSignerName,
+      signer_email: sigSignerEmail,
+      status: "pending",
+      expires_at: expiresAt,
+    });
+    // Save deal fields
+    await saveDeal();
+    await fetchSigSessions();
+    setSigSending(false);
+  };
+
+  const revokeSigSession = async (sessionId: string) => {
+    await supabase.from("signature_sessions").update({ status: "revoked" }).eq("id", sessionId);
+    await fetchSigSessions();
+  };
+
+  const copySigLink = (token: string) => {
+    const url = `${window.location.origin}/sign/${token}`;
+    navigator.clipboard.writeText(url);
+    setSigCopied(token);
+    setTimeout(() => setSigCopied(null), 2000);
+  };
+
+  // Check MPA field completeness for a deal
+  const checkMpaFields = (d: any) => {
+    const checks = [
+      { label: "Business Info", ok: !!(d?.business_legal_name && d?.dba_name && d?.legal_street && d?.ein_itin && d?.entity_type), missing: [!d?.business_legal_name && "Legal Name", !d?.dba_name && "DBA", !d?.legal_street && "Address", !d?.ein_itin && "EIN", !d?.entity_type && "Entity Type"].filter(Boolean) },
+      { label: "Owner Info", ok: owners.length > 0 && !!(owners[0]?.full_name && owners[0]?.ssn_encrypted && owners[0]?.dob), missing: owners.length === 0 ? ["No owners"] : [!owners[0]?.full_name && "Name", !owners[0]?.ssn_encrypted && "SSN", !owners[0]?.dob && "DOB"].filter(Boolean) },
+      { label: "Processing Info", ok: !!(d?.monthly_volume && d?.average_ticket && (d?.cp_pct || d?.cnp_pct)), missing: [!d?.monthly_volume && "Volume", !d?.average_ticket && "Avg Ticket", !(d?.cp_pct || d?.cnp_pct) && "CP/CNP %"].filter(Boolean) },
+      { label: "Pricing", ok: !!(d?.pricing_type && (d?.ic_plus_visa_pct || d?.dual_pricing_rate || d?.flat_rate_pct)), missing: [!d?.pricing_type && "Pricing Type", !(d?.ic_plus_visa_pct || d?.dual_pricing_rate || d?.flat_rate_pct) && "Rates"].filter(Boolean) },
+      { label: "Banking", ok: !!(d?.bank_routing && d?.bank_account), missing: [!d?.bank_routing && "Routing #", !d?.bank_account && "Account #"].filter(Boolean) },
+      { label: "Equipment", ok: (d?.hardware_items || []).length > 0, missing: (d?.hardware_items || []).length === 0 ? ["None added"] : [] },
+    ];
+    return checks;
   };
 
   // Fetch rep codes for the assigned agent
@@ -1147,6 +1254,161 @@ export default function LeadDetailPage() {
           />
         )}
 
+
+        {/* ═══════════ SEND FOR SIGNATURE SECTION ═══════════ */}
+        {lead.status === "send_for_signature" && deals.length > 0 && (
+          <div className="space-y-4 mb-6">
+            <h3 className="text-xl font-bold">Send for Signature</h3>
+            {deals.map((d, dIdx) => {
+              const sessions = sigSessions[d.id] || [];
+              const latestSession = sessions[0];
+              const isActiveDeal = dIdx === activeDealIdx;
+              const mpaChecks = checkMpaFields(d);
+              const allComplete = mpaChecks.every(c => c.ok);
+
+              return (
+                <div key={d.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                  {deals.length > 1 && (
+                    <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
+                      {d.is_primary_location && <svg className="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>}
+                      <h4 className="text-base font-semibold text-slate-900">{d.location_name || d.dba_name || `Location ${dIdx + 1}`}</h4>
+                    </div>
+                  )}
+
+                  {/* Show status if session exists */}
+                  {latestSession ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <span className="text-lg">
+                          {latestSession.status === "pending" ? "\u23F3" : latestSession.status === "signed" ? "\u2705" : latestSession.status === "expired" ? "\u274C" : "\uD83D\uDEAB"}
+                        </span>
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">
+                            {latestSession.status === "pending" ? "Awaiting signature" : latestSession.status === "signed" ? "Signed" : latestSession.status === "expired" ? "Expired" : "Revoked"}
+                          </p>
+                          <p className="text-xs text-slate-400">Sent to {latestSession.signer_email} &middot; Expires {new Date(latestSession.expires_at).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                      {latestSession.status === "signed" && latestSession.signed_at && (
+                        <p className="text-xs text-slate-500">Signed {new Date(latestSession.signed_at).toLocaleString()}{latestSession.signer_ip ? ` from ${latestSession.signer_ip}` : ""}</p>
+                      )}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button onClick={() => copySigLink(latestSession.token)} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-3 py-1.5 text-xs font-medium transition">
+                          {sigCopied === latestSession.token ? "Copied!" : "Copy Link"}
+                        </button>
+                        {latestSession.status === "pending" && (
+                          <>
+                            <button onClick={() => { sendForSignature(d.id); }} disabled={sigSending} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:opacity-50">Resend Link</button>
+                            <button onClick={() => revokeSigSession(latestSession.id)} className="text-red-500 hover:text-red-600 text-xs font-medium">Revoke</button>
+                          </>
+                        )}
+                        {(latestSession.status === "expired" || latestSession.status === "revoked") && (
+                          <button onClick={() => sendForSignature(d.id)} disabled={sigSending} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:opacity-50">Send New Link</button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-5">
+                      {/* Step 1: Select Partner & Sponsor Bank */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">1</span>
+                          <h4 className="text-sm font-semibold text-slate-900">Select Partner & Sponsor Bank</h4>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs text-slate-500 block mb-1">Partner</label>
+                            <select value={d.partner_id || ""} onChange={(e) => { if (isActiveDeal) handleSigPartnerChange(e.target.value); }} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
+                              <option value="">Select partner...</option>
+                              {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-slate-500 block mb-1">Sponsor Bank</label>
+                            <select value={d.sponsor_bank || ""} onChange={(e) => { if (isActiveDeal) handleSigBankChange(e.target.value); }} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" disabled={!d.partner_id}>
+                              <option value="">Select bank...</option>
+                              {(isActiveDeal ? sigBanks : []).map(b => <option key={b.id} value={b.bank_name}>{b.bank_name}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        {isActiveDeal && d.partner_id && d.sponsor_bank && (
+                          <p className={`text-xs mt-2 ${sigTemplate ? "text-emerald-600" : "text-amber-600"}`}>
+                            {sigTemplate ? `MPA Template: ${sigTemplate.template_name} \u2713 loaded` : "\u26A0 No MPA template found for this sponsor bank"}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Step 2: Review Pre-Filled MPA Fields */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">2</span>
+                          <h4 className="text-sm font-semibold text-slate-900">Review Pre-Filled MPA Fields</h4>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {mpaChecks.map(check => (
+                            <div key={check.label} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${check.ok ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                              <span>{check.ok ? "\u2713" : "\u26A0"}</span>
+                              <span className="font-medium">{check.label}</span>
+                              {!check.ok && check.missing.length > 0 && <span className="text-[10px] opacity-75">({check.missing.join(", ")})</span>}
+                            </div>
+                          ))}
+                        </div>
+                        {sigTemplate?.extra_fields && typeof sigTemplate.extra_fields === "object" && Object.keys(sigTemplate.extra_fields).length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-slate-100">
+                            <p className="text-xs text-slate-500 mb-2 font-medium">Additional MPA Fields</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {Object.entries(sigTemplate.extra_fields).map(([key, def]) => (
+                                <div key={key}>
+                                  <label className="text-xs text-slate-500 block mb-1">{key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</label>
+                                  <input type="text" value={(d.mpa_extra_field_values || {})[key] || ""} onChange={(e) => { if (isActiveDeal) updateDealField("mpa_extra_field_values", { ...(d.mpa_extra_field_values || {}), [key]: e.target.value }); }} className="w-full text-sm px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Step 3: Send to Merchant */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">3</span>
+                          <h4 className="text-sm font-semibold text-slate-900">Send to Merchant</h4>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label className="text-xs text-slate-500 block mb-1">Signer Name</label>
+                            <input type="text" value={sigSignerName} onChange={(e) => setSigSignerName(e.target.value)} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-slate-500 block mb-1">Signer Email</label>
+                            <input type="email" value={sigSignerEmail} onChange={(e) => setSigSignerEmail(e.target.value)} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-slate-500 block mb-1">Link Expires</label>
+                            <select value={sigExpiry} onChange={(e) => setSigExpiry(e.target.value)} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
+                              <option value="3">3 days</option>
+                              <option value="7">7 days</option>
+                              <option value="14">14 days</option>
+                              <option value="30">30 days</option>
+                            </select>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => sendForSignature(d.id)}
+                          disabled={sigSending || !sigSignerEmail || !sigSignerName || !d.partner_id || !d.sponsor_bank}
+                          className="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                        >
+                          {sigSending ? "Sending..." : "Send for Signature"}
+                        </button>
+                        {!allComplete && <p className="text-xs text-amber-500 mt-2">Some MPA fields are incomplete. The merchant may need to fill them in during signing.</p>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {deals.length > 0 && ["qualified_prospect", "send_for_signature", "signed", "submitted", "converted"].includes(lead.status) && (
           <>
