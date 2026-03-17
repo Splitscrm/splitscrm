@@ -160,7 +160,7 @@ export default function SettingsPage() {
   const [repPartnersCache, setRepPartnersCache] = useState<any[]>([])
   const [showRepModal, setShowRepModal] = useState(false)
   const [repEditing, setRepEditing] = useState<any>(null)
-  const [repForm, setRepForm] = useState({ user_id: '', partner_id: '', rep_code: '', label: '', split_pct: '', effective_date: '', notes: '' })
+  const [repForm, setRepForm] = useState({ user_id: '', partner_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', effective_date: '', notes: '' })
   const [repSaving, setRepSaving] = useState(false)
   const [repError, setRepError] = useState('')
   const [repMsg, setRepMsg] = useState('')
@@ -478,7 +478,7 @@ export default function SettingsPage() {
     if (!member?.org_id) return
     const { data } = await supabase
       .from('agent_rep_codes')
-      .select('id, org_id, user_id, partner_id, rep_code, label, status, effective_date, end_date, split_pct, notes, created_at')
+      .select('id, org_id, user_id, partner_id, rep_code, label, status, effective_date, end_date, split_pct, bonus_per_deal, notes, created_at')
       .eq('org_id', member.org_id)
       .order('created_at', { ascending: false })
     setRepCodes(data || [])
@@ -513,12 +513,13 @@ export default function SettingsPage() {
         rep_code: editing.rep_code || '',
         label: editing.label || '',
         split_pct: editing.split_pct != null ? String(editing.split_pct) : '',
+        bonus_per_deal: editing.bonus_per_deal != null ? String(editing.bonus_per_deal) : '',
         effective_date: editing.effective_date || '',
         notes: editing.notes || '',
       })
     } else {
       setRepEditing(null)
-      setRepForm({ user_id: '', partner_id: '', rep_code: '', label: '', split_pct: '', effective_date: '', notes: '' })
+      setRepForm({ user_id: '', partner_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', effective_date: '', notes: '' })
     }
     setRepError('')
     setShowRepModal(true)
@@ -538,6 +539,7 @@ export default function SettingsPage() {
       rep_code: repForm.rep_code.trim(),
       label: repForm.label.trim() || null,
       split_pct: repForm.split_pct ? parseFloat(repForm.split_pct) : null,
+      bonus_per_deal: repForm.bonus_per_deal ? parseFloat(repForm.bonus_per_deal) : null,
       effective_date: repForm.effective_date || null,
       notes: repForm.notes.trim() || null,
       status: 'active',
@@ -837,6 +839,7 @@ export default function SettingsPage() {
                           <th className="px-4 py-2.5 font-medium">Partner</th>
                           <th className="px-4 py-2.5 font-medium">Rep Code</th>
                           <th className="px-4 py-2.5 font-medium">Label</th>
+                          <th className="px-4 py-2.5 font-medium">Bonus / Deal</th>
                           <th className="px-4 py-2.5 font-medium">Status</th>
                         </tr>
                       </thead>
@@ -846,6 +849,7 @@ export default function SettingsPage() {
                             <td className="px-4 py-2.5">{getPartnerName(rc.partner_id)}</td>
                             <td className="px-4 py-2.5 font-mono text-emerald-700">{rc.rep_code}</td>
                             <td className="px-4 py-2.5 text-slate-500">{rc.label || '-'}</td>
+                            <td className="px-4 py-2.5">{rc.bonus_per_deal != null ? `$${Number(rc.bonus_per_deal).toFixed(2)}` : '\u2014'}</td>
                             <td className="px-4 py-2.5">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${rc.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                                 {rc.status}
@@ -1198,6 +1202,7 @@ export default function SettingsPage() {
                           <th className="px-4 py-2.5 font-medium">Label</th>
                           <th className="px-4 py-2.5 font-medium">Status</th>
                           <th className="px-4 py-2.5 font-medium">Split %</th>
+                          <th className="px-4 py-2.5 font-medium">Bonus / Deal</th>
                           <th className="px-4 py-2.5 font-medium">Effective</th>
                           <th className="px-4 py-2.5 font-medium">Actions</th>
                         </tr>
@@ -1215,6 +1220,7 @@ export default function SettingsPage() {
                               </span>
                             </td>
                             <td className="px-4 py-2.5">{rc.split_pct != null ? `${rc.split_pct}%` : '-'}</td>
+                            <td className="px-4 py-2.5">{rc.bonus_per_deal != null ? `$${Number(rc.bonus_per_deal).toFixed(2)}` : '\u2014'}</td>
                             <td className="px-4 py-2.5 text-slate-500">{rc.effective_date || '-'}</td>
                             <td className="px-4 py-2.5">
                               <div className="flex gap-2">
@@ -1268,10 +1274,14 @@ export default function SettingsPage() {
                           <label className={labelClass}>Label (optional)</label>
                           <input type="text" value={repForm.label} onChange={e => setRepForm({ ...repForm, label: e.target.value })} className={inputClass} placeholder="e.g. John's Fiserv code" />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-3 gap-4">
                           <div>
                             <label className={labelClass}>Split % Override</label>
                             <input type="number" min="0" max="100" step="0.01" value={repForm.split_pct} onChange={e => setRepForm({ ...repForm, split_pct: e.target.value })} className={inputClass} placeholder="e.g. 50" />
+                          </div>
+                          <div>
+                            <label className={labelClass}>Bonus / Deal ($)</label>
+                            <input type="number" min="0" step="0.01" value={repForm.bonus_per_deal} onChange={e => setRepForm({ ...repForm, bonus_per_deal: e.target.value })} className={inputClass} placeholder="e.g. 150.00" />
                           </div>
                           <div>
                             <label className={labelClass}>Effective Date</label>
