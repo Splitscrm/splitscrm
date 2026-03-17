@@ -180,8 +180,7 @@ export default function LeadsPage() {
       query = query.or(`user_id.eq.${user.id},assigned_to.eq.${user.id}`)
     }
 
-    const { data, error } = await query
-    if (error) console.error('Leads query error:', error)
+    const { data } = await query
     setLeads(data || [])
     setLoading(false)
   }

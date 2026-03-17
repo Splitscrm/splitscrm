@@ -243,7 +243,7 @@ export default function MerchantDetailPage() {
       const { data: tpls } = await supabase.from('email_templates').select('id, name, subject, body').eq('user_id', user.id).order('name')
       if (tpls) setEmailTemplates(tpls)
 
-      const { data } = await supabase.from('merchants').select('id, lead_id, assigned_to, user_id, created_at, business_name, dba_name, legal_name, status, contact_name, email, phone, mid, processor, notes, business_street, business_city, business_state, business_zip, pricing_type, pricing_rate, per_transaction_fee, monthly_fees, ic_plus_visa_pct, ic_plus_mc_pct, ic_plus_amex_pct, ic_plus_disc_pct, ic_plus_visa_txn, ic_plus_mc_txn, ic_plus_amex_txn, ic_plus_disc_txn, interchange_remittance, dual_pricing_rate, dual_pricing_txn_fee, flat_rate_pct, flat_rate_txn_cost, fee_chargeback, fee_retrieval, fee_arbitration, fee_voice_auth, fee_ebt_auth, fee_ach_reject, monthly_fee_statement, monthly_fee_custom_name, monthly_fee_custom_amount, pci_compliance_monthly, pci_compliance_annual, monthly_volume, last_month_residual, average_residual, chargeback_count, chargeback_volume, chargeback_ratio, boarding_date, contract_length_months, contract_end_date, terminal_type, terminal_serial, equipment_cost, free_equipment, hardware_items, software_items, partner_pricing_overrides').eq('id', params.id).single()
+      const { data } = await supabase.from('merchants').select('*').eq('id', params.id).single()
       if (data) {
         // Permission check: non-owner/manager can only see their own merchants
         if (!isOwnerOrManager && data.assigned_to !== user.id && data.user_id !== user.id) {
