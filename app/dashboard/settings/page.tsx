@@ -166,7 +166,7 @@ export default function SettingsPage() {
   const [repPartnersCache, setRepPartnersCache] = useState<any[]>([])
   const [showRepModal, setShowRepModal] = useState(false)
   const [repEditing, setRepEditing] = useState<any>(null)
-  const [repForm, setRepForm] = useState({ user_id: '', partner_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', house_split_override_pct: '', restricted_split_pct: '', effective_date: '', notes: '' })
+  const [repForm, setRepForm] = useState({ user_id: '', partner_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', house_split_override_pct: '', restricted_split_pct: '', payout_type: 'agent_paid', code_type: 'standard', effective_date: '', notes: '' })
   const [repSaving, setRepSaving] = useState(false)
   const [repError, setRepError] = useState('')
   const [repMsg, setRepMsg] = useState('')
@@ -497,7 +497,7 @@ export default function SettingsPage() {
     if (!member?.org_id) return
     const { data } = await supabase
       .from('agent_rep_codes')
-      .select('id, org_id, user_id, partner_id, rep_code, label, status, effective_date, end_date, split_pct, bonus_per_deal, house_split_override_pct, restricted_split_pct, notes, created_at')
+      .select('id, org_id, user_id, partner_id, rep_code, label, status, effective_date, end_date, split_pct, bonus_per_deal, house_split_override_pct, restricted_split_pct, payout_type, code_type, notes, created_at')
       .eq('org_id', member.org_id)
       .order('created_at', { ascending: false })
     setRepCodes(data || [])
@@ -535,12 +535,14 @@ export default function SettingsPage() {
         bonus_per_deal: editing.bonus_per_deal != null ? String(editing.bonus_per_deal) : '',
         house_split_override_pct: editing.house_split_override_pct != null ? String(editing.house_split_override_pct) : '',
         restricted_split_pct: editing.restricted_split_pct != null ? String(editing.restricted_split_pct) : '',
+        payout_type: editing.payout_type || 'agent_paid',
+        code_type: editing.code_type || 'standard',
         effective_date: editing.effective_date || '',
         notes: editing.notes || '',
       })
     } else {
       setRepEditing(null)
-      setRepForm({ user_id: '', partner_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', house_split_override_pct: '', restricted_split_pct: '', effective_date: '', notes: '' })
+      setRepForm({ user_id: '', partner_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', house_split_override_pct: '', restricted_split_pct: '', payout_type: 'agent_paid', code_type: 'standard', effective_date: '', notes: '' })
     }
     setRepError('')
     setShowRepModal(true)
@@ -563,6 +565,8 @@ export default function SettingsPage() {
       bonus_per_deal: repForm.bonus_per_deal ? parseFloat(repForm.bonus_per_deal) : null,
       house_split_override_pct: repForm.house_split_override_pct ? parseFloat(repForm.house_split_override_pct) : null,
       restricted_split_pct: repForm.restricted_split_pct ? parseFloat(repForm.restricted_split_pct) : null,
+      payout_type: repForm.payout_type || 'agent_paid',
+      code_type: repForm.code_type || 'standard',
       effective_date: repForm.effective_date || null,
       notes: repForm.notes.trim() || null,
       status: 'active',
@@ -1333,6 +1337,7 @@ export default function SettingsPage() {
                           <th className="px-4 py-2.5 font-medium">Agent</th>
                           <th className="px-4 py-2.5 font-medium">Partner</th>
                           <th className="px-4 py-2.5 font-medium">Rep Code</th>
+                          <th className="px-4 py-2.5 font-medium">Type</th>
                           <th className="px-4 py-2.5 font-medium">Label</th>
                           <th className="px-4 py-2.5 font-medium">Status</th>
                           <th className="px-4 py-2.5 font-medium">Split %</th>
@@ -1347,6 +1352,12 @@ export default function SettingsPage() {
                             <td className="px-4 py-2.5 font-medium">{getAgentName(rc.user_id)}</td>
                             <td className="px-4 py-2.5">{getPartnerName(rc.partner_id)}</td>
                             <td className="px-4 py-2.5 font-mono text-emerald-700">{rc.rep_code}</td>
+                            <td className="px-4 py-2.5">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${rc.code_type === 'override' ? 'bg-purple-50 text-purple-700' : rc.code_type === 'direct_sub' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
+                                {rc.code_type === 'override' ? 'Override' : rc.code_type === 'direct_sub' ? 'Direct' : 'Standard'}
+                              </span>
+                              {rc.payout_type === 'partner_direct' && <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700">Partner-Direct</span>}
+                            </td>
                             <td className="px-4 py-2.5 text-slate-500">{rc.label || '-'}</td>
                             <td className="px-4 py-2.5">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${rc.status === 'active' ? 'bg-emerald-50 text-emerald-700' : rc.status === 'transferred' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
@@ -1407,6 +1418,25 @@ export default function SettingsPage() {
                         <div>
                           <label className={labelClass}>Label (optional)</label>
                           <input type="text" value={repForm.label} onChange={e => setRepForm({ ...repForm, label: e.target.value })} className={inputClass} placeholder="e.g. John's Fiserv code" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className={labelClass}>Payout Type</label>
+                            <select value={repForm.payout_type} onChange={e => setRepForm({ ...repForm, payout_type: e.target.value })} className={inputClass}>
+                              <option value="agent_paid">Paid through Agent</option>
+                              <option value="partner_direct">Paid Direct by Partner</option>
+                            </select>
+                            <p className="text-[11px] text-slate-400 mt-1">{repForm.payout_type === 'agent_paid' ? 'Agent receives full amount and pays sub-agents' : 'Partner pays agent directly, no waterfall needed'}</p>
+                          </div>
+                          <div>
+                            <label className={labelClass}>Code Type</label>
+                            <select value={repForm.code_type} onChange={e => setRepForm({ ...repForm, code_type: e.target.value })} className={inputClass}>
+                              <option value="standard">Standard (own merchants)</option>
+                              <option value="override">Override Earnings</option>
+                              <option value="direct_sub">Direct Sub-Agent</option>
+                            </select>
+                            <p className="text-[11px] text-slate-400 mt-1">{repForm.code_type === 'override' ? 'Master agent override on sub-agent production' : repForm.code_type === 'direct_sub' ? 'Sub-agent paid directly by partner' : 'Standard merchant revenue code'}</p>
+                          </div>
                         </div>
                         <div className="grid grid-cols-3 gap-4">
                           <div>

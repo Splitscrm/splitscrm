@@ -32,7 +32,7 @@ export default function PartnerDetailPage() {
   const [repCodesFetched, setRepCodesFetched] = useState(false);
   const [repProfiles, setRepProfiles] = useState<Record<string, string>>({});
   const [showRepModal, setShowRepModal] = useState(false);
-  const [repForm, setRepForm] = useState({ user_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', house_split_override_pct: '', restricted_split_pct: '', effective_date: '', notes: '' });
+  const [repForm, setRepForm] = useState({ user_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', house_split_override_pct: '', restricted_split_pct: '', payout_type: 'agent_paid', code_type: 'standard', effective_date: '', notes: '' });
   const [repSaving, setRepSaving] = useState(false);
   const [repError, setRepError] = useState('');
   const [repAgents, setRepAgents] = useState<any[]>([]);
@@ -272,7 +272,7 @@ export default function PartnerDetailPage() {
     if (repCodesFetched || !partner || !member?.org_id) return;
     const { data } = await supabase
       .from("agent_rep_codes")
-      .select("id, user_id, rep_code, label, status, split_pct, bonus_per_deal, house_split_override_pct, restricted_split_pct, effective_date, end_date, notes")
+      .select("id, user_id, rep_code, label, status, split_pct, bonus_per_deal, house_split_override_pct, restricted_split_pct, payout_type, code_type, effective_date, end_date, notes")
       .eq("partner_id", partner.id)
       .eq("org_id", member.org_id)
       .order("created_at", { ascending: false });
@@ -320,6 +320,8 @@ export default function PartnerDetailPage() {
       bonus_per_deal: repForm.bonus_per_deal ? parseFloat(repForm.bonus_per_deal) : null,
       house_split_override_pct: repForm.house_split_override_pct ? parseFloat(repForm.house_split_override_pct) : null,
       restricted_split_pct: repForm.restricted_split_pct ? parseFloat(repForm.restricted_split_pct) : null,
+      payout_type: repForm.payout_type || 'agent_paid',
+      code_type: repForm.code_type || 'standard',
       effective_date: repForm.effective_date || null,
       notes: repForm.notes.trim() || null,
       status: "active",
@@ -1147,7 +1149,7 @@ export default function PartnerDetailPage() {
           <div>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold">Rep Codes</h3>
-              <button onClick={() => { setRepForm({ user_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', house_split_override_pct: '', restricted_split_pct: '', effective_date: '', notes: '' }); setRepError(''); setShowRepModal(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">+ Add Rep Code</button>
+              <button onClick={() => { setRepForm({ user_id: '', rep_code: '', label: '', split_pct: '', bonus_per_deal: '', house_split_override_pct: '', restricted_split_pct: '', payout_type: 'agent_paid', code_type: 'standard', effective_date: '', notes: '' }); setRepError(''); setShowRepModal(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">+ Add Rep Code</button>
             </div>
 
             {partnerRepCodes.length === 0 ? (
@@ -1159,6 +1161,7 @@ export default function PartnerDetailPage() {
                     <tr className="text-left text-slate-500 border-b border-slate-200">
                       <th className="px-4 py-2.5 font-medium">Agent</th>
                       <th className="px-4 py-2.5 font-medium">Rep Code</th>
+                      <th className="px-4 py-2.5 font-medium">Type</th>
                       <th className="px-4 py-2.5 font-medium">Label</th>
                       <th className="px-4 py-2.5 font-medium">Status</th>
                       <th className="px-4 py-2.5 font-medium">Split %</th>
@@ -1172,6 +1175,11 @@ export default function PartnerDetailPage() {
                       <tr key={rc.id} className="border-b border-slate-100 hover:bg-slate-50">
                         <td className="px-4 py-2.5 font-medium">{repProfiles[rc.user_id] || rc.user_id?.slice(0, 8)}</td>
                         <td className="px-4 py-2.5 font-mono text-emerald-700">{rc.rep_code}</td>
+                        <td className="px-4 py-2.5">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${rc.code_type === "override" ? "bg-purple-50 text-purple-700" : rc.code_type === "direct_sub" ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
+                            {rc.code_type === "override" ? "Override" : rc.code_type === "direct_sub" ? "Direct" : "Standard"}
+                          </span>
+                        </td>
                         <td className="px-4 py-2.5 text-slate-500">{rc.label || "-"}</td>
                         <td className="px-4 py-2.5">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${rc.status === "active" ? "bg-emerald-50 text-emerald-700" : rc.status === "transferred" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-500"}`}>{rc.status}</span>
@@ -1234,6 +1242,23 @@ export default function PartnerDetailPage() {
                       <div>
                         <label className={labelClass}>Label (optional)</label>
                         <input type="text" value={repForm.label} onChange={e => setRepForm({ ...repForm, label: e.target.value })} className={inputClass} placeholder="e.g. John's code" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className={labelClass}>Payout Type</label>
+                          <select value={repForm.payout_type} onChange={e => setRepForm({ ...repForm, payout_type: e.target.value })} className={inputClass}>
+                            <option value="agent_paid">Paid through Agent</option>
+                            <option value="partner_direct">Paid Direct by Partner</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className={labelClass}>Code Type</label>
+                          <select value={repForm.code_type} onChange={e => setRepForm({ ...repForm, code_type: e.target.value })} className={inputClass}>
+                            <option value="standard">Standard</option>
+                            <option value="override">Override Earnings</option>
+                            <option value="direct_sub">Direct Sub-Agent</option>
+                          </select>
+                        </div>
                       </div>
                       <div className="grid grid-cols-3 gap-4">
                         <div>
