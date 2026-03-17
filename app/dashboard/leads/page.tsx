@@ -173,14 +173,15 @@ export default function LeadsPage() {
     if (!user) return
     let query = supabase
       .from('leads')
-      .select('id, business_name, contact_name, email, phone, status, monthly_volume, notes, created_at, updated_at, follow_up_date, assigned_to, user_id, website, source, state')
+      .select('id, business_name, contact_name, email, phone, status, monthly_volume, notes, created_at, updated_at, follow_up_date, assigned_to, user_id, website')
       .order('created_at', { ascending: false })
 
     if (!isOwnerOrManager) {
       query = query.or(`user_id.eq.${user.id},assigned_to.eq.${user.id}`)
     }
 
-    const { data } = await query
+    const { data, error } = await query
+    if (error) console.error('Leads query error:', error)
     setLeads(data || [])
     setLoading(false)
   }
