@@ -163,6 +163,16 @@ export default function SettingsPage() {
   const [tplSaving, setTplSaving] = useState(false)
   const [tplMsg, setTplMsg] = useState('')
 
+  // Pricing template state
+  const [pricingTemplates, setPricingTemplates] = useState<any[]>([])
+  const [ptLoading, setPtLoading] = useState(true)
+  const [ptEditing, setPtEditing] = useState<any>(null)
+  const [ptModal, setPtModal] = useState(false)
+  const [ptSaving, setPtSaving] = useState(false)
+  const [ptMsg, setPtMsg] = useState('')
+  const [ptForm, setPtForm] = useState<any>({ name: '', is_default: false, pricing_type: '', visa_rate: '', visa_txn: '', mc_rate: '', mc_txn: '', discover_rate: '', discover_txn: '', amex_rate: '', amex_txn: '', debit_rate: '', debit_txn: '', fee_chargebacks: '', fee_retrievals: '', fee_arbitration: '', fee_voice_auths: '', fee_ebt_auths: '', fee_ach_reject: '', fee_statement: '', pci_type: '', pci_amount: '', custom_fee_name: '', custom_fee_amount: '', hardware_items: [], software_items: [], notes: '' })
+  const [ptDeleteTarget, setPtDeleteTarget] = useState<any>(null)
+
   // Rep code state
   const [repCodes, setRepCodes] = useState<any[]>([])
   const [repPartnersCache, setRepPartnersCache] = useState<any[]>([])
@@ -290,6 +300,13 @@ export default function SettingsPage() {
 
       setTemplates(cleanedTemplates)
 
+      // Fetch pricing templates
+      if (member?.org_id) {
+        const { data: ptData } = await supabase.from('pricing_templates').select('*').eq('org_id', member.org_id).order('created_at')
+        if (ptData) setPricingTemplates(ptData)
+      }
+      setPtLoading(false)
+
       setTemplatesLoading(false)
       setLoading(false)
     }
@@ -382,6 +399,75 @@ export default function SettingsPage() {
       .eq('user_id', userId)
       .order('created_at')
     setTemplates(data || [])
+  }
+
+  // ── Pricing Template Functions ─────────────────────────────────────────
+  const ptDefaultForm = { name: '', is_default: false, pricing_type: '', visa_rate: '', visa_txn: '', mc_rate: '', mc_txn: '', discover_rate: '', discover_txn: '', amex_rate: '', amex_txn: '', debit_rate: '', debit_txn: '', fee_chargebacks: '', fee_retrievals: '', fee_arbitration: '', fee_voice_auths: '', fee_ebt_auths: '', fee_ach_reject: '', fee_statement: '', pci_type: '', pci_amount: '', custom_fee_name: '', custom_fee_amount: '', hardware_items: [], software_items: [], notes: '' }
+
+  const openPtModal = (tpl?: any) => {
+    if (tpl) {
+      setPtEditing(tpl)
+      setPtForm({ ...ptDefaultForm, ...tpl })
+    } else {
+      setPtEditing(null)
+      setPtForm({ ...ptDefaultForm })
+    }
+    setPtModal(true)
+  }
+
+  const savePricingTemplate = async () => {
+    if (!ptForm.name.trim()) return
+    setPtSaving(true)
+    const orgId = member?.org_id
+    // If setting as default, unset previous default
+    if (ptForm.is_default && orgId) {
+      await supabase.from('pricing_templates').update({ is_default: false }).eq('org_id', orgId).eq('is_default', true)
+    }
+    const payload = { ...ptForm, org_id: orgId, updated_at: new Date().toISOString() }
+    delete payload.id; delete payload.created_at
+    // Convert empty strings to null for numeric fields
+    for (const k of Object.keys(payload)) {
+      if (payload[k] === '') payload[k] = null
+    }
+    payload.name = ptForm.name.trim()
+    payload.is_default = !!ptForm.is_default
+    payload.hardware_items = ptForm.hardware_items || []
+    payload.software_items = ptForm.software_items || []
+
+    if (ptEditing) {
+      await supabase.from('pricing_templates').update(payload).eq('id', ptEditing.id)
+    } else {
+      await supabase.from('pricing_templates').insert(payload)
+    }
+    // Refresh
+    const { data } = await supabase.from('pricing_templates').select('*').eq('org_id', orgId).order('created_at')
+    if (data) setPricingTemplates(data)
+    setPtModal(false)
+    setPtSaving(false)
+    setPtMsg('Template saved!')
+    setTimeout(() => setPtMsg(''), 2000)
+  }
+
+  const duplicatePricingTemplate = async (tpl: any) => {
+    const { id, created_at, updated_at, ...rest } = tpl
+    await supabase.from('pricing_templates').insert({ ...rest, name: tpl.name + ' (Copy)', is_default: false })
+    const { data } = await supabase.from('pricing_templates').select('*').eq('org_id', member?.org_id).order('created_at')
+    if (data) setPricingTemplates(data)
+  }
+
+  const deletePricingTemplate = async (tpl: any) => {
+    await supabase.from('pricing_templates').delete().eq('id', tpl.id)
+    setPricingTemplates(prev => prev.filter(t => t.id !== tpl.id))
+    setPtDeleteTarget(null)
+  }
+
+  const setDefaultPricingTemplate = async (tpl: any) => {
+    const orgId = member?.org_id
+    if (!orgId) return
+    await supabase.from('pricing_templates').update({ is_default: false }).eq('org_id', orgId).eq('is_default', true)
+    await supabase.from('pricing_templates').update({ is_default: true }).eq('id', tpl.id)
+    const { data } = await supabase.from('pricing_templates').select('*').eq('org_id', orgId).order('created_at')
+    if (data) setPricingTemplates(data)
   }
 
   const startNewTemplate = () => {
@@ -1161,6 +1247,117 @@ export default function SettingsPage() {
                       {t.body && <p className="text-sm text-slate-400 mt-1 line-clamp-2">{t.body}</p>}
                     </div>
                   ))}
+                </div>
+              )}
+              {/* ═══════════ PRICING TEMPLATES ═══════════ */}
+              <div className="mt-10 pt-8 border-t border-slate-200">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900">Pricing Templates</h3>
+                    <p className="text-slate-500 text-sm mt-0.5">Save and reuse pricing configurations across leads</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {ptMsg && <span className="text-emerald-600 text-sm">{ptMsg}</span>}
+                    <button onClick={() => openPtModal()} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">+ Create Template</button>
+                  </div>
+                </div>
+
+                {ptLoading ? (
+                  <p className="text-slate-500 text-sm">Loading...</p>
+                ) : pricingTemplates.length === 0 ? (
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
+                    <p className="text-slate-500">No pricing templates yet. Create one to auto-fill pricing on new leads.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {pricingTemplates.map(t => (
+                      <div key={t.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {t.is_default && <svg className="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>}
+                          <div>
+                            <p className="text-sm font-medium text-slate-900">{t.name}</p>
+                            <p className="text-xs text-slate-400">{t.pricing_type ? t.pricing_type.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) : 'No pricing type'}{t.is_default ? ' · Default' : ''}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => openPtModal(t)} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">Edit</button>
+                          <button onClick={() => duplicatePricingTemplate(t)} className="text-xs text-slate-500 hover:text-slate-700 font-medium">Duplicate</button>
+                          {!t.is_default && <button onClick={() => setDefaultPricingTemplate(t)} className="text-xs text-blue-600 hover:text-blue-700 font-medium">Set Default</button>}
+                          <button onClick={() => setPtDeleteTarget(t)} className="text-xs text-red-400 hover:text-red-500 font-medium">Delete</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Pricing Template Modal */}
+              {ptModal && (
+                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setPtModal(false)}>
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-2xl max-h-[85vh] overflow-auto p-6" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-lg font-semibold mb-4">{ptEditing ? 'Edit Pricing Template' : 'New Pricing Template'}</h3>
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div><label className="text-xs text-slate-500 block mb-1">Template Name *</label><input type="text" value={ptForm.name} onChange={e => setPtForm({ ...ptForm, name: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" placeholder="e.g. Standard IC+ Pricing" /></div>
+                        <div className="flex items-end"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!ptForm.is_default} onChange={e => setPtForm({ ...ptForm, is_default: e.target.checked })} className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /> Set as Default</label></div>
+                      </div>
+                      <div><label className="text-xs text-slate-500 block mb-1">Pricing Type</label><select value={ptForm.pricing_type || ''} onChange={e => setPtForm({ ...ptForm, pricing_type: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500"><option value="">Select...</option><option value="interchange_plus">Interchange Plus</option><option value="dual_pricing">Dual Pricing</option><option value="surcharging">Surcharging</option><option value="tiered">Tiered</option><option value="flat_rate">Flat Rate</option></select></div>
+                      {ptForm.pricing_type === 'interchange_plus' && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <div><label className="text-xs text-slate-500 block mb-1">Visa %</label><input type="number" step="0.01" value={ptForm.visa_rate || ''} onChange={e => setPtForm({ ...ptForm, visa_rate: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                          <div><label className="text-xs text-slate-500 block mb-1">Visa $/txn</label><input type="number" step="0.01" value={ptForm.visa_txn || ''} onChange={e => setPtForm({ ...ptForm, visa_txn: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                          <div><label className="text-xs text-slate-500 block mb-1">MC %</label><input type="number" step="0.01" value={ptForm.mc_rate || ''} onChange={e => setPtForm({ ...ptForm, mc_rate: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                          <div><label className="text-xs text-slate-500 block mb-1">MC $/txn</label><input type="number" step="0.01" value={ptForm.mc_txn || ''} onChange={e => setPtForm({ ...ptForm, mc_txn: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                          <div><label className="text-xs text-slate-500 block mb-1">AMEX %</label><input type="number" step="0.01" value={ptForm.amex_rate || ''} onChange={e => setPtForm({ ...ptForm, amex_rate: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                          <div><label className="text-xs text-slate-500 block mb-1">AMEX $/txn</label><input type="number" step="0.01" value={ptForm.amex_txn || ''} onChange={e => setPtForm({ ...ptForm, amex_txn: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                          <div><label className="text-xs text-slate-500 block mb-1">Discover %</label><input type="number" step="0.01" value={ptForm.discover_rate || ''} onChange={e => setPtForm({ ...ptForm, discover_rate: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                          <div><label className="text-xs text-slate-500 block mb-1">Discover $/txn</label><input type="number" step="0.01" value={ptForm.discover_txn || ''} onChange={e => setPtForm({ ...ptForm, discover_txn: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                        </div>
+                      )}
+                      <div>
+                        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Misc Fees ($)</h4>
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                          <div><label className="text-xs text-slate-500 block mb-1">Chargebacks</label><input type="number" step="0.01" value={ptForm.fee_chargebacks || ''} onChange={e => setPtForm({ ...ptForm, fee_chargebacks: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                          <div><label className="text-xs text-slate-500 block mb-1">Retrievals</label><input type="number" step="0.01" value={ptForm.fee_retrievals || ''} onChange={e => setPtForm({ ...ptForm, fee_retrievals: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                          <div><label className="text-xs text-slate-500 block mb-1">Arbitration</label><input type="number" step="0.01" value={ptForm.fee_arbitration || ''} onChange={e => setPtForm({ ...ptForm, fee_arbitration: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                          <div><label className="text-xs text-slate-500 block mb-1">Voice Auth</label><input type="number" step="0.01" value={ptForm.fee_voice_auths || ''} onChange={e => setPtForm({ ...ptForm, fee_voice_auths: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                          <div><label className="text-xs text-slate-500 block mb-1">EBT Auth</label><input type="number" step="0.01" value={ptForm.fee_ebt_auths || ''} onChange={e => setPtForm({ ...ptForm, fee_ebt_auths: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                          <div><label className="text-xs text-slate-500 block mb-1">ACH Reject</label><input type="number" step="0.01" value={ptForm.fee_ach_reject || ''} onChange={e => setPtForm({ ...ptForm, fee_ach_reject: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Monthly Fees</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div><label className="text-xs text-slate-500 block mb-1">Statement Fee</label><input type="number" step="0.01" value={ptForm.fee_statement || ''} onChange={e => setPtForm({ ...ptForm, fee_statement: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                          <div><label className="text-xs text-slate-500 block mb-1">PCI Type</label><select value={ptForm.pci_type || ''} onChange={e => setPtForm({ ...ptForm, pci_type: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500"><option value="">Select...</option><option value="monthly">Monthly</option><option value="annual">Annual</option></select></div>
+                          <div><label className="text-xs text-slate-500 block mb-1">PCI Amount</label><input type="number" step="0.01" value={ptForm.pci_amount || ''} onChange={e => setPtForm({ ...ptForm, pci_amount: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                          <div><label className="text-xs text-slate-500 block mb-1">Custom Fee Name</label><input type="text" value={ptForm.custom_fee_name || ''} onChange={e => setPtForm({ ...ptForm, custom_fee_name: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                          <div><label className="text-xs text-slate-500 block mb-1">Custom Fee Amount</label><input type="number" step="0.01" value={ptForm.custom_fee_amount || ''} onChange={e => setPtForm({ ...ptForm, custom_fee_amount: e.target.value })} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                        </div>
+                      </div>
+                      <div><label className="text-xs text-slate-500 block mb-1">Notes</label><textarea value={ptForm.notes || ''} onChange={e => setPtForm({ ...ptForm, notes: e.target.value })} rows={2} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                    </div>
+                    <div className="flex justify-end gap-3 mt-6">
+                      <button onClick={() => setPtModal(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">Cancel</button>
+                      <button onClick={savePricingTemplate} disabled={ptSaving || !ptForm.name.trim()} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">{ptSaving ? 'Saving...' : 'Save Template'}</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Delete Pricing Template Confirmation */}
+              {ptDeleteTarget && (
+                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setPtDeleteTarget(null)}>
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-xl p-6 max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-lg font-semibold text-red-600 mb-3">Delete &ldquo;{ptDeleteTarget.name}&rdquo;?</h3>
+                    <p className="text-sm text-slate-500">This pricing template will be permanently deleted.</p>
+                    <div className="flex justify-end gap-3 mt-6">
+                      <button onClick={() => setPtDeleteTarget(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">Cancel</button>
+                      <button onClick={() => deletePricingTemplate(ptDeleteTarget)} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">Delete</button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

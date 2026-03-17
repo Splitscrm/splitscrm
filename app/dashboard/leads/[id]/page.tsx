@@ -64,6 +64,12 @@ export default function LeadDetailPage() {
   const [agentRepCodes, setAgentRepCodes] = useState<any[]>([]);
   const [repCodePartners, setRepCodePartners] = useState<Record<string, string>>({});
   const ensureDealGuard = useRef(false);
+  const [pricingTemplates, setPricingTemplates] = useState<any[]>([]);
+  const [showApplyConfirm, setShowApplyConfirm] = useState<any>(null);
+  const [showSaveAsTpl, setShowSaveAsTpl] = useState(false);
+  const [saveTplName, setSaveTplName] = useState('');
+  const [saveTplDefault, setSaveTplDefault] = useState(false);
+  const [saveTplSaving, setSaveTplSaving] = useState(false);
 
   // Signature flow state
   const [sigBanks, setSigBanks] = useState<any[]>([]);
@@ -161,6 +167,11 @@ export default function LeadDetailPage() {
         // Fetch partners for partner pricing dropdown
         const { data: partnerData } = await supabase.from("partners").select("id, name, pricing_data").eq("status", "active").order("name");
         if (partnerData) setPartners(partnerData);
+        // Fetch pricing templates for template selector
+        if (member?.org_id) {
+          const { data: ptData } = await supabase.from("pricing_templates").select("*").eq("org_id", member.org_id).order("name");
+          if (ptData) setPricingTemplates(ptData);
+        }
       }
       setLoading(false);
     };
@@ -369,6 +380,20 @@ export default function LeadDetailPage() {
     setSaving(false);
   };
 
+  // Template field mapping (template column → deal column)
+  const TEMPLATE_TO_DEAL: Record<string, string> = {
+    pricing_type: 'pricing_type',
+    visa_rate: 'ic_plus_visa_pct', visa_txn: 'ic_plus_visa_txn',
+    mc_rate: 'ic_plus_mc_pct', mc_txn: 'ic_plus_mc_txn',
+    discover_rate: 'ic_plus_disc_pct', discover_txn: 'ic_plus_disc_txn',
+    amex_rate: 'ic_plus_amex_pct', amex_txn: 'ic_plus_amex_txn',
+    fee_chargebacks: 'fee_chargeback', fee_retrievals: 'fee_retrieval',
+    fee_arbitration: 'fee_arbitration', fee_voice_auths: 'fee_voice_auth',
+    fee_ebt_auths: 'fee_ebt_auth', fee_ach_reject: 'fee_ach_reject',
+    fee_statement: 'monthly_fee_statement',
+    custom_fee_name: 'monthly_fee_custom_name', custom_fee_amount: 'monthly_fee_custom_amount',
+  };
+
   // Auto-create a deal when user starts editing pricing fields (before qualified_prospect stage)
   // Returns the deal object (existing or newly created)
   const ensureDeal = async (): Promise<any> => {
@@ -382,10 +407,99 @@ export default function LeadDetailPage() {
       ensureDealGuard.current = false;
       return existing[0];
     }
-    const { data: newDeal } = await supabase.from("deals").insert({ lead_id: lead.id, user_id: userId, business_legal_name: lead.business_name, dba_name: lead.business_name, is_primary_location: true }).select().single();
+    const insert: any = { lead_id: lead.id, user_id: userId, business_legal_name: lead.business_name, dba_name: lead.business_name, is_primary_location: true };
+    // Auto-apply default pricing template
+    const defaultTpl = pricingTemplates.find(t => t.is_default);
+    if (defaultTpl) {
+      for (const [tplKey, dealKey] of Object.entries(TEMPLATE_TO_DEAL)) {
+        if (defaultTpl[tplKey] != null) insert[dealKey] = defaultTpl[tplKey];
+      }
+      if (defaultTpl.pci_type === 'monthly') { insert.pci_compliance_monthly = defaultTpl.pci_amount; }
+      else if (defaultTpl.pci_type === 'annual') { insert.pci_compliance_annual = defaultTpl.pci_amount; }
+      if (defaultTpl.hardware_items?.length > 0) insert.hardware_items = defaultTpl.hardware_items;
+      if (defaultTpl.software_items?.length > 0) insert.software_items = defaultTpl.software_items;
+    }
+    const { data: newDeal } = await supabase.from("deals").insert(insert).select().single();
     if (newDeal) { setDeals([newDeal]); setActiveDealIdx(0); }
     ensureDealGuard.current = false;
     return newDeal || null;
+  };
+
+  // ── Pricing template helpers ────────────────────────────────────────────
+  const applyTemplate = (tpl: any) => {
+    if (!deal) return;
+    const updates: any = { ...deal };
+    for (const [tplKey, dealKey] of Object.entries(TEMPLATE_TO_DEAL)) {
+      if (tpl[tplKey] != null) updates[dealKey] = tpl[tplKey];
+    }
+    // PCI
+    if (tpl.pci_type === 'monthly') { updates.pci_compliance_monthly = tpl.pci_amount; updates.pci_compliance_annual = null; }
+    else if (tpl.pci_type === 'annual') { updates.pci_compliance_annual = tpl.pci_amount; updates.pci_compliance_monthly = null; }
+    // Hardware & software
+    if (tpl.hardware_items?.length > 0) updates.hardware_items = tpl.hardware_items;
+    if (tpl.software_items?.length > 0) updates.software_items = tpl.software_items;
+    setDeal(updates);
+    setShowApplyConfirm(null);
+    setDealMsg("Template applied!");
+    setTimeout(() => setDealMsg(""), 2000);
+  };
+
+  const clearPricing = () => {
+    if (!deal) return;
+    const cleared: any = { ...deal };
+    for (const dealKey of Object.values(TEMPLATE_TO_DEAL)) cleared[dealKey] = null;
+    cleared.pci_compliance_monthly = null;
+    cleared.pci_compliance_annual = null;
+    cleared.hardware_items = [];
+    cleared.software_items = [];
+    cleared.dual_pricing_rate = null;
+    cleared.dual_pricing_txn_fee = null;
+    cleared.flat_rate_pct = null;
+    cleared.flat_rate_txn_cost = null;
+    setDeal(cleared);
+    setDealMsg("Pricing cleared");
+    setTimeout(() => setDealMsg(""), 2000);
+  };
+
+  const saveAsTemplate = async () => {
+    if (!deal || !saveTplName.trim()) return;
+    setSaveTplSaving(true);
+    const orgId = member?.org_id;
+    if (saveTplDefault && orgId) {
+      await supabase.from("pricing_templates").update({ is_default: false }).eq("org_id", orgId).eq("is_default", true);
+    }
+    const payload: any = {
+      org_id: orgId,
+      name: saveTplName.trim(),
+      is_default: saveTplDefault,
+      pricing_type: deal.pricing_type || null,
+      visa_rate: deal.ic_plus_visa_pct || null, visa_txn: deal.ic_plus_visa_txn || null,
+      mc_rate: deal.ic_plus_mc_pct || null, mc_txn: deal.ic_plus_mc_txn || null,
+      discover_rate: deal.ic_plus_disc_pct || null, discover_txn: deal.ic_plus_disc_txn || null,
+      amex_rate: deal.ic_plus_amex_pct || null, amex_txn: deal.ic_plus_amex_txn || null,
+      fee_chargebacks: deal.fee_chargeback || null, fee_retrievals: deal.fee_retrieval || null,
+      fee_arbitration: deal.fee_arbitration || null, fee_voice_auths: deal.fee_voice_auth || null,
+      fee_ebt_auths: deal.fee_ebt_auth || null, fee_ach_reject: deal.fee_ach_reject || null,
+      fee_statement: deal.monthly_fee_statement || null,
+      pci_type: deal.pci_compliance_monthly ? 'monthly' : deal.pci_compliance_annual ? 'annual' : null,
+      pci_amount: deal.pci_compliance_monthly || deal.pci_compliance_annual || null,
+      custom_fee_name: deal.monthly_fee_custom_name || null,
+      custom_fee_amount: deal.monthly_fee_custom_amount || null,
+      hardware_items: deal.hardware_items || [],
+      software_items: deal.software_items || [],
+    };
+    await supabase.from("pricing_templates").insert(payload);
+    setShowSaveAsTpl(false);
+    setSaveTplName('');
+    setSaveTplDefault(false);
+    setSaveTplSaving(false);
+    setDealMsg("Template saved!");
+    setTimeout(() => setDealMsg(""), 2000);
+    // Refresh templates
+    if (orgId) {
+      const { data } = await supabase.from("pricing_templates").select("*").eq("org_id", orgId).order("name");
+      if (data) setPricingTemplates(data);
+    }
   };
 
   // ── Signature flow helpers ───────────────────────────────────────────────
@@ -996,6 +1110,25 @@ export default function LeadDetailPage() {
         </div>
         <div className="overflow-hidden transition-all duration-300 ease-in-out" style={{ maxHeight: openGroups.group3 ? "5000px" : "0px", opacity: openGroups.group3 ? 1 : 0 }}>
           <div className="space-y-6 mb-6" onFocus={ensureDeal}>
+
+            {/* Template Selector */}
+            {pricingTemplates.length > 0 && (
+              <div className="flex flex-wrap items-center gap-3">
+                <select onChange={(e) => { const tpl = pricingTemplates.find(t => t.id === e.target.value); if (tpl) setShowApplyConfirm(tpl); e.target.value = ''; }} value="" className="text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
+                  <option value="">Apply Template...</option>
+                  {pricingTemplates.map(t => (
+                    <option key={t.id} value={t.id}>{t.is_default ? '\u2605 ' : ''}{t.name}</option>
+                  ))}
+                </select>
+                {deal && <button onClick={clearPricing} className="text-xs text-slate-400 hover:text-slate-600 font-medium">Clear Pricing</button>}
+                {deal && <button onClick={() => setShowSaveAsTpl(true)} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">Save as Template</button>}
+              </div>
+            )}
+            {!pricingTemplates.length && deal && (
+              <div className="flex justify-end">
+                <button onClick={() => setShowSaveAsTpl(true)} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">Save as Template</button>
+              </div>
+            )}
 
             {/* Partner Selection */}
             <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
@@ -1903,6 +2036,35 @@ export default function LeadDetailPage() {
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
               <button onClick={convertToMerchant} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition disabled:opacity-50">{saving ? "Creating..." : "Confirm & Create Merchant"}</button>
               <button onClick={() => setShowModal("")} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showApplyConfirm && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowApplyConfirm(null)}>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl p-6 max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-3">Apply Template &ldquo;{showApplyConfirm.name}&rdquo;?</h3>
+            <p className="text-sm text-slate-500">This will overwrite current pricing, fees, hardware, and software fields.</p>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setShowApplyConfirm(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">Cancel</button>
+              <button onClick={() => applyTemplate(showApplyConfirm)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">Apply Template</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSaveAsTpl && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowSaveAsTpl(false)}>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl p-6 max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4">Save as Pricing Template</h3>
+            <div className="space-y-3">
+              <div><label className="text-xs text-slate-500 block mb-1">Template Name *</label><input type="text" value={saveTplName} onChange={e => setSaveTplName(e.target.value)} placeholder="e.g. Standard IC+ Pricing" className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={saveTplDefault} onChange={e => setSaveTplDefault(e.target.checked)} className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /> Set as default for new leads</label>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => { setShowSaveAsTpl(false); setSaveTplName(''); setSaveTplDefault(false); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">Cancel</button>
+              <button onClick={saveAsTemplate} disabled={saveTplSaving || !saveTplName.trim()} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">{saveTplSaving ? 'Saving...' : 'Save Template'}</button>
             </div>
           </div>
         </div>
