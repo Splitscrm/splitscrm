@@ -22,7 +22,13 @@ export default function LeadDetailPage() {
   const canChangeStage = isOwnerOrManager || role === "master_agent" || role === "agent";
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [lead, setLead] = useState<any>(null);
-  const [deal, setDeal] = useState<any>(null);
+  const [deals, setDeals] = useState<any[]>([]);
+  const [activeDealIdx, setActiveDealIdx] = useState(0);
+  const deal = deals[activeDealIdx] || null;
+  const setDeal = (d: any) => setDeals(prev => { const next = [...prev]; next[activeDealIdx] = d; return next; });
+  const [showAddLocation, setShowAddLocation] = useState(false);
+  const [copyFromDealId, setCopyFromDealId] = useState("");
+  const [newLocationName, setNewLocationName] = useState("");
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [leadTasks, setLeadTasks] = useState<any[]>([]);
   const [fadingTaskIds, setFadingTaskIds] = useState<Set<string>>(new Set());
@@ -95,39 +101,36 @@ export default function LeadDetailPage() {
           return;
         }
         setLead(leadData);
-        const { data: dealData } = await supabase.from("deals").select("id, lead_id, user_id, created_at, updated_at, business_legal_name, dba_name, legal_street, legal_city, legal_state, legal_zip, entity_type, ein_itin, cp_pct, cnp_pct, currently_takes_cards, monthly_volume, average_ticket, high_ticket, amex_volume, amex_esa, pin_debit, ebt, funding_type, bank_routing, bank_account, bank_account_type, processing_terminated, filed_bankruptcy, pricing_type, ic_plus_visa_pct, ic_plus_mc_pct, ic_plus_amex_pct, ic_plus_disc_pct, ic_plus_visa_txn, ic_plus_mc_txn, ic_plus_amex_txn, ic_plus_disc_txn, interchange_remittance, dual_pricing_rate, dual_pricing_txn_fee, flat_rate_pct, flat_rate_txn_cost, fee_chargeback, fee_retrieval, fee_arbitration, fee_voice_auth, fee_ebt_auth, fee_ach_reject, monthly_fee_statement, pci_compliance_monthly, pci_compliance_annual, monthly_fee_custom_name, monthly_fee_custom_amount, hardware_items, software_items, rep_codes, forecasted_residuals, last_month_residual_actuals, average_residual, partner_id, partner_schedule_index, partner_pricing_overrides, free_hardware, terminal_type, hardware_model, preferred_model, hardware_quantity, terminal_cost, gateway_name, gateway_api, fee_gateway_monthly, fee_gateway_txn").eq("lead_id", leadData.id).single();
-        if (dealData) {
-          // Migrate legacy single-item hardware/software fields to JSONB arrays
-          if (!dealData.hardware_items && (dealData.terminal_type || dealData.hardware_model || dealData.preferred_model)) {
-            dealData.hardware_items = [{
-              type: dealData.terminal_type || "",
-              model: dealData.preferred_model || dealData.hardware_model || "",
-              quantity: dealData.hardware_quantity || 1,
-              cost: dealData.terminal_cost || "",
-              free: dealData.free_hardware || "",
-            }];
+        const { data: allDeals } = await supabase.from("deals").select("*").eq("lead_id", leadData.id).order("created_at");
+        if (allDeals && allDeals.length > 0) {
+          // Migrate legacy hardware/software fields on each deal
+          for (const d of allDeals) {
+            if (!d.hardware_items && (d.terminal_type || d.hardware_model || d.preferred_model)) {
+              d.hardware_items = [{ type: d.terminal_type || "", model: d.preferred_model || d.hardware_model || "", quantity: d.hardware_quantity || 1, cost: d.terminal_cost || "", free: d.free_hardware || "" }];
+            }
+            if (!d.software_items && (d.gateway_name || d.gateway_api)) {
+              d.software_items = [{ name: d.gateway_name || "", type: "gateway", monthly_cost: d.fee_gateway_monthly || "", per_txn: d.fee_gateway_txn || "" }];
+            }
           }
-          if (!dealData.software_items && (dealData.gateway_name || dealData.gateway_api)) {
-            dealData.software_items = [{
-              name: dealData.gateway_name || "",
-              type: "gateway",
-              monthly_cost: dealData.fee_gateway_monthly || "",
-              per_txn: dealData.fee_gateway_txn || "",
-            }];
+          setDeals(allDeals);
+          setActiveDealIdx(0);
+          // Owners are shared at lead level — query by lead_id first, fall back to deal_id
+          let ownerData: any[] | null = null;
+          const { data: leadOwners } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at").eq("lead_id", leadData.id).order("created_at");
+          if (leadOwners && leadOwners.length > 0) {
+            ownerData = leadOwners;
+          } else {
+            const { data: dealOwners } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at").eq("deal_id", allDeals[0].id).order("created_at");
+            ownerData = dealOwners;
           }
-          setDeal(dealData);
-          const { data: ownerData } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at").eq("deal_id", dealData.id).order("created_at");
           if (ownerData) setOwners(ownerData);
-          const { data: docData } = await supabase.from("deal_documents").select("id, file_url, file_name, doc_type, created_at").eq("deal_id", dealData.id).order("created_at");
+          // Documents from the active deal
+          const { data: docData } = await supabase.from("deal_documents").select("id, file_url, file_name, doc_type, created_at").eq("deal_id", allDeals[0].id).order("created_at");
           if (docData) {
             setDocuments(docData);
-            // Generate signed URLs for all documents
             const urls: Record<string, string> = {};
             await Promise.all(docData.map(async (doc: any) => {
-              if (doc.file_url) {
-                const signed = await getSignedUrl(doc.file_url);
-                if (signed) urls[doc.id] = signed;
-              }
+              if (doc.file_url) { const signed = await getSignedUrl(doc.file_url); if (signed) urls[doc.id] = signed; }
             }));
             setSignedUrls(urls);
           }
@@ -182,19 +185,17 @@ export default function LeadDetailPage() {
   const createDealAndUpdateStatus = async () => {
     setSaving(true);
     const oldStatus = lead.status;
-    const existing = await supabase.from("deals").select("id, lead_id, user_id, created_at, updated_at, business_legal_name, dba_name, legal_street, legal_city, legal_state, legal_zip, entity_type, ein_itin, cp_pct, cnp_pct, currently_takes_cards, monthly_volume, average_ticket, high_ticket, amex_volume, amex_esa, pin_debit, ebt, funding_type, bank_routing, bank_account, bank_account_type, processing_terminated, filed_bankruptcy, pricing_type, ic_plus_visa_pct, ic_plus_mc_pct, ic_plus_amex_pct, ic_plus_disc_pct, ic_plus_visa_txn, ic_plus_mc_txn, ic_plus_amex_txn, ic_plus_disc_txn, interchange_remittance, dual_pricing_rate, dual_pricing_txn_fee, flat_rate_pct, flat_rate_txn_cost, fee_chargeback, fee_retrieval, fee_arbitration, fee_voice_auth, fee_ebt_auth, fee_ach_reject, monthly_fee_statement, pci_compliance_monthly, pci_compliance_annual, monthly_fee_custom_name, monthly_fee_custom_amount, hardware_items, software_items, rep_codes, forecasted_residuals, last_month_residual_actuals, average_residual, partner_id, partner_schedule_index, partner_pricing_overrides, free_hardware, terminal_type, hardware_model, preferred_model, hardware_quantity, terminal_cost, gateway_name, gateway_api, fee_gateway_monthly, fee_gateway_txn").eq("lead_id", params.id).single();
-    if (existing.data) {
-      // Deal already exists — restore local state if needed
-      if (!deal) {
-        setDeal(existing.data);
-        const { data: ownerData } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at").eq("deal_id", existing.data.id).order("created_at");
-        if (ownerData) setOwners(ownerData);
-        const { data: docData } = await supabase.from("deal_documents").select("id, file_url, file_name, doc_type, created_at").eq("deal_id", existing.data.id).order("created_at");
-        if (docData) setDocuments(docData);
+    const { data: existingDeals } = await supabase.from("deals").select("*").eq("lead_id", params.id).order("created_at");
+    if (existingDeals && existingDeals.length > 0) {
+      if (deals.length === 0) {
+        setDeals(existingDeals);
+        setActiveDealIdx(0);
+        const { data: ownerData } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at").eq("lead_id", params.id as string).order("created_at");
+        if (ownerData && ownerData.length > 0) setOwners(ownerData);
       }
     } else {
-      const { data: newDeal } = await supabase.from("deals").insert({ lead_id: params.id as string, user_id: userId, business_legal_name: lead.business_name, dba_name: lead.business_name }).select().single();
-      if (newDeal) { setDeal(newDeal); }
+      const { data: newDeal } = await supabase.from("deals").insert({ lead_id: params.id as string, user_id: userId, business_legal_name: lead.business_name, dba_name: lead.business_name, is_primary_location: true }).select().single();
+      if (newDeal) { setDeals([newDeal]); setActiveDealIdx(0); }
       await logActivity("deal_created", null, null, null, "Deal created");
     }
     await supabase.from("leads").update({ status: "qualified_prospect", updated_at: new Date().toISOString() }).eq("id", params.id);
@@ -231,12 +232,14 @@ export default function LeadDetailPage() {
   };
 
   const convertToMerchant = async () => {
+    if (!deal) return;
     setSaving(true);
-    const { data: dealData } = await supabase.from("deals").select("id, lead_id, user_id, created_at, updated_at, business_legal_name, dba_name, legal_street, legal_city, legal_state, legal_zip, entity_type, ein_itin, cp_pct, cnp_pct, currently_takes_cards, monthly_volume, average_ticket, high_ticket, amex_volume, amex_esa, pin_debit, ebt, funding_type, bank_routing, bank_account, bank_account_type, processing_terminated, filed_bankruptcy, pricing_type, ic_plus_visa_pct, ic_plus_mc_pct, ic_plus_amex_pct, ic_plus_disc_pct, ic_plus_visa_txn, ic_plus_mc_txn, ic_plus_amex_txn, ic_plus_disc_txn, interchange_remittance, dual_pricing_rate, dual_pricing_txn_fee, flat_rate_pct, flat_rate_txn_cost, fee_chargeback, fee_retrieval, fee_arbitration, fee_voice_auth, fee_ebt_auth, fee_ach_reject, monthly_fee_statement, pci_compliance_monthly, pci_compliance_annual, monthly_fee_custom_name, monthly_fee_custom_amount, hardware_items, software_items, rep_codes, forecasted_residuals, last_month_residual_actuals, average_residual, partner_id, partner_schedule_index, partner_pricing_overrides, free_hardware, terminal_type, hardware_model, preferred_model, hardware_quantity, terminal_cost, gateway_name, gateway_api, fee_gateway_monthly, fee_gateway_txn").eq("lead_id", lead.id).single();
+    // Re-fetch this specific deal fresh
+    const { data: dealData } = await supabase.from("deals").select("*").eq("id", deal.id).single();
     const merchantInsert: Record<string, any> = {
       user_id: userId,
       lead_id: lead.id,
-      business_name: lead.business_name,
+      business_name: dealData?.dba_name || dealData?.location_name || lead.business_name,
       contact_name: lead.contact_name,
       email: lead.email,
       phone: lead.phone,
@@ -246,38 +249,17 @@ export default function LeadDetailPage() {
     if (dealData) {
       const dealToMerchant: Record<string, string> = {
         dba_name: "dba_name",
-        legal_street: "business_street",
-        legal_city: "business_city",
-        legal_state: "business_state",
-        legal_zip: "business_zip",
+        legal_street: "business_street", legal_city: "business_city", legal_state: "business_state", legal_zip: "business_zip",
+        location_name: "location_name", location_street: "location_street", location_city: "location_city", location_state: "location_state", location_zip: "location_zip",
         pricing_type: "pricing_type",
-        ic_plus_visa_pct: "ic_plus_visa_pct",
-        ic_plus_mc_pct: "ic_plus_mc_pct",
-        ic_plus_amex_pct: "ic_plus_amex_pct",
-        ic_plus_disc_pct: "ic_plus_disc_pct",
-        ic_plus_visa_txn: "ic_plus_visa_txn",
-        ic_plus_mc_txn: "ic_plus_mc_txn",
-        ic_plus_amex_txn: "ic_plus_amex_txn",
-        ic_plus_disc_txn: "ic_plus_disc_txn",
-        dual_pricing_rate: "dual_pricing_rate",
-        dual_pricing_txn_fee: "dual_pricing_txn_fee",
-        flat_rate_pct: "flat_rate_pct",
-        flat_rate_txn_cost: "flat_rate_txn_cost",
-        fee_chargeback: "fee_chargeback",
-        fee_retrieval: "fee_retrieval",
-        fee_arbitration: "fee_arbitration",
-        fee_voice_auth: "fee_voice_auth",
-        fee_ebt_auth: "fee_ebt_auth",
-        fee_ach_reject: "fee_ach_reject",
-        monthly_fee_statement: "monthly_fee_statement",
-        monthly_fee_custom_name: "monthly_fee_custom_name",
-        monthly_fee_custom_amount: "monthly_fee_custom_amount",
-        pci_compliance_monthly: "pci_compliance_monthly",
-        pci_compliance_annual: "pci_compliance_annual",
-        interchange_remittance: "interchange_remittance",
-        terminal_type: "terminal_type",
-        terminal_cost: "equipment_cost",
-        monthly_volume: "monthly_volume",
+        ic_plus_visa_pct: "ic_plus_visa_pct", ic_plus_mc_pct: "ic_plus_mc_pct", ic_plus_amex_pct: "ic_plus_amex_pct", ic_plus_disc_pct: "ic_plus_disc_pct",
+        ic_plus_visa_txn: "ic_plus_visa_txn", ic_plus_mc_txn: "ic_plus_mc_txn", ic_plus_amex_txn: "ic_plus_amex_txn", ic_plus_disc_txn: "ic_plus_disc_txn",
+        dual_pricing_rate: "dual_pricing_rate", dual_pricing_txn_fee: "dual_pricing_txn_fee",
+        flat_rate_pct: "flat_rate_pct", flat_rate_txn_cost: "flat_rate_txn_cost",
+        fee_chargeback: "fee_chargeback", fee_retrieval: "fee_retrieval", fee_arbitration: "fee_arbitration", fee_voice_auth: "fee_voice_auth", fee_ebt_auth: "fee_ebt_auth", fee_ach_reject: "fee_ach_reject",
+        monthly_fee_statement: "monthly_fee_statement", monthly_fee_custom_name: "monthly_fee_custom_name", monthly_fee_custom_amount: "monthly_fee_custom_amount",
+        pci_compliance_monthly: "pci_compliance_monthly", pci_compliance_annual: "pci_compliance_annual", interchange_remittance: "interchange_remittance",
+        terminal_type: "terminal_type", terminal_cost: "equipment_cost", monthly_volume: "monthly_volume",
       };
       for (const [dealField, merchantField] of Object.entries(dealToMerchant)) {
         const val = (dealData as Record<string, any>)[dealField];
@@ -291,27 +273,62 @@ export default function LeadDetailPage() {
       if (dealData.partner_id) merchantInsert.partner_id = dealData.partner_id;
     }
     // Auto-populate summary pricing fields
-    if (merchantInsert.ic_plus_visa_pct) {
-      merchantInsert.pricing_rate = merchantInsert.ic_plus_visa_pct;
-    }
-    if (merchantInsert.ic_plus_visa_txn) {
-      merchantInsert.per_transaction_fee = merchantInsert.ic_plus_visa_txn;
-    }
+    if (merchantInsert.ic_plus_visa_pct) merchantInsert.pricing_rate = merchantInsert.ic_plus_visa_pct;
+    if (merchantInsert.ic_plus_visa_txn) merchantInsert.per_transaction_fee = merchantInsert.ic_plus_visa_txn;
     const statementFee = parseFloat(merchantInsert.monthly_fee_statement) || 0;
     const customFee = parseFloat(merchantInsert.monthly_fee_custom_amount) || 0;
     const pciFee = parseFloat(merchantInsert.pci_compliance_monthly) || (merchantInsert.pci_compliance_annual ? parseFloat(merchantInsert.pci_compliance_annual) / 12 : 0) || 0;
     merchantInsert.monthly_fees = statementFee + customFee + pciFee;
     const { data: merchant, error: merchantError } = await supabase.from("merchants").insert(merchantInsert).select().single();
     if (merchantError) { setSaving(false); return; }
-    await supabase.from("leads").update({ status: "converted", updated_at: new Date().toISOString() }).eq("id", params.id);
-    await logActivity("stage_change", "status", statusLabel(lead.status), "Converted", "Lead converted to merchant");
-    setLead({ ...lead, status: "converted", updated_at: new Date().toISOString() });
+    // Check if ALL deals for this lead are now converted (have merchants)
+    const { data: allMerchants } = await supabase.from("merchants").select("id").eq("lead_id", lead.id);
+    const { data: allDeals } = await supabase.from("deals").select("id").eq("lead_id", lead.id);
+    const allConverted = allDeals && allMerchants && allMerchants.length >= allDeals.length;
+    if (allConverted) {
+      await supabase.from("leads").update({ status: "converted", updated_at: new Date().toISOString() }).eq("id", params.id);
+      await logActivity("stage_change", "status", statusLabel(lead.status), "Converted", "All locations converted to merchants");
+      setLead({ ...lead, status: "converted", updated_at: new Date().toISOString() });
+    } else {
+      await logActivity("deal_updated", null, null, null, `Location "${deal.location_name || deal.dba_name || 'Primary'}" converted to merchant`);
+    }
     setShowModal("");
     setSaving(false);
     router.push("/dashboard/merchants/" + merchant.id);
   };
 
   const updateDealField = (field: string, value: any) => { setDeal({ ...deal, [field]: value }); };
+
+  const addLocation = async () => {
+    if (!lead) return;
+    setSaving(true);
+    const insert: Record<string, any> = {
+      lead_id: lead.id,
+      user_id: userId,
+      business_legal_name: lead.business_name,
+      dba_name: newLocationName || lead.business_name,
+      location_name: newLocationName,
+      is_primary_location: false,
+    };
+    // Copy pricing from an existing deal if selected
+    if (copyFromDealId) {
+      const source = deals.find(d => d.id === copyFromDealId);
+      if (source) {
+        const copyFields = ["pricing_type", "ic_plus_visa_pct", "ic_plus_mc_pct", "ic_plus_amex_pct", "ic_plus_disc_pct", "ic_plus_visa_txn", "ic_plus_mc_txn", "ic_plus_amex_txn", "ic_plus_disc_txn", "interchange_remittance", "dual_pricing_rate", "dual_pricing_txn_fee", "flat_rate_pct", "flat_rate_txn_cost", "fee_chargeback", "fee_retrieval", "fee_arbitration", "fee_voice_auth", "fee_ebt_auth", "fee_ach_reject", "monthly_fee_statement", "pci_compliance_monthly", "pci_compliance_annual", "monthly_fee_custom_name", "monthly_fee_custom_amount", "partner_id", "partner_schedule_index", "partner_pricing_overrides"];
+        for (const f of copyFields) { if (source[f] != null && source[f] !== "") insert[f] = source[f]; }
+      }
+    }
+    const { data: newDeal } = await supabase.from("deals").insert(insert).select().single();
+    if (newDeal) {
+      setDeals(prev => [...prev, newDeal]);
+      setActiveDealIdx(deals.length); // switch to new deal
+      await logActivity("deal_created", null, null, null, `New location added: ${newLocationName || "Location " + (deals.length + 1)}`);
+    }
+    setShowAddLocation(false);
+    setNewLocationName("");
+    setCopyFromDealId("");
+    setSaving(false);
+  };
 
   // Partner pricing: fields that overlap between deal base pricing and partner schedule keys
   const MAPPED_FIELDS = new Set([
@@ -419,8 +436,8 @@ export default function LeadDetailPage() {
   };
 
   const addOwner = async () => {
-    if (!deal) return;
-    const { data } = await supabase.from("deal_owners").insert({ deal_id: deal.id, full_name: "" }).select().single();
+    if (!lead) return;
+    const { data } = await supabase.from("deal_owners").insert({ deal_id: deal?.id || null, lead_id: lead.id, full_name: "" }).select().single();
     if (data) {
       setOwners([...owners, data]);
       await logActivity("owner_added", null, null, null, "New owner added to deal");
@@ -835,18 +852,61 @@ export default function LeadDetailPage() {
           />
         )}
 
-        {deal && ["qualified_prospect", "submitted", "signed", "converted"].includes(lead.status) && (
+        {deals.length > 0 && ["qualified_prospect", "submitted", "signed", "converted"].includes(lead.status) && (
           <>
+            {/* Location / Deal header */}
             <div className="flex justify-between items-center mb-4">
               <div>
-                <h3 className="text-xl font-bold">Deal Details</h3>
-                {deal.updated_at && <p className="text-slate-400 text-xs mt-1">Deal last modified: {new Date(deal.updated_at).toLocaleString()}</p>}
+                <h3 className="text-xl font-bold">{deals.length > 1 ? "Locations / Deals" : "Deal Details"}</h3>
+                {deal?.updated_at && <p className="text-slate-400 text-xs mt-1">Deal last modified: {new Date(deal.updated_at).toLocaleString()}</p>}
               </div>
               <div className="flex items-center gap-3">
                 {dealMsg && <span className="text-emerald-600 text-sm">{dealMsg}</span>}
                 {canEdit && <button onClick={async () => { await saveDeal(); await saveOwners(); }} disabled={dealSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition disabled:opacity-50">{dealSaving ? "Saving..." : "Save Deal"}</button>}
               </div>
             </div>
+
+            {/* Multi-location tabs */}
+            {deals.length > 1 && (
+              <div className="flex flex-wrap gap-2 mb-4">
+                {deals.map((d, i) => (
+                  <button
+                    key={d.id}
+                    onClick={() => setActiveDealIdx(i)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition ${i === activeDealIdx ? "bg-emerald-600 text-white" : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+                  >
+                    {d.is_primary_location && <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>}
+                    {d.location_name || d.dba_name || `Location ${i + 1}`}
+                    {d.monthly_volume ? <span className="text-xs opacity-75 ml-1">${Number(d.monthly_volume).toLocaleString()}/mo</span> : null}
+                  </button>
+                ))}
+                {canEdit && (
+                  <button onClick={() => setShowAddLocation(true)} className="px-3 py-1.5 rounded-lg text-sm font-medium text-emerald-600 border border-dashed border-emerald-300 hover:bg-emerald-50 transition">+ Add Location</button>
+                )}
+              </div>
+            )}
+
+            {/* Location-specific fields for multi-deal */}
+            {deals.length > 1 && deal && (
+              <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm mb-4">
+                <h4 className="font-semibold text-emerald-600 mb-3">Location Details</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div><label className="text-xs text-slate-500 block mb-1">Location Name</label><input type="text" value={deal.location_name || ""} onChange={(e) => updateDealField("location_name", e.target.value)} className="text-sm px-3 py-2 rounded-lg border border-slate-200 w-full bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                  <div><label className="text-xs text-slate-500 block mb-1">Location Street</label><input type="text" value={deal.location_street || ""} onChange={(e) => updateDealField("location_street", e.target.value)} className="text-sm px-3 py-2 rounded-lg border border-slate-200 w-full bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                  <div><label className="text-xs text-slate-500 block mb-1">City</label><input type="text" value={deal.location_city || ""} onChange={(e) => updateDealField("location_city", e.target.value)} className="text-sm px-3 py-2 rounded-lg border border-slate-200 w-full bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                  <div><label className="text-xs text-slate-500 block mb-1">State</label><input type="text" value={deal.location_state || ""} onChange={(e) => updateDealField("location_state", e.target.value)} className="text-sm px-3 py-2 rounded-lg border border-slate-200 w-full bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                  <div><label className="text-xs text-slate-500 block mb-1">Zip</label><input type="text" value={deal.location_zip || ""} onChange={(e) => updateDealField("location_zip", e.target.value)} className="text-sm px-3 py-2 rounded-lg border border-slate-200 w-full bg-white text-slate-700 focus:outline-none focus:border-emerald-500" /></div>
+                  <div className="flex items-end"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!deal.is_primary_location} onChange={(e) => updateDealField("is_primary_location", e.target.checked)} className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /> Primary Location</label></div>
+                </div>
+              </div>
+            )}
+
+            {/* Single-deal: small add location link */}
+            {deals.length === 1 && canEdit && (
+              <div className="mb-4">
+                <button onClick={() => setShowAddLocation(true)} className="text-emerald-600 hover:text-emerald-700 text-xs font-medium">+ Add Location</button>
+              </div>
+            )}
 
             {/* Partner Selection */}
             <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm mb-4">
@@ -1459,11 +1519,41 @@ export default function LeadDetailPage() {
       {showModal === "signed" && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-8 border border-slate-200 shadow-sm w-full max-w-md mx-4">
-            <h3 className="text-lg font-bold mb-4">Application Signed</h3>
-            <p className="text-slate-500 text-sm mb-4">This will mark the application as signed and automatically create a new merchant account with this lead's information.</p>
+            <h3 className="text-lg font-bold mb-4">Convert {deal?.location_name || deal?.dba_name || "Location"} to Merchant</h3>
+            <p className="text-slate-500 text-sm mb-4">This will create a new merchant account from {deals.length > 1 ? "this location's" : "this lead's"} deal information.</p>
+            {deals.length > 1 && <p className="text-xs text-slate-400 mb-4">Each location converts independently. {deals.length > 1 ? `${deals.length} total locations.` : ""}</p>}
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
               <button onClick={convertToMerchant} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition disabled:opacity-50">{saving ? "Creating..." : "Confirm & Create Merchant"}</button>
               <button onClick={() => setShowModal("")} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddLocation && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setShowAddLocation(false)}>
+          <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-xl w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold mb-4">Add New Location</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">Location Name <span className="text-red-400">*</span></label>
+                <input type="text" value={newLocationName} onChange={(e) => setNewLocationName(e.target.value)} placeholder="e.g. Downtown Branch" className="text-sm px-3 py-2 rounded-lg border border-slate-200 w-full bg-white text-slate-700 focus:outline-none focus:border-emerald-500" />
+              </div>
+              {deals.length > 0 && (
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Copy pricing from</label>
+                  <select value={copyFromDealId} onChange={(e) => setCopyFromDealId(e.target.value)} className="text-sm px-3 py-2 rounded-lg border border-slate-200 w-full bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
+                    <option value="">Start fresh</option>
+                    {deals.map((d, i) => (
+                      <option key={d.id} value={d.id}>{d.location_name || d.dba_name || `Location ${i + 1}`}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => { setShowAddLocation(false); setNewLocationName(""); setCopyFromDealId(""); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">Cancel</button>
+              <button onClick={addLocation} disabled={saving || !newLocationName.trim()} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">{saving ? "Creating..." : "Add Location"}</button>
             </div>
           </div>
         </div>

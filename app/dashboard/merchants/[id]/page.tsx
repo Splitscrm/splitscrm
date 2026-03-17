@@ -19,6 +19,7 @@ export default function MerchantDetailPage() {
   const canSeePricing = isOwnerOrManager
   const [permissionDenied, setPermissionDenied] = useState(false)
   const [merchant, setMerchant] = useState<any>(null)
+  const [relatedMerchants, setRelatedMerchants] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showTaskModal, setShowTaskModal] = useState(false)
@@ -70,7 +71,9 @@ export default function MerchantDetailPage() {
   const syncFromDeal = async () => {
     if (!merchant?.lead_id) return
     setSyncing(true)
-    const { data: dealData } = await supabase.from('deals').select('dba_name, legal_street, legal_city, legal_state, legal_zip, pricing_type, ic_plus_visa_pct, ic_plus_mc_pct, ic_plus_amex_pct, ic_plus_disc_pct, ic_plus_visa_txn, ic_plus_mc_txn, ic_plus_amex_txn, ic_plus_disc_txn, dual_pricing_rate, dual_pricing_txn_fee, flat_rate_pct, flat_rate_txn_cost, fee_chargeback, fee_retrieval, fee_arbitration, fee_voice_auth, fee_ebt_auth, fee_gateway_monthly, fee_gateway_txn, fee_ach_reject, monthly_fee_statement, monthly_fee_custom_name, monthly_fee_custom_amount, pci_compliance_monthly, pci_compliance_annual, interchange_remittance, terminal_type, terminal_cost, monthly_volume, free_hardware').eq('lead_id', merchant.lead_id).single()
+    // Find the matching deal — try by dba_name match, then primary, then first
+    const { data: allDeals } = await supabase.from('deals').select('*').eq('lead_id', merchant.lead_id).order('created_at')
+    let dealData = allDeals?.find(d => d.dba_name === merchant.dba_name || d.location_name === merchant.location_name) || allDeals?.find(d => d.is_primary_location) || allDeals?.[0] || null
     if (!dealData) {
       setMsg('No linked deal found')
       setTimeout(() => setMsg(''), 2000)
@@ -254,6 +257,11 @@ export default function MerchantDetailPage() {
         setMerchant(data)
         const { data: taskData } = await supabase.from('tasks').select('id, title, due_date, priority, status').eq('merchant_id', params.id).eq('status', 'pending').order('due_date', { ascending: true })
         if (taskData) setMerchantTasks(taskData)
+        // Fetch related merchants (other locations from same lead)
+        if (data.lead_id) {
+          const { data: related } = await supabase.from('merchants').select('id, business_name, dba_name, mid, status, monthly_volume, location_name').eq('lead_id', data.lead_id).neq('id', data.id)
+          if (related && related.length > 0) setRelatedMerchants(related)
+        }
         // Fetch residuals and comms for right column
         fetchResidualHistory(data.id)
         fetchRecentComms(data.id, data.lead_id)
@@ -1099,6 +1107,31 @@ export default function MerchantDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Related Locations */}
+          {relatedMerchants.length > 0 && (
+            <div className="lg:col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-2">
+              <h3 className="text-base font-semibold text-slate-900 mb-3">Related Locations</h3>
+              <div className="divide-y divide-slate-100">
+                {relatedMerchants.map(rm => (
+                  <div key={rm.id} className="flex items-center justify-between py-2.5">
+                    <div className="flex items-center gap-3">
+                      <Link href={`/dashboard/merchants/${rm.id}`} className="text-sm text-emerald-600 hover:text-emerald-700 font-medium">
+                        {rm.location_name || rm.dba_name || rm.business_name}
+                      </Link>
+                      {rm.mid && <span className="text-xs text-slate-400">MID: {rm.mid}</span>}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${rm.status === 'active' ? 'bg-emerald-50 text-emerald-700' : rm.status === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                        {(rm.status || 'active').charAt(0).toUpperCase() + (rm.status || 'active').slice(1)}
+                      </span>
+                      {rm.monthly_volume && <span className="text-xs text-slate-500">${Number(rm.monthly_volume).toLocaleString()}/mo</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* RIGHT COLUMN (40%) */}
           <div className="lg:col-span-2 space-y-6">
