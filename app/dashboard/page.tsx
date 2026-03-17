@@ -263,8 +263,8 @@ export default function Dashboard() {
           .limit(5)),
         addRoleFilter(supabase.from('merchants').select('processor')),
         isOwnerOrManager
-          ? supabase.from('activity_log').select('id, action_type, description, created_at, lead_id, merchant_id, leads(business_name, contact_name), merchants(business_name)').order('created_at', { ascending: false }).limit(15)
-          : supabase.from('activity_log').select('id, action_type, description, created_at, lead_id, merchant_id, leads(business_name, contact_name), merchants(business_name)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(15),
+          ? supabase.from('activity_log').select('id, action_type, description, created_at, lead_id, merchant_id').order('created_at', { ascending: false }).limit(15)
+          : supabase.from('activity_log').select('id, action_type, description, created_at, lead_id, merchant_id').eq('user_id', user.id).order('created_at', { ascending: false }).limit(15),
         supabase.from('tasks').select('id, title, description, due_date, due_time, priority, status, lead_id, merchant_id')
           .eq('user_id', user.id)
           .eq('status', 'pending')
@@ -395,16 +395,33 @@ export default function Dashboard() {
         followUps: (followUps as any) || [],
         tasks: (tasks as any) || [],
         merchantsByProcessor,
-        recentActivity: ((recentActivity as any) || []).map((a: any) => ({
-          id: a.id,
-          action_type: a.action_type,
-          description: a.description,
-          created_at: a.created_at,
-          lead_id: a.lead_id || null,
-          merchant_id: a.merchant_id || null,
-          lead_name: a.leads?.business_name || a.leads?.contact_name || null,
-          merchant_name: a.merchants?.business_name || null,
-        })),
+        recentActivity: await (async () => {
+          const rows = (recentActivity as any) || []
+          if (rows.length === 0) return []
+          // Batch-lookup lead and merchant names
+          const leadIds = [...new Set(rows.map((a: any) => a.lead_id).filter(Boolean))] as string[]
+          const merchantIds = [...new Set(rows.map((a: any) => a.merchant_id).filter(Boolean))] as string[]
+          const leadNameMap: Record<string, string> = {}
+          const merchantNameMap: Record<string, string> = {}
+          if (leadIds.length > 0) {
+            const { data: leadRows } = await supabase.from('leads').select('id, business_name, contact_name').in('id', leadIds)
+            for (const l of leadRows || []) leadNameMap[l.id] = l.business_name || l.contact_name || ''
+          }
+          if (merchantIds.length > 0) {
+            const { data: merchRows } = await supabase.from('merchants').select('id, business_name').in('id', merchantIds)
+            for (const m of merchRows || []) merchantNameMap[m.id] = m.business_name || ''
+          }
+          return rows.map((a: any) => ({
+            id: a.id,
+            action_type: a.action_type,
+            description: a.description,
+            created_at: a.created_at,
+            lead_id: a.lead_id || null,
+            merchant_id: a.merchant_id || null,
+            lead_name: (a.lead_id && leadNameMap[a.lead_id]) || null,
+            merchant_name: (a.merchant_id && merchantNameMap[a.merchant_id]) || null,
+          }))
+        })(),
         latestImport,
         residualNetRevenue,
         residualTotalVolume,
