@@ -126,7 +126,7 @@ interface DashboardData {
   followUps: { id: string; business_name: string; contact_name: string; follow_up_date: string }[]
   tasks: { id: string; title: string; description: string; due_date: string; due_time: string; priority: string; status: string; lead_id: string | null; merchant_id: string | null }[]
   merchantsByProcessor: { processor: string; count: number }[]
-  recentActivity: { id: string; action_type: string; description: string; created_at: string }[]
+  recentActivity: { id: string; action_type: string; description: string; created_at: string; lead_id: string | null; merchant_id: string | null; lead_name: string | null; merchant_name: string | null }[]
   latestImport: { processor_name: string | null; report_month: string | null } | null
   residualNetRevenue: number
   residualTotalVolume: number
@@ -148,6 +148,8 @@ export default function Dashboard() {
   const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig>({ widgets: [...DEFAULT_WIDGETS], order: [...DEFAULT_ORDER] })
   const [savedConfig, setSavedConfig] = useState<DashboardConfig>({ widgets: [...DEFAULT_WIDGETS], order: [...DEFAULT_ORDER] })
   const [configToast, setConfigToast] = useState(false)
+  const [activityExpanded, setActivityExpanded] = useState(true)
+  const [activityShowAll, setActivityShowAll] = useState(false)
   const [data, setData] = useState<DashboardData>({
     activeMerchants: 0,
     pendingMerchants: 0,
@@ -261,8 +263,8 @@ export default function Dashboard() {
           .limit(5)),
         addRoleFilter(supabase.from('merchants').select('processor')),
         isOwnerOrManager
-          ? supabase.from('activity_log').select('id, action_type, description, created_at').order('created_at', { ascending: false }).limit(5)
-          : supabase.from('activity_log').select('id, action_type, description, created_at').eq('user_id', user.id).order('created_at', { ascending: false }).limit(5),
+          ? supabase.from('activity_log').select('id, action_type, description, created_at, lead_id, merchant_id, leads(business_name, contact_name), merchants(business_name)').order('created_at', { ascending: false }).limit(15)
+          : supabase.from('activity_log').select('id, action_type, description, created_at, lead_id, merchant_id, leads(business_name, contact_name), merchants(business_name)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(15),
         supabase.from('tasks').select('id, title, description, due_date, due_time, priority, status, lead_id, merchant_id')
           .eq('user_id', user.id)
           .eq('status', 'pending')
@@ -393,7 +395,16 @@ export default function Dashboard() {
         followUps: (followUps as any) || [],
         tasks: (tasks as any) || [],
         merchantsByProcessor,
-        recentActivity: (recentActivity as any) || [],
+        recentActivity: ((recentActivity as any) || []).map((a: any) => ({
+          id: a.id,
+          action_type: a.action_type,
+          description: a.description,
+          created_at: a.created_at,
+          lead_id: a.lead_id || null,
+          merchant_id: a.merchant_id || null,
+          lead_name: a.leads?.business_name || a.leads?.contact_name || null,
+          merchant_name: a.merchants?.business_name || null,
+        })),
         latestImport,
         residualNetRevenue,
         residualTotalVolume,
@@ -871,26 +882,80 @@ export default function Dashboard() {
           </div>
         )
 
-      case 'recent_activity':
+      case 'recent_activity': {
+        const visibleActivities = activityShowAll ? data.recentActivity : data.recentActivity.slice(0, 5)
         return (
           <div key="recent_activity" className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-            <h3 className="text-base font-semibold mb-3">Recent Activity</h3>
-            {data.recentActivity.length === 0 ? (
-              <p className="text-slate-400 text-xs">No recent activity</p>
-            ) : (
-              <div>
-                {data.recentActivity.map((activity) => (
-                  <div key={activity.id} className="flex items-center gap-2 py-2">
-                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${ACTIVITY_DOT_COLORS[activity.action_type] || 'bg-gray-500'}`}></div>
-                    <p className="text-xs text-slate-600 flex-1 truncate">{activity.description}</p>
-                    <span className="text-xs text-slate-400 shrink-0 ml-auto">{relativeTime(activity.created_at)}</span>
+            <button
+              onClick={() => setActivityExpanded(!activityExpanded)}
+              className="flex items-center justify-between w-full text-left"
+            >
+              <h3 className="text-base font-semibold">Recent Activity</h3>
+              <svg className={`w-4 h-4 text-slate-400 transition-transform ${activityExpanded ? '' : '-rotate-90'}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+              </svg>
+            </button>
+            {activityExpanded && (
+              <>
+                {data.recentActivity.length === 0 ? (
+                  <p className="text-slate-400 text-xs mt-3">No recent activity</p>
+                ) : (
+                  <div className="mt-3">
+                    {visibleActivities.map((activity) => {
+                      // Determine link destination and display name
+                      let linkHref: string | null = null
+                      let entityName: string | null = null
+                      if (activity.merchant_id && activity.merchant_name) {
+                        linkHref = `/dashboard/merchants/${activity.merchant_id}`
+                        entityName = activity.merchant_name
+                      } else if (activity.lead_id && activity.lead_name) {
+                        linkHref = `/dashboard/leads/${activity.lead_id}`
+                        entityName = activity.lead_name
+                      } else if (activity.merchant_id) {
+                        linkHref = `/dashboard/merchants/${activity.merchant_id}`
+                      } else if (activity.lead_id) {
+                        linkHref = `/dashboard/leads/${activity.lead_id}`
+                      }
+
+                      return (
+                        <div key={activity.id} className="flex items-center gap-2 py-2">
+                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${ACTIVITY_DOT_COLORS[activity.action_type] || 'bg-gray-500'}`}></div>
+                          <p className="text-xs text-slate-600 flex-1 truncate">
+                            {entityName && linkHref ? (
+                              <>{activity.description.replace(entityName, '')} <Link href={linkHref} className="text-emerald-600 hover:text-emerald-700 font-medium">{entityName}</Link></>
+                            ) : linkHref ? (
+                              <Link href={linkHref} className="text-emerald-600 hover:text-emerald-700">{activity.description}</Link>
+                            ) : (
+                              activity.description
+                            )}
+                          </p>
+                          <span className="text-xs text-slate-400 shrink-0 ml-auto">{relativeTime(activity.created_at)}</span>
+                        </div>
+                      )
+                    })}
                   </div>
-                ))}
-              </div>
+                )}
+                {data.recentActivity.length > 5 && !activityShowAll && (
+                  <button
+                    onClick={() => setActivityShowAll(true)}
+                    className="text-emerald-600 text-xs hover:text-emerald-700 mt-2 inline-block font-medium"
+                  >
+                    Show More &rarr;
+                  </button>
+                )}
+                {activityShowAll && data.recentActivity.length > 5 && (
+                  <button
+                    onClick={() => setActivityShowAll(false)}
+                    className="text-emerald-600 text-xs hover:text-emerald-700 mt-2 inline-block font-medium"
+                  >
+                    Show Less
+                  </button>
+                )}
+              </>
             )}
-            <Link href="#" className="text-emerald-600 text-xs hover:text-emerald-700 mt-2 inline-block">View All &rarr;</Link>
           </div>
         )
+      }
 
       default:
         return null
