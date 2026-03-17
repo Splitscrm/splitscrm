@@ -9,6 +9,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, BarChart, Bar,
 } from 'recharts'
+import { calcWaterfall, calcMonthAgentCosts } from '@/lib/payout-utils'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -92,15 +93,20 @@ interface PartnerProfit {
   partnerName: string
   activeMerchants: number
   totalRevenue: number
-  avgPerMerchant: number
-  splitPct: number
-  splitCost: number
-  isoNet: number
+  agentPayoutCost: number
+  overrideCosts: number
+  bonusesPaid: number
+  clawbacksRecovered: number
+  trueIsoNet: number
+  profitMargin: number
   totalVolume: number
   effectiveBps: number
-  merchantCounts: number[] // last 3 months
+  merchantCounts: number[]
+  unassignedCount: number
+  unassignedRevenue: number
   expanded: boolean
-  merchants: { name: string; mid: string; revenue: number; volume: number }[]
+  merchants: { name: string; mid: string; revenue: number; volume: number; agentCost: number; isoNet: number }[]
+  agentBreakdown: { name: string; role: string; codeType: string; splitPct: number; payout: number }[]
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -316,6 +322,51 @@ export default function ReportsPage() {
     return m
   }, [partners])
 
+  // ── Derived: shared context for waterfall calculations ─────────────────
+
+  const repCodesByUserPartner = useMemo(() => {
+    const m: Record<string, any[]> = {}
+    for (const rc of repCodes) {
+      const key = `${rc.user_id}:${rc.partner_id}`
+      if (!m[key]) m[key] = []
+      m[key].push(rc)
+    }
+    return m
+  }, [repCodes])
+
+  const merchantRiskMap = useMemo(() => {
+    const m: Record<string, boolean> = {}
+    for (const mer of merchants) {
+      if (mer.risk_category && mer.risk_category !== 'standard') m[mer.id] = true
+    }
+    return m
+  }, [merchants])
+
+  const memberOverrideMap = useMemo(() => {
+    // For each agent, find their parent's override_pct
+    const memberById: Record<string, OrgMember> = {}
+    const memberByUser: Record<string, OrgMember> = {}
+    for (const m of orgMembers) {
+      if (m.id) memberById[m.id] = m
+      if (m.user_id) memberByUser[m.user_id] = m
+    }
+    const result: Record<string, number> = {}
+    for (const m of orgMembers) {
+      if (!m.user_id || !m.parent_member_id) continue
+      const parent = memberById[m.parent_member_id]
+      if (parent?.override_pct) result[m.user_id] = parent.override_pct
+    }
+    return result
+  }, [orgMembers])
+
+  const waterfallCtx = useMemo(() => ({
+    importPartnerMap,
+    repCodesByUserPartner,
+    merchantRiskMap,
+    orgHouseSplit,
+    memberOverrideMap,
+  }), [importPartnerMap, repCodesByUserPartner, merchantRiskMap, orgHouseSplit, memberOverrideMap])
+
   // ── Derived: sorted months ─────────────────────────────────────────────
 
   const sortedMonths = useMemo(() => {
@@ -330,37 +381,62 @@ export default function ReportsPage() {
   // ── Tab 1: Trending computations ───────────────────────────────────────
 
   const monthlyTotals = useMemo(() => {
-    const map: Record<string, { revenue: number; merchants: Set<string> }> = {}
+    // Group records by month
+    const byMonth: Record<string, typeof records> = {}
     for (const r of records) {
       const m = r.report_month
       if (!m) continue
-      if (!map[m]) map[m] = { revenue: 0, merchants: new Set() }
-      map[m].revenue += r.net_revenue || 0
-      if (r.merchant_id || r.merchant_id_external) {
-        map[m].merchants.add(r.merchant_id || r.merchant_id_external || '')
+      if (!byMonth[m]) byMonth[m] = []
+      byMonth[m].push(r)
+    }
+
+    const map: Record<string, { revenue: number; agentCost: number; overrides: number; isoNet: number; merchants: Set<string>; unassignedCount: number; unassignedRevenue: number }> = {}
+    for (const [m, monthRecs] of Object.entries(byMonth)) {
+      let revenue = 0
+      const merchants = new Set<string>()
+      for (const r of monthRecs) {
+        revenue += r.net_revenue || 0
+        if (r.merchant_id || r.merchant_id_external) merchants.add(r.merchant_id || r.merchant_id_external || '')
+      }
+      const costs = calcMonthAgentCosts(monthRecs, waterfallCtx)
+      map[m] = {
+        revenue,
+        agentCost: costs.totalAgentCost,
+        overrides: costs.totalOverrides,
+        isoNet: revenue - costs.totalAgentCost - costs.totalOverrides,
+        merchants,
+        unassignedCount: costs.unassignedCount,
+        unassignedRevenue: costs.unassignedRevenue,
       }
     }
     return map
-  }, [records])
+  }, [records, waterfallCtx])
 
-  const currentRevenue = monthlyTotals[latestMonth]?.revenue || 0
-  const prevRevenue = monthlyTotals[prevMonth]?.revenue || 0
-  const momChange = currentRevenue - prevRevenue
-  const momPct = prevRevenue !== 0 ? (momChange / prevRevenue) * 100 : 0
+  const currentGross = monthlyTotals[latestMonth]?.revenue || 0
+  const currentAgentCost = monthlyTotals[latestMonth]?.agentCost || 0
+  const currentOverrides = monthlyTotals[latestMonth]?.overrides || 0
+  const currentIsoNet = monthlyTotals[latestMonth]?.isoNet || 0
+  const prevIsoNet = monthlyTotals[prevMonth]?.isoNet || 0
+  const momChange = currentIsoNet - prevIsoNet
+  const momPct = prevIsoNet !== 0 ? (momChange / prevIsoNet) * 100 : 0
+  const isoMargin = currentGross > 0 ? (currentIsoNet / currentGross) * 100 : 0
   const activeMerchantCount = monthlyTotals[latestMonth]?.merchants.size || 0
+  const unassignedCount = monthlyTotals[latestMonth]?.unassignedCount || 0
 
   const threeMonthAvg = useMemo(() => {
     const last3 = sortedMonths.slice(-3)
     if (last3.length === 0) return 0
-    const sum = last3.reduce((s, m) => s + (monthlyTotals[m]?.revenue || 0), 0)
+    const sum = last3.reduce((s, m) => s + (monthlyTotals[m]?.isoNet || 0), 0)
     return sum / last3.length
   }, [sortedMonths, monthlyTotals])
 
-  // Chart data: revenue by month
+  // Chart data: three lines
   const chartData = useMemo(() => {
     return sortedMonths.map(m => ({
       month: monthLabel(m),
-      revenue: Math.round((monthlyTotals[m]?.revenue || 0) * 100) / 100,
+      'Gross from Partners': Math.round((monthlyTotals[m]?.revenue || 0) * 100) / 100,
+      'Agent Payouts': Math.round((monthlyTotals[m]?.agentCost || 0) * 100) / 100,
+      'ISO Net Profit': Math.round((monthlyTotals[m]?.isoNet || 0) * 100) / 100,
     }))
   }, [sortedMonths, monthlyTotals])
 
@@ -489,33 +565,16 @@ export default function ReportsPage() {
   // ── Tab 2: Partner Profitability ───────────────────────────────────────
 
   const partnerProfitData = useMemo((): PartnerProfit[] => {
-    // For each partner: count merchants, sum revenue, compute split
     const allPids = [...partnerIds]
     if (partnerMonthlyData['_none']) allPids.push('_none')
 
-    // merchant → partner mapping via import
-    const merchantPartner: Record<string, string> = {}
+    // Get latest month records grouped by partner
+    const partnerRecs: Record<string, typeof records> = {}
     for (const r of records) {
       if (r.report_month !== latestMonth) continue
-      const mid = r.merchant_id || r.merchant_id_external || ''
-      if (!mid) continue
       const pid = importPartnerMap[r.import_id] || '_none'
-      merchantPartner[mid] = pid
-    }
-
-    // revenue + volume per partner per merchant for latest month
-    const partnerMerchants: Record<string, Record<string, { name: string; mid: string; revenue: number; volume: number }>> = {}
-    for (const r of records) {
-      if (r.report_month !== latestMonth) continue
-      const mid = r.merchant_id || r.merchant_id_external || ''
-      if (!mid) continue
-      const pid = merchantPartner[mid] || '_none'
-      if (!partnerMerchants[pid]) partnerMerchants[pid] = {}
-      if (!partnerMerchants[pid][mid]) {
-        partnerMerchants[pid][mid] = { name: r.dba_name || mid, mid: r.merchant_id_external || mid, revenue: 0, volume: 0 }
-      }
-      partnerMerchants[pid][mid].revenue += r.net_revenue || 0
-      partnerMerchants[pid][mid].volume += r.net_volume || r.sales_amount || 0
+      if (!partnerRecs[pid]) partnerRecs[pid] = []
+      partnerRecs[pid].push(r)
     }
 
     // Merchant count per partner per month (for trend)
@@ -529,37 +588,93 @@ export default function ReportsPage() {
       merchantCountByMonth[pid][r.report_month].add(mid)
     }
 
+    // Clawback map
+    const clawbackMap: Record<string, number> = {}
+    for (const cb of clawbacks) { clawbackMap[cb.user_id] = (clawbackMap[cb.user_id] || 0) + (cb.amount || 0) }
+
     return allPids.map(pid => {
       const pName = pid === '_none' ? 'Other / Unassigned' : (partnerMap[pid]?.name || 'Unknown')
-      const splitPct = pid !== '_none' ? (partnerMap[pid]?.residual_split || 0) : 0
-      const mList = Object.values(partnerMerchants[pid] || {})
-      const totalRevenue = mList.reduce((s, m) => s + m.revenue, 0)
-      const totalVolume = mList.reduce((s, m) => s + m.volume, 0)
-      const splitCost = totalRevenue * (splitPct / 100)
-      const isoNet = totalRevenue - splitCost
-      const effectiveBps = totalVolume > 0 ? (isoNet / totalVolume) * 10000 : 0
+      const recs = partnerRecs[pid] || []
+
+      // Per-merchant breakdown with agent costs
+      const merchantAgg: Record<string, { name: string; mid: string; revenue: number; volume: number; agentCost: number }> = {}
+      let totalAgentCost = 0, totalOverrides = 0, unassignedCount = 0, unassignedRevenue = 0
+
+      // Per-agent breakdown
+      const agentAgg: Record<string, { name: string; role: string; codeType: string; splitPct: number; payout: number }> = {}
+
+      for (const r of recs) {
+        const mid = r.merchant_id || r.merchant_id_external || ''
+        const netRev = r.net_revenue || 0
+        if (!merchantAgg[mid]) merchantAgg[mid] = { name: r.dba_name || mid, mid: r.merchant_id_external || mid, revenue: 0, volume: 0, agentCost: 0 }
+        merchantAgg[mid].revenue += netRev
+        merchantAgg[mid].volume += r.net_volume || r.sales_amount || 0
+
+        if (!r.agent_user_id) {
+          unassignedCount++
+          unassignedRevenue += netRev
+          continue
+        }
+
+        const agentCodes = repCodesByUserPartner[`${r.agent_user_id}:${pid}`] || []
+        const rc = agentCodes[0] || null
+        const isRestricted = r.merchant_id ? (merchantRiskMap[r.merchant_id] || false) : false
+        const parentOvr = memberOverrideMap[r.agent_user_id] || 0
+
+        const wf = calcWaterfall({ netRevenue: netRev, isRestricted, rc, orgHouseSplit, parentOverridePct: parentOvr })
+        merchantAgg[mid].agentCost += wf.agentPayout
+        totalAgentCost += wf.agentPayout
+        totalOverrides += wf.overrideAmt
+
+        // Track per-agent
+        const uid = r.agent_user_id
+        const codeType = rc?.code_type || 'standard'
+        const aKey = `${uid}:${codeType}`
+        if (!agentAgg[aKey]) {
+          const p = profiles[uid]
+          const m = orgMembers.find(om => om.user_id === uid)
+          agentAgg[aKey] = { name: p?.full_name || p?.email || uid.slice(0, 8), role: m?.role || 'agent', codeType, splitPct: wf.splitPct, payout: 0 }
+        }
+        agentAgg[aKey].payout += wf.agentPayout
+      }
+
+      const totalRevenue = Object.values(merchantAgg).reduce((s, m) => s + m.revenue, 0)
+      const totalVolume = Object.values(merchantAgg).reduce((s, m) => s + m.volume, 0)
+      // Bonus: sum bonus_per_deal for agents at this partner × their merchant count
+      let bonusesPaid = 0
+      for (const rc of repCodes) {
+        if (rc.partner_id !== pid || !rc.bonus_per_deal || rc.code_type !== 'standard') continue
+        const agentMerchants = recs.filter(r => r.agent_user_id === rc.user_id)
+        const uniqueMids = new Set(agentMerchants.map(r => r.merchant_id || r.merchant_id_external).filter(Boolean))
+        bonusesPaid += rc.bonus_per_deal * uniqueMids.size
+      }
+      // Clawbacks for agents at this partner
+      let clawbacksRecovered = 0
+      const agentUids = new Set(recs.map(r => r.agent_user_id).filter(Boolean))
+      for (const uid of agentUids) { clawbacksRecovered += clawbackMap[uid!] || 0 }
+
+      const trueIsoNet = totalRevenue - totalAgentCost - totalOverrides - bonusesPaid + clawbacksRecovered
+      const profitMargin = totalRevenue > 0 ? (trueIsoNet / totalRevenue) * 100 : 0
+      const effectiveBps = totalVolume > 0 ? (trueIsoNet / totalVolume) * 10000 : 0
       const last3 = sortedMonths.slice(-3)
       const merchantCounts = last3.map(m => merchantCountByMonth[pid]?.[m]?.size || 0)
+      const mList = Object.values(merchantAgg).map(m => ({ ...m, isoNet: m.revenue - m.agentCost })).sort((a, b) => b.revenue - a.revenue)
 
       return {
-        partnerId: pid,
-        partnerName: pName,
-        activeMerchants: mList.length,
-        totalRevenue,
-        avgPerMerchant: mList.length > 0 ? totalRevenue / mList.length : 0,
-        splitPct,
-        splitCost,
-        isoNet,
-        totalVolume,
-        effectiveBps,
-        merchantCounts,
+        partnerId: pid, partnerName: pName,
+        activeMerchants: mList.length, totalRevenue,
+        agentPayoutCost: totalAgentCost, overrideCosts: totalOverrides,
+        bonusesPaid, clawbacksRecovered, trueIsoNet, profitMargin,
+        totalVolume, effectiveBps, merchantCounts,
+        unassignedCount, unassignedRevenue,
         expanded: false,
-        merchants: mList.sort((a, b) => b.revenue - a.revenue),
+        merchants: mList,
+        agentBreakdown: Object.values(agentAgg).sort((a, b) => b.payout - a.payout),
       }
     })
-  }, [partnerIds, partnerMonthlyData, records, latestMonth, importPartnerMap, partnerMap, sortedMonths])
+  }, [partnerIds, partnerMonthlyData, records, latestMonth, importPartnerMap, partnerMap, sortedMonths, repCodesByUserPartner, merchantRiskMap, orgHouseSplit, memberOverrideMap, repCodes, clawbacks, profiles, orgMembers])
 
-  const [profitSortCol, setProfitSortCol] = useState<string>('isoNet')
+  const [profitSortCol, setProfitSortCol] = useState<string>('trueIsoNet')
   const [profitSortAsc, setProfitSortAsc] = useState(false)
   const [expandedPartners, setExpandedPartners] = useState<Set<string>>(new Set())
 
@@ -1119,33 +1234,37 @@ export default function ReportsPage() {
             {/* Summary cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                <p className="text-sm text-slate-500 mb-1">Total Residual This Month</p>
-                <p className="text-2xl font-semibold">{fmt(currentRevenue)}</p>
+                <p className="text-sm text-slate-500 mb-1">Gross from Partners</p>
+                <p className="text-2xl font-semibold">{fmt(currentGross)}</p>
                 {latestMonth && <p className="text-xs text-slate-400 mt-1">{monthLabel(latestMonth)}</p>}
               </div>
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                <p className="text-sm text-slate-500 mb-1">Month-over-Month</p>
-                <p className={`text-2xl font-semibold ${momChange >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                  {fmt(momChange)}
-                </p>
+                <p className="text-sm text-slate-500 mb-1">Agent Payouts</p>
+                <p className="text-2xl font-semibold text-red-500">{fmt(currentAgentCost + currentOverrides)}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                <p className="text-sm text-slate-500 mb-1">ISO Net Profit</p>
+                <p className={`text-2xl font-semibold ${currentIsoNet >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmt(currentIsoNet)}</p>
                 <p className={`text-sm mt-1 ${momChange >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
-                  {fmtPct(momPct)}
+                  {fmtPct(momPct)} MoM
                 </p>
               </div>
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                <p className="text-sm text-slate-500 mb-1">3-Month Average</p>
-                <p className="text-2xl font-semibold">{fmt(threeMonthAvg)}</p>
-              </div>
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                <p className="text-sm text-slate-500 mb-1">Active Merchants</p>
-                <p className="text-2xl font-semibold">{activeMerchantCount}</p>
-                <p className="text-xs text-slate-400 mt-1">with residuals this month</p>
+                <p className="text-sm text-slate-500 mb-1">ISO Net Margin</p>
+                <p className="text-2xl font-semibold">{isoMargin.toFixed(1)}%</p>
+                <p className="text-xs text-slate-400 mt-1">{activeMerchantCount} merchants</p>
               </div>
             </div>
 
+            {unassignedCount > 0 && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm p-3 rounded-lg">
+                {unassignedCount} records unassigned — assign rep codes to see full profit breakdown.
+              </div>
+            )}
+
             {/* Revenue trend chart */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-              <h2 className="text-lg font-semibold mb-4">Residual Revenue Trend</h2>
+              <h2 className="text-lg font-semibold mb-4">Revenue & Profit Trend</h2>
               {chartData.length > 1 ? (
                 <ResponsiveContainer width="100%" height={320}>
                   <LineChart data={chartData}>
@@ -1153,7 +1272,10 @@ export default function ReportsPage() {
                     <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="#94a3b8" />
                     <YAxis tick={{ fontSize: 12 }} stroke="#94a3b8" tickFormatter={(v: any) => `$${(Number(v) / 1000).toFixed(0)}k`} />
                     <Tooltip formatter={(value: any) => fmt(Number(value))} />
-                    <Line type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} name="Net Revenue" />
+                    <Legend />
+                    <Line type="monotone" dataKey="Gross from Partners" stroke="#94a3b8" strokeWidth={2} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="Agent Payouts" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="ISO Net Profit" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} />
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
@@ -1282,20 +1404,19 @@ export default function ReportsPage() {
                       {[
                         { key: 'partnerName', label: 'Partner' },
                         { key: 'activeMerchants', label: 'Merchants' },
-                        { key: 'totalRevenue', label: 'Revenue' },
-                        { key: 'avgPerMerchant', label: 'Avg / Merchant' },
-                        { key: 'splitPct', label: 'Split %' },
-                        { key: 'splitCost', label: 'Split Cost' },
-                        { key: 'isoNet', label: 'ISO Net' },
-                        { key: 'totalVolume', label: 'Volume' },
+                        { key: 'totalRevenue', label: 'Gross Rev' },
+                        { key: 'agentPayoutCost', label: 'Agent Cost' },
+                        { key: 'overrideCosts', label: 'Overrides' },
+                        { key: 'bonusesPaid', label: 'Bonuses' },
+                        { key: 'trueIsoNet', label: 'True ISO Net' },
+                        { key: 'profitMargin', label: 'Margin' },
                         { key: 'effectiveBps', label: 'Eff. BPS' },
                       ].map(col => (
-                        <th key={col.key} className="px-4 py-3 font-medium cursor-pointer hover:text-slate-900 whitespace-nowrap" onClick={() => toggleProfitSort(col.key)}>
+                        <th key={col.key} className="px-3 py-3 font-medium cursor-pointer hover:text-slate-900 whitespace-nowrap" onClick={() => toggleProfitSort(col.key)}>
                           {col.label}
                           <SortArrow col={col.key} current={profitSortCol} asc={profitSortAsc} />
                         </th>
                       ))}
-                      <th className="px-4 py-3 font-medium text-slate-500 whitespace-nowrap">Trend</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1306,58 +1427,76 @@ export default function ReportsPage() {
                           className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
                           onClick={() => toggleExpand(row.partnerId)}
                         >
-                          <td className="px-4 py-3 font-medium">
+                          <td className="px-3 py-3 font-medium">
                             <span className="mr-1.5 text-slate-400">{expandedPartners.has(row.partnerId) ? '\u25BC' : '\u25B6'}</span>
                             {row.partnerName}
+                            {row.unassignedCount > 0 && <span className="ml-1 text-[10px] text-amber-600">({row.unassignedCount} unassigned)</span>}
                           </td>
-                          <td className="px-4 py-3">{row.activeMerchants}</td>
-                          <td className="px-4 py-3">{fmt(row.totalRevenue)}</td>
-                          <td className="px-4 py-3">{fmt(row.avgPerMerchant)}</td>
-                          <td className="px-4 py-3">{row.splitPct > 0 ? `${row.splitPct}%` : '-'}</td>
-                          <td className="px-4 py-3">{row.splitCost > 0 ? fmt(row.splitCost) : '-'}</td>
-                          <td className="px-4 py-3 font-medium text-emerald-600">{fmt(row.isoNet)}</td>
-                          <td className="px-4 py-3">{row.totalVolume > 0 ? `$${(row.totalVolume / 1000).toFixed(0)}k` : '-'}</td>
-                          <td className="px-4 py-3">{row.effectiveBps > 0 ? row.effectiveBps.toFixed(1) : '-'}</td>
-                          <td className="px-4 py-3">
-                            {/* Mini sparkline / trend indicator */}
-                            {row.merchantCounts.length >= 2 ? (
-                              <div className="flex items-center gap-1">
-                                {row.merchantCounts.map((c, i) => (
-                                  <div key={i} className="w-5 h-5 flex items-center justify-center text-xs text-slate-500">
-                                    {c}
-                                  </div>
-                                ))}
-                                {row.merchantCounts[row.merchantCounts.length - 1] > row.merchantCounts[0] ? (
-                                  <span className="text-emerald-500 text-xs ml-1">{'\u25B2'}</span>
-                                ) : row.merchantCounts[row.merchantCounts.length - 1] < row.merchantCounts[0] ? (
-                                  <span className="text-red-500 text-xs ml-1">{'\u25BC'}</span>
-                                ) : (
-                                  <span className="text-slate-400 text-xs ml-1">{'\u2014'}</span>
-                                )}
-                              </div>
-                            ) : '-'}
-                          </td>
+                          <td className="px-3 py-3">{row.activeMerchants}</td>
+                          <td className="px-3 py-3">{fmt(row.totalRevenue)}</td>
+                          <td className="px-3 py-3 text-red-500">{fmt(row.agentPayoutCost)}</td>
+                          <td className="px-3 py-3 text-red-400">{row.overrideCosts > 0 ? fmt(row.overrideCosts) : '\u2014'}</td>
+                          <td className="px-3 py-3 text-red-400">{row.bonusesPaid > 0 ? fmt(row.bonusesPaid) : '\u2014'}</td>
+                          <td className={`px-3 py-3 font-semibold ${row.trueIsoNet >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmt(row.trueIsoNet)}</td>
+                          <td className="px-3 py-3">{row.profitMargin.toFixed(1)}%</td>
+                          <td className="px-3 py-3">{row.effectiveBps > 0 ? row.effectiveBps.toFixed(1) : '-'}</td>
                         </tr>
-                        {expandedPartners.has(row.partnerId) && row.merchants.length > 0 && (
+                        {expandedPartners.has(row.partnerId) && (
                           <tr key={`${row.partnerId}-detail`} className="border-t border-slate-50">
-                            <td colSpan={10} className="px-4 py-0">
-                              <div className="py-3 pl-8">
+                            <td colSpan={9} className="px-3 py-0">
+                              <div className="py-3 pl-6">
+                                {/* Agent cost breakdown */}
+                                {row.agentBreakdown.length > 0 && (
+                                  <div className="mb-4">
+                                    <p className="text-xs font-medium text-slate-500 mb-2">Agent Cost Breakdown</p>
+                                    <table className="w-full text-xs mb-2">
+                                      <thead>
+                                        <tr className="text-left text-slate-400">
+                                          <th className="pb-1 font-medium">Agent</th>
+                                          <th className="pb-1 font-medium">Role</th>
+                                          <th className="pb-1 font-medium">Type</th>
+                                          <th className="pb-1 font-medium">Split %</th>
+                                          <th className="pb-1 font-medium">Payout</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {row.agentBreakdown.map((a, i) => (
+                                          <tr key={i} className="border-t border-slate-50">
+                                            <td className="py-1">{a.name}</td>
+                                            <td className="py-1 text-slate-500 capitalize">{a.role.replace('_', ' ')}</td>
+                                            <td className="py-1">
+                                              <span className={`px-1 py-0.5 rounded text-[10px] font-medium ${a.codeType === 'override' ? 'bg-purple-50 text-purple-700' : a.codeType === 'direct_sub' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
+                                                {a.codeType === 'override' ? 'Override' : a.codeType === 'direct_sub' ? 'Direct' : 'Standard'}
+                                              </span>
+                                            </td>
+                                            <td className="py-1">{a.splitPct}%</td>
+                                            <td className="py-1 text-red-500">{fmt(a.payout)}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                                {/* Merchant detail */}
+                                <p className="text-xs font-medium text-slate-500 mb-2">Merchant Detail</p>
                                 <table className="w-full text-xs">
                                   <thead>
                                     <tr className="text-left text-slate-400">
-                                      <th className="pb-2 font-medium">Merchant</th>
-                                      <th className="pb-2 font-medium">MID</th>
-                                      <th className="pb-2 font-medium">Revenue</th>
-                                      <th className="pb-2 font-medium">Volume</th>
+                                      <th className="pb-1 font-medium">Merchant</th>
+                                      <th className="pb-1 font-medium">MID</th>
+                                      <th className="pb-1 font-medium">Gross</th>
+                                      <th className="pb-1 font-medium">Agent Cost</th>
+                                      <th className="pb-1 font-medium">ISO Net</th>
                                     </tr>
                                   </thead>
                                   <tbody>
                                     {row.merchants.map((m, i) => (
                                       <tr key={i} className="border-t border-slate-50">
-                                        <td className="py-1.5">{m.name}</td>
-                                        <td className="py-1.5 text-slate-500">{m.mid}</td>
-                                        <td className="py-1.5">{fmt(m.revenue)}</td>
-                                        <td className="py-1.5">{m.volume > 0 ? `$${(m.volume / 1000).toFixed(0)}k` : '-'}</td>
+                                        <td className="py-1">{m.name}</td>
+                                        <td className="py-1 text-slate-500">{m.mid}</td>
+                                        <td className="py-1">{fmt(m.revenue)}</td>
+                                        <td className="py-1 text-red-500">{fmt(m.agentCost)}</td>
+                                        <td className={`py-1 font-medium ${m.isoNet >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmt(m.isoNet)}</td>
                                       </tr>
                                     ))}
                                   </tbody>
