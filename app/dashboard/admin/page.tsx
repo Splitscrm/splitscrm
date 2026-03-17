@@ -150,7 +150,7 @@ const statusColors: Record<string, string> = {
 
 export default function AdminPage() {
   const router = useRouter();
-  const { user, isPlatformAdmin, loading: authLoading } = useAuth();
+  const { user, org: myOrg, isPlatformAdmin, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("organizations");
   const [msg, setMsg] = useState("");
@@ -187,6 +187,12 @@ export default function AdminPage() {
   const [permModal, setPermModal] = useState<any | null>(null);
   const [permOverrides, setPermOverrides] = useState<Record<string, boolean>>({});
   const [permSaving, setPermSaving] = useState(false);
+
+  // Delete org modal state
+  const [deleteOrgTarget, setDeleteOrgTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteOrgConfirmText, setDeleteOrgConfirmText] = useState("");
+  const [deleteOrgDeleting, setDeleteOrgDeleting] = useState(false);
+  const [deleteOrgError, setDeleteOrgError] = useState("");
 
   const showMsg = (text: string) => { setMsg(text); setTimeout(() => setMsg(""), 3000); };
 
@@ -322,6 +328,67 @@ export default function AdminPage() {
       return updated;
     });
     showMsg("Member removed.");
+  };
+
+  const deleteOrganization = async () => {
+    if (!deleteOrgTarget) return;
+    const orgId = deleteOrgTarget.id;
+    setDeleteOrgDeleting(true);
+    setDeleteOrgError("");
+    try {
+      // Get IDs needed for cascade
+      const { data: imports } = await supabase.from("residual_imports").select("id").eq("org_id", orgId);
+      const importIds = (imports || []).map((i: any) => i.id);
+
+      const { data: leads } = await supabase.from("leads").select("id").eq("org_id", orgId);
+      const leadIds = (leads || []).map((l: any) => l.id);
+
+      const { data: merchants } = await supabase.from("merchants").select("id").eq("org_id", orgId);
+      const merchantIds = (merchants || []).map((m: any) => m.id);
+
+      const { data: deals } = await supabase.from("deals").select("id").eq("org_id", orgId);
+      const dealIds = (deals || []).map((d: any) => d.id);
+
+      const { data: members } = await supabase.from("org_members").select("user_id").eq("org_id", orgId);
+      const memberUserIds = (members || []).filter((m: any) => m.user_id).map((m: any) => m.user_id);
+
+      // Cascade delete in dependency order
+      await supabase.from("activity_log").delete().eq("org_id", orgId);
+      await supabase.from("agent_clawbacks").delete().eq("org_id", orgId);
+      await supabase.from("agent_rep_codes").delete().eq("org_id", orgId);
+      if (importIds.length > 0) await supabase.from("residual_records").delete().in("import_id", importIds);
+      await supabase.from("residual_imports").delete().eq("org_id", orgId);
+      if (leadIds.length > 0) await supabase.from("communications").delete().in("lead_id", leadIds);
+      if (merchantIds.length > 0) await supabase.from("communications").delete().in("merchant_id", merchantIds);
+      if (leadIds.length > 0) await supabase.from("tasks").delete().in("lead_id", leadIds);
+      if (merchantIds.length > 0) await supabase.from("tasks").delete().in("merchant_id", merchantIds);
+      if (dealIds.length > 0) await supabase.from("deal_documents").delete().in("deal_id", dealIds);
+      if (dealIds.length > 0) await supabase.from("deal_owners").delete().in("deal_id", dealIds);
+      if (dealIds.length > 0) await supabase.from("deals").delete().in("id", dealIds);
+      if (merchantIds.length > 0) await supabase.from("merchants").delete().in("id", merchantIds);
+      if (leadIds.length > 0) await supabase.from("leads").delete().in("id", leadIds);
+      await supabase.from("partners").delete().eq("org_id", orgId);
+      await supabase.from("org_invitations").delete().eq("org_id", orgId);
+      await supabase.from("org_members").delete().eq("org_id", orgId);
+      if (memberUserIds.length > 0) await supabase.from("user_onboarding").delete().in("user_id", memberUserIds);
+      // Try optional tables that may not exist
+      await supabase.from("feedback").delete().eq("org_id", orgId).then(() => {}, () => {});
+
+      const { error } = await supabase.from("organizations").delete().eq("id", orgId);
+      if (error) {
+        setDeleteOrgError(error.message);
+        setDeleteOrgDeleting(false);
+        return;
+      }
+
+      setDeleteOrgTarget(null);
+      setDeleteOrgConfirmText("");
+      showMsg("Organization deleted.");
+      fetchOrganizations();
+    } catch (err: any) {
+      setDeleteOrgError(err?.message || "Unexpected error during deletion.");
+    }
+    setDeleteOrgDeleting(false);
   };
 
   const sendInvite = async (orgId: string) => {
@@ -695,6 +762,14 @@ export default function AdminPage() {
                         {o.plan || "trial"}
                       </span>
                       <span className="text-sm text-slate-500">{members.length} user{members.length !== 1 ? "s" : ""}</span>
+                      {myOrg?.id !== o.id && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setDeleteOrgTarget({ id: o.id, name: o.name }); setDeleteOrgConfirmText(""); setDeleteOrgError(""); }}
+                          className="text-xs text-red-400 hover:text-red-600 font-medium"
+                        >
+                          Delete
+                        </button>
+                      )}
                       <span className={`text-slate-400 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}>▼</span>
                     </div>
                   </div>
@@ -1021,6 +1096,56 @@ export default function AdminPage() {
                     {permSaving ? "Saving..." : "Save Permissions"}
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* DELETE ORG MODAL */}
+        {deleteOrgTarget && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => !deleteOrgDeleting && setDeleteOrgTarget(null)}>
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-red-600">Delete {deleteOrgTarget.name}?</h3>
+              <p className="text-sm text-slate-600 mt-3">This will permanently delete:</p>
+              <ul className="text-sm text-slate-600 mt-2 space-y-1 ml-1">
+                <li>&bull; All organization members and their access</li>
+                <li>&bull; All leads, deals, and merchants</li>
+                <li>&bull; All residual imports and records</li>
+                <li>&bull; All partners, rep codes, and documents</li>
+                <li>&bull; All activity logs, tasks, and communications</li>
+              </ul>
+              <p className="text-sm font-semibold text-red-600 mt-3">This action cannot be undone.</p>
+              <div className="mt-4">
+                <label className="text-xs text-slate-500 block mb-1">
+                  Type &lsquo;{deleteOrgTarget.name}&rsquo; to confirm deletion
+                </label>
+                <input
+                  type="text"
+                  value={deleteOrgConfirmText}
+                  onChange={(e) => setDeleteOrgConfirmText(e.target.value)}
+                  className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-red-400"
+                  placeholder={deleteOrgTarget.name}
+                  disabled={deleteOrgDeleting}
+                />
+              </div>
+              {deleteOrgError && (
+                <p className="text-sm text-red-600 mt-2">{deleteOrgError}</p>
+              )}
+              <div className="flex justify-end gap-3 mt-5">
+                <button
+                  onClick={() => setDeleteOrgTarget(null)}
+                  disabled={deleteOrgDeleting}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={deleteOrganization}
+                  disabled={deleteOrgConfirmText !== deleteOrgTarget.name || deleteOrgDeleting}
+                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                >
+                  {deleteOrgDeleting ? "Deleting..." : "Delete Organization"}
+                </button>
               </div>
             </div>
           </div>
