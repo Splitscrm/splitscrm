@@ -370,19 +370,22 @@ export default function LeadDetailPage() {
   };
 
   // Auto-create a deal when user starts editing pricing fields (before qualified_prospect stage)
-  const ensureDeal = async () => {
-    if (deal || ensureDealGuard.current || !lead || !userId) return;
+  // Returns the deal object (existing or newly created)
+  const ensureDeal = async (): Promise<any> => {
+    if (deal) return deal;
+    if (ensureDealGuard.current || !lead || !userId) return null;
     ensureDealGuard.current = true;
     const { data: existing } = await supabase.from("deals").select("*").eq("lead_id", lead.id).order("created_at").limit(1);
     if (existing && existing.length > 0) {
       setDeals(existing);
       setActiveDealIdx(0);
       ensureDealGuard.current = false;
-      return;
+      return existing[0];
     }
     const { data: newDeal } = await supabase.from("deals").insert({ lead_id: lead.id, user_id: userId, business_legal_name: lead.business_name, dba_name: lead.business_name, is_primary_location: true }).select().single();
     if (newDeal) { setDeals([newDeal]); setActiveDealIdx(0); }
     ensureDealGuard.current = false;
+    return newDeal || null;
   };
 
   // ── Signature flow helpers ───────────────────────────────────────────────
@@ -999,7 +1002,7 @@ export default function LeadDetailPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Partner</label>
-                  <select value={deal?.partner_id || ""} onChange={(e) => { ensureDeal(); if (deal) handlePartnerChange(e.target.value); }} className={inputClass}>
+                  <select value={deal?.partner_id || ""} onChange={async (e) => { const d = await ensureDeal(); if (d) handlePartnerChange(e.target.value); }} className={inputClass}>
                     <option value="">No Partner Selected</option>
                     {partners.map((p) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
@@ -1025,7 +1028,7 @@ export default function LeadDetailPage() {
               <h4 className="font-semibold mb-4 text-emerald-600">Pricing</h4>
               <div className="mb-4">
                 <label className={labelClass}>Pricing Type</label>
-                <select value={deal?.pricing_type || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("pricing_type", e.target.value); }} className={inputClass}>
+                <select value={deal?.pricing_type || ""} onChange={async (e) => { await ensureDeal(); updateDealField("pricing_type", e.target.value); }} className={inputClass}>
                   <option value="">Select pricing type...</option>
                   <option value="interchange_plus">Interchange Plus</option>
                   <option value="dual_pricing">Dual Pricing</option>
@@ -1076,12 +1079,12 @@ export default function LeadDetailPage() {
             <div className={sectionClass}>
               <h4 className="font-semibold mb-4 text-emerald-600">Misc Fees ($)</h4>
               <div className="grid grid-cols-3 lg:grid-cols-6 gap-4">
-                <div><label className={labelClass}>Chargebacks</label><input type="number" step="0.01" value={deal?.fee_chargeback || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("fee_chargeback", e.target.value); }} className={inputClass} /></div>
-                <div><label className={labelClass}>Retrievals</label><input type="number" step="0.01" value={deal?.fee_retrieval || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("fee_retrieval", e.target.value); }} className={inputClass} /></div>
-                <div><label className={labelClass}>Arbitration</label><input type="number" step="0.01" value={deal?.fee_arbitration || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("fee_arbitration", e.target.value); }} className={inputClass} /></div>
-                <div><label className={labelClass}>Voice Auths</label><input type="number" step="0.01" value={deal?.fee_voice_auth || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("fee_voice_auth", e.target.value); }} className={inputClass} /></div>
-                <div><label className={labelClass}>EBT Auths</label><input type="number" step="0.01" value={deal?.fee_ebt_auth || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("fee_ebt_auth", e.target.value); }} className={inputClass} /></div>
-                <div><label className={labelClass}>ACH Reject</label><input type="number" step="0.01" value={deal?.fee_ach_reject || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("fee_ach_reject", e.target.value); }} className={inputClass} /></div>
+                <div><label className={labelClass}>Chargebacks</label><input type="number" step="0.01" value={deal?.fee_chargeback || ""} onChange={(e) => { updateDealField("fee_chargeback", e.target.value); }} className={inputClass} /></div>
+                <div><label className={labelClass}>Retrievals</label><input type="number" step="0.01" value={deal?.fee_retrieval || ""} onChange={(e) => { updateDealField("fee_retrieval", e.target.value); }} className={inputClass} /></div>
+                <div><label className={labelClass}>Arbitration</label><input type="number" step="0.01" value={deal?.fee_arbitration || ""} onChange={(e) => { updateDealField("fee_arbitration", e.target.value); }} className={inputClass} /></div>
+                <div><label className={labelClass}>Voice Auths</label><input type="number" step="0.01" value={deal?.fee_voice_auth || ""} onChange={(e) => { updateDealField("fee_voice_auth", e.target.value); }} className={inputClass} /></div>
+                <div><label className={labelClass}>EBT Auths</label><input type="number" step="0.01" value={deal?.fee_ebt_auth || ""} onChange={(e) => { updateDealField("fee_ebt_auth", e.target.value); }} className={inputClass} /></div>
+                <div><label className={labelClass}>ACH Reject</label><input type="number" step="0.01" value={deal?.fee_ach_reject || ""} onChange={(e) => { updateDealField("fee_ach_reject", e.target.value); }} className={inputClass} /></div>
               </div>
             </div>
 
@@ -1089,11 +1092,11 @@ export default function LeadDetailPage() {
             <div className={sectionClass}>
               <h4 className="font-semibold mb-4 text-emerald-600">Monthly Fees</h4>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div><label className={labelClass}>Statement Fee</label><input type="number" step="0.01" value={deal?.monthly_fee_statement || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("monthly_fee_statement", e.target.value); }} className={inputClass} /></div>
+                <div><label className={labelClass}>Statement Fee</label><input type="number" step="0.01" value={deal?.monthly_fee_statement || ""} onChange={(e) => { updateDealField("monthly_fee_statement", e.target.value); }} className={inputClass} /></div>
                 <div>
                   <label className={labelClass}>PCI Type</label>
-                  <select value={deal?.pci_compliance_monthly ? "monthly" : deal?.pci_compliance_annual ? "annual" : ""} onChange={(e) => {
-                    ensureDeal();
+                  <select value={deal?.pci_compliance_monthly ? "monthly" : deal?.pci_compliance_annual ? "annual" : ""} onChange={async (e) => {
+                    await ensureDeal();
                     if (!deal) return;
                     const currentAmount = deal.pci_compliance_monthly || deal.pci_compliance_annual || "";
                     if (e.target.value === "monthly") setDeal({ ...deal, pci_compliance_monthly: currentAmount, pci_compliance_annual: null });
@@ -1106,7 +1109,6 @@ export default function LeadDetailPage() {
                 <div>
                   <label className={labelClass}>PCI Amount ($)</label>
                   <input type="number" step="0.01" value={deal?.pci_compliance_monthly || deal?.pci_compliance_annual || ""} onChange={(e) => {
-                    ensureDeal();
                     if (!deal) return;
                     if (deal.pci_compliance_annual) updateDealField("pci_compliance_annual", e.target.value);
                     else updateDealField("pci_compliance_monthly", e.target.value);
@@ -1114,8 +1116,8 @@ export default function LeadDetailPage() {
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                <div><label className={labelClass}>Custom Fee Name</label><input type="text" value={deal?.monthly_fee_custom_name || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("monthly_fee_custom_name", e.target.value); }} className={inputClass} /></div>
-                <div><label className={labelClass}>Custom Fee Amount</label><input type="number" step="0.01" value={deal?.monthly_fee_custom_amount || ""} onChange={(e) => { ensureDeal(); if (deal) updateDealField("monthly_fee_custom_amount", e.target.value); }} className={inputClass} /></div>
+                <div><label className={labelClass}>Custom Fee Name</label><input type="text" value={deal?.monthly_fee_custom_name || ""} onChange={(e) => { updateDealField("monthly_fee_custom_name", e.target.value); }} className={inputClass} /></div>
+                <div><label className={labelClass}>Custom Fee Amount</label><input type="number" step="0.01" value={deal?.monthly_fee_custom_amount || ""} onChange={(e) => { updateDealField("monthly_fee_custom_amount", e.target.value); }} className={inputClass} /></div>
               </div>
             </div>
 
@@ -1139,7 +1141,7 @@ export default function LeadDetailPage() {
                   </div>
                 </div>
               ))}
-              <button onClick={() => { ensureDeal(); const items = [...(deal?.hardware_items || [])]; items.push({ type: "", model: "", quantity: 1, cost: "", free: "" }); if (deal) updateDealField("hardware_items", items); }} className="text-emerald-600 hover:text-emerald-700 text-sm font-medium">+ Add Hardware Item</button>
+              <button onClick={async () => { await ensureDeal(); const items = [...(deal?.hardware_items || [])]; items.push({ type: "", model: "", quantity: 1, cost: "", free: "" }); updateDealField("hardware_items", items); }} className="text-emerald-600 hover:text-emerald-700 text-sm font-medium">+ Add Hardware Item</button>
             </div>
 
             {/* Software / Gateways */}
@@ -1159,7 +1161,7 @@ export default function LeadDetailPage() {
                   </div>
                 </div>
               ))}
-              <button onClick={() => { ensureDeal(); const items = [...(deal?.software_items || [])]; items.push({ name: "", type: "", monthly_cost: "", per_txn: "" }); if (deal) updateDealField("software_items", items); }} className="text-emerald-600 hover:text-emerald-700 text-sm font-medium">+ Add Software Item</button>
+              <button onClick={async () => { await ensureDeal(); const items = [...(deal?.software_items || [])]; items.push({ name: "", type: "", monthly_cost: "", per_txn: "" }); updateDealField("software_items", items); }} className="text-emerald-600 hover:text-emerald-700 text-sm font-medium">+ Add Software Item</button>
             </div>
 
             {/* Partner Schedule — only when partner + schedule selected */}
