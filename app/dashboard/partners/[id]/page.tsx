@@ -36,6 +36,7 @@ export default function PartnerDetailPage() {
   const [repSaving, setRepSaving] = useState(false);
   const [repError, setRepError] = useState('');
   const [repAgents, setRepAgents] = useState<any[]>([]);
+  const [orgDefaultHouseSplit, setOrgDefaultHouseSplit] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -284,6 +285,11 @@ export default function PartnerDetailPage() {
       const map: Record<string, string> = {};
       for (const p of profiles || []) map[p.user_id] = p.full_name || p.email || p.user_id.slice(0, 8);
       setRepProfiles(map);
+    }
+    // Fetch org default house split
+    if (member?.org_id) {
+      const { data: orgData } = await supabase.from("organizations").select("default_house_split_pct").eq("id", member.org_id).single();
+      setOrgDefaultHouseSplit(orgData?.default_house_split_pct || 0);
     }
     // Fetch agents for add modal
     if (member?.org_id) {
@@ -1305,8 +1311,8 @@ export default function PartnerDetailPage() {
                       </div>
                       <div className="grid grid-cols-3 gap-4">
                         <div>
-                          <label className={labelClass}>Split %</label>
-                          <input type="number" min="0" max="100" step="0.01" value={repForm.split_pct} onChange={e => setRepForm({ ...repForm, split_pct: e.target.value })} className={inputClass} />
+                          <label className={labelClass}>Agent Split %</label>
+                          <input type="number" min="0" max="100" step="0.01" value={repForm.split_pct} onChange={e => setRepForm({ ...repForm, split_pct: e.target.value })} className={inputClass} placeholder="Agent's earning %" />
                         </div>
                         <div>
                           <label className={labelClass}>Bonus / Deal ($)</label>
@@ -1319,8 +1325,9 @@ export default function PartnerDetailPage() {
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className={labelClass}>House Split Override %</label>
+                          <label className={labelClass}>ISO Cut Override %</label>
                           <input type="number" min="0" max="100" step="0.01" value={repForm.house_split_override_pct} onChange={e => setRepForm({ ...repForm, house_split_override_pct: e.target.value })} className={inputClass} placeholder="Overrides org default" />
+                          <p className="text-[11px] text-slate-400 mt-1">(Leave blank to use org default of {orgDefaultHouseSplit}%)</p>
                         </div>
                         <div>
                           <label className={labelClass}>Restricted Split %</label>

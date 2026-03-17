@@ -1465,8 +1465,8 @@ export default function SettingsPage() {
                         </div>
                         <div className="grid grid-cols-3 gap-4">
                           <div>
-                            <label className={labelClass}>Split % Override</label>
-                            <input type="number" min="0" max="100" step="0.01" value={repForm.split_pct} onChange={e => setRepForm({ ...repForm, split_pct: e.target.value })} className={inputClass} placeholder="e.g. 50" />
+                            <label className={labelClass}>Agent Split %</label>
+                            <input type="number" min="0" max="100" step="0.01" value={repForm.split_pct} onChange={e => setRepForm({ ...repForm, split_pct: e.target.value })} className={inputClass} placeholder="Agent's earning %" />
                           </div>
                           <div>
                             <label className={labelClass}>Bonus / Deal ($)</label>
@@ -1479,8 +1479,9 @@ export default function SettingsPage() {
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <label className={labelClass}>House Split Override %</label>
+                            <label className={labelClass}>ISO Cut Override %</label>
                             <input type="number" min="0" max="100" step="0.01" value={repForm.house_split_override_pct} onChange={e => setRepForm({ ...repForm, house_split_override_pct: e.target.value })} className={inputClass} placeholder="Overrides org default" />
+                            <p className="text-[11px] text-slate-400 mt-1">(Leave blank to use org default of {teamOrgData?.default_house_split_pct ?? 0}%)</p>
                           </div>
                           <div>
                             <label className={labelClass}>Restricted Split %</label>
