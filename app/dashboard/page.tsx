@@ -126,7 +126,7 @@ interface DashboardData {
   followUps: { id: string; business_name: string; contact_name: string; follow_up_date: string }[]
   tasks: { id: string; title: string; description: string; due_date: string; due_time: string; priority: string; status: string; lead_id: string | null; merchant_id: string | null }[]
   merchantsByProcessor: { processor: string; count: number }[]
-  recentActivity: { id: string; action_type: string; description: string; created_at: string; lead_id: string | null; merchant_id: string | null; lead_name: string | null; merchant_name: string | null }[]
+  recentActivity: { id: string; action_type: string; description: string; created_at: string; lead_id: string | null; deal_id: string | null; linked_lead_id: string | null; lead_name: string | null }[]
   latestImport: { processor_name: string | null; report_month: string | null } | null
   residualNetRevenue: number
   residualTotalVolume: number
@@ -218,6 +218,14 @@ export default function Dashboard() {
         }
       }
 
+      // Get the user's org_id for queries that need it
+      const { data: memberRow } = await supabase
+        .from('org_members')
+        .select('org_id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      const userOrgId = memberRow?.org_id || null
+
       const now = new Date()
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
       const today = now.toISOString().split('T')[0]
@@ -262,9 +270,12 @@ export default function Dashboard() {
           .order('follow_up_date', { ascending: true })
           .limit(5)),
         addRoleFilter(supabase.from('merchants').select('processor')),
-        isOwnerOrManager
-          ? supabase.from('activity_log').select('id, action_type, description, created_at, lead_id, merchant_id').order('created_at', { ascending: false }).limit(15)
-          : supabase.from('activity_log').select('id, action_type, description, created_at, lead_id, merchant_id').eq('user_id', user.id).order('created_at', { ascending: false }).limit(15),
+        (() => {
+          let q = supabase.from('activity_log').select('id, action_type, description, created_at, lead_id, deal_id').order('created_at', { ascending: false }).limit(15)
+          if (userOrgId) q = q.eq('org_id', userOrgId)
+          if (!isOwnerOrManager) q = q.eq('user_id', user.id)
+          return q
+        })(),
         supabase.from('tasks').select('id, title, description, due_date, due_time, priority, status, lead_id, merchant_id')
           .eq('user_id', user.id)
           .eq('status', 'pending')
@@ -398,29 +409,40 @@ export default function Dashboard() {
         recentActivity: await (async () => {
           const rows = (recentActivity as any) || []
           if (rows.length === 0) return []
-          // Batch-lookup lead and merchant names
+          // Batch-lookup lead names (direct lead_id) and deal→lead mappings
           const leadIds = [...new Set(rows.map((a: any) => a.lead_id).filter(Boolean))] as string[]
-          const merchantIds = [...new Set(rows.map((a: any) => a.merchant_id).filter(Boolean))] as string[]
+          const dealIds = [...new Set(rows.map((a: any) => a.deal_id).filter(Boolean))] as string[]
           const leadNameMap: Record<string, string> = {}
-          const merchantNameMap: Record<string, string> = {}
+          const dealLeadMap: Record<string, string> = {}
           if (leadIds.length > 0) {
             const { data: leadRows } = await supabase.from('leads').select('id, business_name, contact_name').in('id', leadIds)
             for (const l of leadRows || []) leadNameMap[l.id] = l.business_name || l.contact_name || ''
           }
-          if (merchantIds.length > 0) {
-            const { data: merchRows } = await supabase.from('merchants').select('id, business_name').in('id', merchantIds)
-            for (const m of merchRows || []) merchantNameMap[m.id] = m.business_name || ''
+          if (dealIds.length > 0) {
+            const { data: dealRows } = await supabase.from('deals').select('id, lead_id').in('id', dealIds)
+            for (const d of dealRows || []) if (d.lead_id) dealLeadMap[d.id] = d.lead_id
+            // Also look up names for deal-linked leads not already fetched
+            const extraLeadIds = [...new Set(Object.values(dealLeadMap))].filter(id => !leadNameMap[id])
+            if (extraLeadIds.length > 0) {
+              const { data: extraLeads } = await supabase.from('leads').select('id, business_name, contact_name').in('id', extraLeadIds)
+              for (const l of extraLeads || []) leadNameMap[l.id] = l.business_name || l.contact_name || ''
+            }
           }
-          return rows.map((a: any) => ({
-            id: a.id,
-            action_type: a.action_type,
-            description: a.description,
-            created_at: a.created_at,
-            lead_id: a.lead_id || null,
-            merchant_id: a.merchant_id || null,
-            lead_name: (a.lead_id && leadNameMap[a.lead_id]) || null,
-            merchant_name: (a.merchant_id && merchantNameMap[a.merchant_id]) || null,
-          }))
+          return rows.map((a: any) => {
+            const directLeadId = a.lead_id || null
+            const dealLinkedLeadId = a.deal_id ? (dealLeadMap[a.deal_id] || null) : null
+            const resolvedLeadId = directLeadId || dealLinkedLeadId
+            return {
+              id: a.id,
+              action_type: a.action_type,
+              description: a.description,
+              created_at: a.created_at,
+              lead_id: directLeadId,
+              deal_id: a.deal_id || null,
+              linked_lead_id: resolvedLeadId,
+              lead_name: resolvedLeadId ? (leadNameMap[resolvedLeadId] || null) : null,
+            }
+          })
         })(),
         latestImport,
         residualNetRevenue,
@@ -919,32 +941,19 @@ export default function Dashboard() {
                 ) : (
                   <div className="mt-3">
                     {visibleActivities.map((activity) => {
-                      // Determine link destination and display name
-                      let linkHref: string | null = null
-                      let entityName: string | null = null
-                      if (activity.merchant_id && activity.merchant_name) {
-                        linkHref = `/dashboard/merchants/${activity.merchant_id}`
-                        entityName = activity.merchant_name
-                      } else if (activity.lead_id && activity.lead_name) {
-                        linkHref = `/dashboard/leads/${activity.lead_id}`
-                        entityName = activity.lead_name
-                      } else if (activity.merchant_id) {
-                        linkHref = `/dashboard/merchants/${activity.merchant_id}`
-                      } else if (activity.lead_id) {
-                        linkHref = `/dashboard/leads/${activity.lead_id}`
-                      }
+                      const linkHref = activity.linked_lead_id ? `/dashboard/leads/${activity.linked_lead_id}` : null
+                      const entityName = activity.lead_name
 
                       return (
                         <div key={activity.id} className="flex items-center gap-2 py-2">
                           <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${ACTIVITY_DOT_COLORS[activity.action_type] || 'bg-gray-500'}`}></div>
                           <p className="text-xs text-slate-600 flex-1 truncate">
+                            {activity.description}
                             {entityName && linkHref ? (
-                              <>{activity.description.replace(entityName, '')} <Link href={linkHref} className="text-emerald-600 hover:text-emerald-700 font-medium">{entityName}</Link></>
-                            ) : linkHref ? (
-                              <Link href={linkHref} className="text-emerald-600 hover:text-emerald-700">{activity.description}</Link>
-                            ) : (
-                              activity.description
-                            )}
+                              <> &mdash; <Link href={linkHref} className="text-emerald-600 hover:text-emerald-700 font-medium">{entityName}</Link></>
+                            ) : entityName ? (
+                              <> &mdash; {entityName}</>
+                            ) : null}
                           </p>
                           <span className="text-xs text-slate-400 shrink-0 ml-auto">{relativeTime(activity.created_at)}</span>
                         </div>
