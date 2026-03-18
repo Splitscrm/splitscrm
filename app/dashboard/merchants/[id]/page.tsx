@@ -117,6 +117,9 @@ export default function MerchantDetailPage() {
       terminal_type: 'terminal_type',
       terminal_cost: 'equipment_cost',
       monthly_volume: 'monthly_volume',
+      high_ticket_limit: 'high_ticket_limit',
+      reserve_type: 'reserve_type',
+      funding_delay: 'funding_delay',
     }
     const updated = { ...merchant }
     let syncedCount = 0
@@ -961,6 +964,35 @@ export default function MerchantDetailPage() {
                 </div>
               </div>
             )}
+
+            {/* Processing Controls */}
+            <div className={sectionClass}>
+              <h4 className="font-semibold mb-4 text-emerald-600">Processing Controls</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                <div>
+                  <label className={labelClass}>High Ticket Limit ($)</label>
+                  <input type="number" step="0.01" value={merchant.high_ticket_limit ?? ''} onChange={(e) => updateField('high_ticket_limit', e.target.value ? parseFloat(e.target.value) : null)} className={inputClass} placeholder="e.g. 5000.00" />
+                </div>
+                <div>
+                  <label className={labelClass}>Reserve</label>
+                  <select value={merchant.reserve_type || ''} onChange={(e) => updateField('reserve_type', e.target.value || null)} className={inputClass}>
+                    <option value="">Select...</option>
+                    <option value="no_reserve">No Reserve</option>
+                    <option value="5_percent">5%</option>
+                    <option value="10_percent">10%</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Funding Delay</label>
+                  <select value={merchant.funding_delay || ''} onChange={(e) => updateField('funding_delay', e.target.value || null)} className={inputClass}>
+                    <option value="">Select...</option>
+                    <option value="no_delay">No Delay</option>
+                    <option value="one_day">1 Day</option>
+                    <option value="two_day">2 Day</option>
+                  </select>
+                </div>
+              </div>
+            </div>
 
             {/* GROUP 3 — Contract & Equipment */}
             <div onClick={() => toggleGroup('contract')} className={`flex justify-between items-center cursor-pointer bg-white rounded-xl p-4 border border-slate-200 shadow-sm mb-2 ${openGroups.contract ? 'border-l-4 border-l-emerald-500' : ''}`}>

@@ -324,6 +324,7 @@ export default function LeadDetailPage() {
         monthly_fee_statement: "monthly_fee_statement", monthly_fee_custom_name: "monthly_fee_custom_name", monthly_fee_custom_amount: "monthly_fee_custom_amount",
         pci_compliance_monthly: "pci_compliance_monthly", pci_compliance_annual: "pci_compliance_annual", interchange_remittance: "interchange_remittance",
         terminal_type: "terminal_type", terminal_cost: "equipment_cost", monthly_volume: "monthly_volume",
+        high_ticket_limit: "high_ticket_limit", reserve_type: "reserve_type", funding_delay: "funding_delay",
       };
       for (const [dealField, merchantField] of Object.entries(dealToMerchant)) {
         const val = (dealData as Record<string, any>)[dealField];
