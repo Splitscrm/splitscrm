@@ -10,6 +10,8 @@ import { useAuth } from "@/lib/auth-context";
 import LoadingScreen from "@/components/LoadingScreen";
 import { authFetch } from "@/lib/api-client";
 import { getSignedUrl } from "@/lib/storage";
+import ExportCSV from "@/components/ExportCSV";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 export default function PartnerDetailPage() {
   const router = useRouter();
@@ -52,6 +54,12 @@ export default function PartnerDetailPage() {
   const [agreementUploading, setAgreementUploading] = useState(false);
   const [agreementPending, setAgreementPending] = useState<{ file_name: string; file_url: string; storage_path: string } | null>(null);
   const [agreementForm, setAgreementForm] = useState({ agreement_type: "", description: "" });
+  // Residuals tab state
+  const [resImports, setResImports] = useState<any[]>([]);
+  const [resRecords, setResRecords] = useState<Record<string, any[]>>({});
+  const [resExpandedId, setResExpandedId] = useState<string | null>(null);
+  const [resFetched, setResFetched] = useState(false);
+  const [resTrending, setResTrending] = useState<{ month: string; net: number }[]>([]);
 
   const tabs = [
     { key: "banks", label: "Sponsor Banks" },
@@ -62,6 +70,7 @@ export default function PartnerDetailPage() {
     { key: "merchants", label: "Merchants" },
     { key: "agreements", label: "Agreements" },
     { key: "repcodes", label: "Rep Codes" },
+    { key: "residuals", label: "Residuals" },
   ];
 
   useEffect(() => {
@@ -365,6 +374,66 @@ export default function PartnerDetailPage() {
     setRepCodesFetched(true);
   };
 
+  const fetchResiduals = async () => {
+    if (resFetched || !partner) return;
+    setResFetched(true);
+    const { data: imports } = await supabase
+      .from("residual_imports")
+      .select("id, report_month, processor_name, file_name, status, created_at")
+      .eq("partner_id", partner.id)
+      .order("report_month", { ascending: false });
+    if (!imports) return;
+    setResImports(imports);
+    // Build trending from all imports
+    const monthMap: Record<string, number> = {};
+    for (const imp of imports) {
+      if (imp.status !== "completed") continue;
+      const { data: recs } = await supabase
+        .from("residual_records")
+        .select("net_revenue")
+        .eq("import_id", imp.id);
+      const total = (recs || []).reduce((s: number, r: any) => s + (r.net_revenue || 0), 0);
+      monthMap[imp.report_month] = (monthMap[imp.report_month] || 0) + total;
+    }
+    setResTrending(
+      Object.entries(monthMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .slice(-12)
+        .map(([month, net]) => ({ month, net: Math.round(net * 100) / 100 }))
+    );
+  };
+
+  const fetchImportRecords = async (importId: string) => {
+    if (resRecords[importId]) return;
+    const { data } = await supabase
+      .from("residual_records")
+      .select("id, merchant_id, merchant_id_external, dba_name, gross_income, total_expenses, net_revenue, sales_amount, agent_user_id")
+      .eq("import_id", importId)
+      .order("net_revenue", { ascending: false });
+    setResRecords(prev => ({ ...prev, [importId]: data || [] }));
+  };
+
+  const toggleImportExpand = async (importId: string) => {
+    if (resExpandedId === importId) { setResExpandedId(null); return; }
+    setResExpandedId(importId);
+    await fetchImportRecords(importId);
+  };
+
+  // Anomaly detection: compare current month records to prior month
+  const getAnomalyBadge = (importId: string, merchantKey: string, netRevenue: number) => {
+    const imports = resImports.filter(i => i.status === "completed");
+    const idx = imports.findIndex(i => i.id === importId);
+    if (idx < 0 || idx >= imports.length - 1) return null;
+    const priorId = imports[idx + 1]?.id;
+    const priorRecs = resRecords[priorId];
+    if (!priorRecs) return null;
+    const priorRec = priorRecs.find(r => (r.merchant_id_external || r.dba_name) === merchantKey);
+    if (!priorRec) return <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-medium ml-1">New</span>;
+    if (netRevenue === 0 && (priorRec.net_revenue || 0) > 0) return <span className="text-[10px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded font-medium ml-1">Zero</span>;
+    if (priorRec.net_revenue > 0 && netRevenue < priorRec.net_revenue * 0.8) return <span className="text-[10px] bg-red-50 text-red-600 px-1.5 py-0.5 rounded font-medium ml-1">-{Math.round((1 - netRevenue / priorRec.net_revenue) * 100)}%</span>;
+    return null;
+  };
+
   const [repWarning, setRepWarning] = useState('');
 
   const handleSavePartnerRepCode = async () => {
@@ -529,9 +598,9 @@ export default function PartnerDetailPage() {
         <div className="flex flex-nowrap gap-2 mb-6 border-b border-slate-200 pb-2 overflow-x-auto">
           {tabs.map((t) => {
             const pricingDataCount = Array.isArray(partner?.pricing_data) ? partner.pricing_data.length : 0;
-            const count = t.key === "banks" ? banks.length : t.key === "hardware" ? hardware.length : t.key === "software" ? software.length : t.key === "underwriting" ? underwriting.length : t.key === "merchants" ? partnerMerchants.length : t.key === "agreements" ? agreements.length : t.key === "repcodes" ? partnerRepCodes.length : t.key === "pricing" ? pricing.length + pricingDataCount : 0;
+            const count = t.key === "banks" ? banks.length : t.key === "hardware" ? hardware.length : t.key === "software" ? software.length : t.key === "underwriting" ? underwriting.length : t.key === "merchants" ? partnerMerchants.length : t.key === "agreements" ? agreements.length : t.key === "repcodes" ? partnerRepCodes.length : t.key === "pricing" ? pricing.length + pricingDataCount : t.key === "residuals" ? resImports.length : 0;
             return (
-              <button key={t.key} onClick={() => { setActiveTab(t.key); if (t.key === "merchants") fetchMerchants(); if (t.key === "agreements") fetchAgreements(); if (t.key === "repcodes") fetchRepCodes(); }} className={`px-4 py-2 rounded-t-lg text-sm font-medium transition whitespace-nowrap ${activeTab === t.key ? "bg-white text-slate-900 border-b-2 border-emerald-500" : "text-slate-400 hover:text-slate-900"}`}>
+              <button key={t.key} onClick={() => { setActiveTab(t.key); if (t.key === "merchants") fetchMerchants(); if (t.key === "agreements") fetchAgreements(); if (t.key === "repcodes") fetchRepCodes(); if (t.key === "residuals") fetchResiduals(); }} className={`px-4 py-2 rounded-t-lg text-sm font-medium transition whitespace-nowrap ${activeTab === t.key ? "bg-white text-slate-900 border-b-2 border-emerald-500" : "text-slate-400 hover:text-slate-900"}`}>
                 {t.label} ({count})
               </button>
             );
@@ -1451,6 +1520,155 @@ export default function PartnerDetailPage() {
             )}
           </div>
         )}
+        {activeTab === "residuals" && (
+          <div className="space-y-6">
+            {/* Trending Chart */}
+            {resTrending.length > 1 && (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <h4 className="text-sm font-semibold text-slate-900 mb-3">Revenue Trending</h4>
+                <div style={{ height: 200 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={resTrending}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `$${v.toLocaleString()}`} />
+                      <Tooltip formatter={(v: any) => [`$${Number(v).toLocaleString()}`, "Net Revenue"]} />
+                      <Line type="monotone" dataKey="net" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* Summary Cards */}
+            {resTrending.length > 0 && (() => {
+              const latest = resTrending[resTrending.length - 1];
+              const prev = resTrending.length > 1 ? resTrending[resTrending.length - 2] : null;
+              const change = prev ? latest.net - prev.net : 0;
+              const changePct = prev && prev.net !== 0 ? (change / prev.net) * 100 : 0;
+              const latestImport = resImports.find(i => i.report_month === latest.month);
+              const latestRecords = latestImport ? resRecords[latestImport.id] : null;
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                    <p className="text-xs text-slate-500">Latest Month Revenue</p>
+                    <p className="text-xl font-bold text-emerald-600">${latest.net.toLocaleString()}</p>
+                    <p className="text-xs text-slate-400">{latest.month}</p>
+                  </div>
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                    <p className="text-xs text-slate-500">Month-over-Month</p>
+                    <p className={`text-xl font-bold ${change >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{change >= 0 ? '+' : ''}{changePct.toFixed(1)}%</p>
+                    <p className="text-xs text-slate-400">{change >= 0 ? '+' : ''}${change.toLocaleString()}</p>
+                  </div>
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                    <p className="text-xs text-slate-500">Merchants in Latest Import</p>
+                    <p className="text-xl font-bold text-slate-900">{latestRecords ? latestRecords.length : '—'}</p>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Import List */}
+            {resImports.length === 0 ? (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
+                <p className="text-slate-500">No residual imports for this partner.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {resImports.map(imp => {
+                  const recs = resRecords[imp.id] || [];
+                  const isExpanded = resExpandedId === imp.id;
+                  const totalGross = recs.reduce((s: number, r: any) => s + (r.gross_income || 0), 0);
+                  const totalExp = recs.reduce((s: number, r: any) => s + (r.total_expenses || 0), 0);
+                  const totalNet = recs.reduce((s: number, r: any) => s + (r.net_revenue || 0), 0);
+                  return (
+                    <div key={imp.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                      <button onClick={() => toggleImportExpand(imp.id)} className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50 transition">
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-semibold text-slate-900">{imp.report_month}</span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${imp.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{imp.status}</span>
+                          {imp.file_name && <span className="text-xs text-slate-400 truncate max-w-[200px]">{imp.file_name}</span>}
+                        </div>
+                        <div className="flex items-center gap-4">
+                          {isExpanded && recs.length > 0 && <span className="text-xs text-slate-500">{recs.length} records</span>}
+                          {isExpanded && recs.length > 0 && <span className="text-xs font-medium text-emerald-600">${totalNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>}
+                          <span className="text-xs text-slate-400">{new Date(imp.created_at).toLocaleDateString()}</span>
+                          <span className={`text-slate-400 transition-transform duration-200 text-xs ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
+                        </div>
+                      </button>
+                      {isExpanded && (
+                        <div className="border-t border-slate-100">
+                          {recs.length === 0 ? (
+                            <p className="p-4 text-sm text-slate-400">Loading records...</p>
+                          ) : (
+                            <>
+                              <div className="flex justify-end p-2 px-4">
+                                <ExportCSV
+                                  data={recs.map((r: any) => ({ ...r, gross_income: r.gross_income?.toFixed(2), total_expenses: r.total_expenses?.toFixed(2), net_revenue: r.net_revenue?.toFixed(2) }))}
+                                  filename={`residuals-${partner.name}-${imp.report_month}`}
+                                  columns={[
+                                    { key: 'dba_name', label: 'DBA' },
+                                    { key: 'merchant_id_external', label: 'MID' },
+                                    { key: 'gross_income', label: 'Gross Income' },
+                                    { key: 'total_expenses', label: 'Expenses' },
+                                    { key: 'net_revenue', label: 'Net Revenue' },
+                                  ]}
+                                  buttonText="Export CSV"
+                                />
+                              </div>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                  <thead>
+                                    <tr className="border-b border-slate-100 text-left text-slate-500 text-xs">
+                                      <th className="px-4 py-2 font-medium">Merchant / DBA</th>
+                                      <th className="px-4 py-2 font-medium">MID</th>
+                                      <th className="px-4 py-2 font-medium text-right">Gross</th>
+                                      <th className="px-4 py-2 font-medium text-right">Expenses</th>
+                                      <th className="px-4 py-2 font-medium text-right">Net</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {recs.map((r: any) => {
+                                      const merchantKey = r.merchant_id_external || r.dba_name || 'Unknown';
+                                      const badge = getAnomalyBadge(imp.id, merchantKey, r.net_revenue || 0);
+                                      return (
+                                        <tr key={r.id} className="border-b border-slate-50">
+                                          <td className="px-4 py-2">
+                                            {r.merchant_id ? (
+                                              <Link href={`/dashboard/merchants/${r.merchant_id}`} className="text-emerald-600 hover:text-emerald-700 font-medium">{r.dba_name || merchantKey}</Link>
+                                            ) : (
+                                              <span className="text-slate-700">{r.dba_name || merchantKey}</span>
+                                            )}
+                                            {badge}
+                                          </td>
+                                          <td className="px-4 py-2 text-slate-500 font-mono text-xs">{r.merchant_id_external || '—'}</td>
+                                          <td className="px-4 py-2 text-right text-slate-700">${(r.gross_income || 0).toFixed(2)}</td>
+                                          <td className="px-4 py-2 text-right text-slate-500">${(r.total_expenses || 0).toFixed(2)}</td>
+                                          <td className={`px-4 py-2 text-right font-medium ${(r.net_revenue || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>${(r.net_revenue || 0).toFixed(2)}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                    <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold text-sm">
+                                      <td className="px-4 py-2" colSpan={2}>Total ({recs.length} merchants)</td>
+                                      <td className="px-4 py-2 text-right">${totalGross.toFixed(2)}</td>
+                                      <td className="px-4 py-2 text-right">${totalExp.toFixed(2)}</td>
+                                      <td className={`px-4 py-2 text-right ${totalNet >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>${totalNet.toFixed(2)}</td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
     </div>
   );
