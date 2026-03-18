@@ -25,6 +25,7 @@ export default function AddPartnerPage() {
     restricted_split_pct: '',
     notes: '',
   })
+  const [deptContacts, setDeptContacts] = useState<{ name: string; email: string; phone: string }[]>([])
 
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -84,6 +85,7 @@ export default function AddPartnerPage() {
       restricted_split_pct: form.restricted_split_pct ? parseFloat(form.restricted_split_pct) : null,
       notes: form.notes,
       pricing_data: pricingSchedules.length > 0 ? pricingSchedules : null,
+      department_contacts: deptContacts.length > 0 ? deptContacts : null,
       status: 'active',
     })
 
@@ -240,6 +242,33 @@ export default function AddPartnerPage() {
               className="w-full bg-white text-slate-900 px-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
               placeholder="Additional notes about this partner..."
             />
+          </div>
+
+          {/* Department Contacts */}
+          <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-slate-700">Department Contacts</h3>
+              <button type="button" onClick={() => setDeptContacts([...deptContacts, { name: '', email: '', phone: '' }])} className="text-emerald-600 hover:text-emerald-700 text-sm font-medium">+ Add Department</button>
+            </div>
+            {deptContacts.length === 0 ? (
+              <p className="text-sm text-slate-400">No department contacts added yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {deptContacts.map((dc, idx) => (
+                  <div key={idx} className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs font-medium text-slate-500">Department {idx + 1}</span>
+                      <button type="button" onClick={() => setDeptContacts(deptContacts.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-500 text-xs">Remove</button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <input type="text" value={dc.name} onChange={(e) => { const u = [...deptContacts]; u[idx] = { ...u[idx], name: e.target.value }; setDeptContacts(u); }} className="w-full bg-white text-slate-900 px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-emerald-500" placeholder="e.g. Underwriting, Tech Support, Risk" />
+                      <input type="email" value={dc.email} onChange={(e) => { const u = [...deptContacts]; u[idx] = { ...u[idx], email: e.target.value }; setDeptContacts(u); }} className="w-full bg-white text-slate-900 px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-emerald-500" placeholder="dept@partner.com" />
+                      <input type="text" value={dc.phone} onChange={(e) => { const u = [...deptContacts]; u[idx] = { ...u[idx], phone: e.target.value }; setDeptContacts(u); }} className="w-full bg-white text-slate-900 px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-emerald-500" placeholder="(555) 123-4567" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Actions */}

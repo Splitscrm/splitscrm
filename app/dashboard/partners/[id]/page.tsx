@@ -70,7 +70,7 @@ export default function PartnerDetailPage() {
     const fetchData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
-      const { data: p } = await supabase.from("partners").select("id, created_at, name, relationship_manager, status, support_phone, rm_phone, email, website, residual_split, restricted_split_pct, notes, pricing_data, user_id").eq("id", params.id).single();
+      const { data: p } = await supabase.from("partners").select("id, created_at, name, relationship_manager, status, support_phone, rm_phone, email, website, residual_split, restricted_split_pct, notes, pricing_data, department_contacts, user_id").eq("id", params.id).single();
       if (p) {
         setPartner(p);
         const { data: b } = await supabase.from("partner_sponsor_banks").select("id, created_at, partner_id, bank_name, cutoff_timezone, next_day_funding, batch_cutoff_time, same_day_funding, same_day_cutoff_time, accepted_mcc_codes, restricted_mcc_codes").eq("partner_id", p.id).order("created_at");
@@ -494,6 +494,33 @@ export default function PartnerDetailPage() {
             <label className={labelClass}>Notes</label>
             <textarea value={partner.notes || ""} onChange={(e) => updatePartnerField("notes", e.target.value)} className={inputClass + " h-20 resize-none"} />
           </div>
+          {/* Department Contacts */}
+          <div className="mt-6 pt-6 border-t border-slate-200">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold text-slate-700">Department Contacts</h4>
+              <button onClick={() => updatePartnerField("department_contacts", [...(partner.department_contacts || []), { name: "", email: "", phone: "" }])} className="text-emerald-600 hover:text-emerald-700 text-xs font-medium">+ Add Department</button>
+            </div>
+            {(!partner.department_contacts || partner.department_contacts.length === 0) ? (
+              <p className="text-xs text-slate-400">No department contacts added.</p>
+            ) : (
+              <div className="space-y-2">
+                {partner.department_contacts.map((dc: any, idx: number) => (
+                  <div key={idx} className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs font-medium text-slate-500">Department {idx + 1}</span>
+                      <button onClick={() => { const updated = [...partner.department_contacts]; updated.splice(idx, 1); updatePartnerField("department_contacts", updated); }} className="text-red-400 hover:text-red-500 text-xs">Remove</button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <input type="text" value={dc.name || ""} onChange={(e) => { const updated = [...partner.department_contacts]; updated[idx] = { ...updated[idx], name: e.target.value }; updatePartnerField("department_contacts", updated); }} className={inputClass} placeholder="e.g. Underwriting, Tech Support, Risk" />
+                      <input type="email" value={dc.email || ""} onChange={(e) => { const updated = [...partner.department_contacts]; updated[idx] = { ...updated[idx], email: e.target.value }; updatePartnerField("department_contacts", updated); }} className={inputClass} placeholder="dept@partner.com" />
+                      <input type="text" value={dc.phone || ""} onChange={(e) => { const updated = [...partner.department_contacts]; updated[idx] = { ...updated[idx], phone: e.target.value }; updatePartnerField("department_contacts", updated); }} className={inputClass} placeholder="(555) 123-4567" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="mt-4 flex justify-end">
             <button onClick={savePartner} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition disabled:opacity-50">{saving ? "Saving..." : "Save Partner Info"}</button>
           </div>
