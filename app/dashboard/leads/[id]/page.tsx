@@ -1202,14 +1202,24 @@ export default function LeadDetailPage() {
 
             {/* Template Selector & Actions */}
             <div className="flex flex-wrap items-center gap-3">
-              {pricingTemplates.length > 0 && (
-                <select onChange={(e) => { const tpl = pricingTemplates.find(t => t.id === e.target.value); if (tpl) setShowApplyConfirm(tpl); e.target.value = ''; }} value="" className="text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
-                  <option value="">Apply Template...</option>
-                  {pricingTemplates.map(t => (
-                    <option key={t.id} value={t.id}>{t.is_default ? '\u2605 ' : ''}{t.name}</option>
-                  ))}
-                </select>
-              )}
+              <select
+                onChange={(e) => { const tpl = pricingTemplates.find(t => t.id === e.target.value); if (tpl) setShowApplyConfirm(tpl); e.target.value = ''; }}
+                value=""
+                disabled={pricingTemplates.length === 0}
+                className="text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {pricingTemplates.length === 0 ? (
+                  <option value="">No templates — create one in Settings</option>
+                ) : (
+                  <>
+                    <option value="">Apply Template...</option>
+                    {pricingTemplates.map(t => (
+                      <option key={t.id} value={t.id}>{t.is_default ? '\u2605 ' : ''}{t.name}</option>
+                    ))}
+                  </>
+                )}
+              </select>
+              <Link href="/dashboard/settings" className="text-xs text-slate-400 hover:text-slate-600 font-medium">Manage Templates</Link>
               {deal && <button onClick={clearPricing} className="text-xs text-slate-400 hover:text-slate-600 font-medium">Clear Pricing</button>}
               <div className="flex-1" />
               {deal && <button onClick={() => setShowSaveAsTpl(true)} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">Save as Template</button>}
