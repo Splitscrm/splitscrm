@@ -172,7 +172,8 @@ export default function LeadDetailPage() {
         if (partnerData) setPartners(partnerData);
         // Fetch pricing templates for template selector
         if (member?.org_id) {
-          const { data: ptData } = await supabase.from("pricing_templates").select("*").eq("org_id", member.org_id).order("name");
+          const { data: ptData, error: ptErr } = await supabase.from("pricing_templates").select("*").eq("org_id", member.org_id).order("is_default", { ascending: false }).order("name");
+          if (ptErr) console.error("Pricing templates query error:", ptErr);
           if (ptData) setPricingTemplates(ptData);
         }
       }
@@ -1199,24 +1200,20 @@ export default function LeadDetailPage() {
         <div className="overflow-hidden transition-all duration-300 ease-in-out" style={{ maxHeight: openGroups.group3 ? "5000px" : "0px", opacity: openGroups.group3 ? 1 : 0 }}>
           <div className="space-y-6 mb-6" onFocus={ensureDeal}>
 
-            {/* Template Selector */}
-            {pricingTemplates.length > 0 && (
-              <div className="flex flex-wrap items-center gap-3">
+            {/* Template Selector & Actions */}
+            <div className="flex flex-wrap items-center gap-3">
+              {pricingTemplates.length > 0 && (
                 <select onChange={(e) => { const tpl = pricingTemplates.find(t => t.id === e.target.value); if (tpl) setShowApplyConfirm(tpl); e.target.value = ''; }} value="" className="text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
                   <option value="">Apply Template...</option>
                   {pricingTemplates.map(t => (
                     <option key={t.id} value={t.id}>{t.is_default ? '\u2605 ' : ''}{t.name}</option>
                   ))}
                 </select>
-                {deal && <button onClick={clearPricing} className="text-xs text-slate-400 hover:text-slate-600 font-medium">Clear Pricing</button>}
-                {deal && <button onClick={() => setShowSaveAsTpl(true)} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">Save as Template</button>}
-              </div>
-            )}
-            {!pricingTemplates.length && deal && (
-              <div className="flex justify-end">
-                <button onClick={() => setShowSaveAsTpl(true)} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">Save as Template</button>
-              </div>
-            )}
+              )}
+              {deal && <button onClick={clearPricing} className="text-xs text-slate-400 hover:text-slate-600 font-medium">Clear Pricing</button>}
+              <div className="flex-1" />
+              {deal && <button onClick={() => setShowSaveAsTpl(true)} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">Save as Template</button>}
+            </div>
 
             {/* Partner Selection */}
             <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
