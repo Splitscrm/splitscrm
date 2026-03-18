@@ -734,20 +734,23 @@ export default function LeadDetailPage() {
   };
 
   const applyPartnerSwitch = (partnerId: string, scheduleIdx: number | null) => {
-    setDeal((prev: any) => ({
-      ...prev,
-      partner_id: partnerId || null,
-      partner_schedule_index: scheduleIdx,
-      partner_pricing_overrides: null,
-    }));
+    setDeals(prev => {
+      const next = [...prev];
+      const current = next[activeDealIdx];
+      if (!current) return prev;
+      next[activeDealIdx] = { ...current, partner_id: partnerId || null, partner_schedule_index: scheduleIdx, partner_pricing_overrides: null };
+      return next;
+    });
   };
 
   const applyScheduleSwitch = (scheduleIdx: number | null) => {
-    setDeal((prev: any) => ({
-      ...prev,
-      partner_schedule_index: scheduleIdx,
-      partner_pricing_overrides: null,
-    }));
+    setDeals(prev => {
+      const next = [...prev];
+      const current = next[activeDealIdx];
+      if (!current) return prev;
+      next[activeDealIdx] = { ...current, partner_schedule_index: scheduleIdx, partner_pricing_overrides: null };
+      return next;
+    });
   };
 
   const confirmPartnerSwitch = () => {
@@ -1235,7 +1238,7 @@ export default function LeadDetailPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className={labelClass}>Partner</label>
-                  <select value={deal?.partner_id || ""} onChange={async (e) => { const d = await ensureDeal(); if (d) handlePartnerChange(e.target.value); }} className={inputClass}>
+                  <select value={deal?.partner_id || ""} onChange={async (e) => { const val = e.target.value; const d = await ensureDeal(); if (d) handlePartnerChange(val); }} className={inputClass}>
                     <option value="">No Partner Selected</option>
                     {partners.map((p) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
