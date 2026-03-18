@@ -59,8 +59,7 @@ export default function LeadDetailPage() {
   const [uploadedStatements, setUploadedStatements] = useState<any[]>([]);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [partners, setPartners] = useState<any[]>([]);
-  const [showPartnerSwitchModal, setShowPartnerSwitchModal] = useState(false);
-  const pendingPartnerSwitch = useRef<{ partnerId: string; scheduleIdx: number | null } | null>(null);
+  // Partner switch modal removed — simplified pricing
   const dealCreationGuard = useRef(false);
   const commLogRef = useRef<CommunicationLogHandle>(null);
   const [deleteLocationTarget, setDeleteLocationTarget] = useState<any>(null);
@@ -210,7 +209,7 @@ export default function LeadDetailPage() {
   const handleStatusChange = (newStatus: string) => {
     const fromSignedOrConverted = lead.status === "signed" || lead.status === "submitted" || lead.status === "converted";
     // Pre-signature validation: check for below-cost pricing
-    if (newStatus === "send_for_signature" && selectedSchedule) {
+    if (newStatus === "send_for_signature" && partnerSchedule) {
       const issues = getBelowCostFields();
       if (issues.length > 0) {
         setBelowCostItems(issues);
@@ -338,7 +337,6 @@ export default function LeadDetailPage() {
       else if (dealData.free_hardware === "no") merchantInsert.free_equipment = "no";
       if (dealData.hardware_items) merchantInsert.hardware_items = dealData.hardware_items;
       if (dealData.software_items) merchantInsert.software_items = dealData.software_items;
-      if (dealData.partner_pricing_overrides) merchantInsert.partner_pricing_overrides = dealData.partner_pricing_overrides;
       if (dealData.partner_id) merchantInsert.partner_id = dealData.partner_id;
     }
     // Auto-populate summary pricing fields
@@ -383,7 +381,7 @@ export default function LeadDetailPage() {
     if (copyFromDealId) {
       const source = deals.find(d => d.id === copyFromDealId);
       if (source) {
-        const copyFields = ["pricing_type", "ic_plus_visa_pct", "ic_plus_mc_pct", "ic_plus_amex_pct", "ic_plus_disc_pct", "ic_plus_visa_txn", "ic_plus_mc_txn", "ic_plus_amex_txn", "ic_plus_disc_txn", "interchange_remittance", "dual_pricing_rate", "dual_pricing_txn_fee", "flat_rate_pct", "flat_rate_txn_cost", "fee_chargeback", "fee_retrieval", "fee_arbitration", "fee_voice_auth", "fee_ebt_auth", "fee_ach_reject", "monthly_fee_statement", "pci_compliance_monthly", "pci_compliance_annual", "monthly_fee_custom_name", "monthly_fee_custom_amount", "partner_id", "partner_schedule_index", "partner_pricing_overrides"];
+        const copyFields = ["pricing_type", "ic_plus_visa_pct", "ic_plus_mc_pct", "ic_plus_amex_pct", "ic_plus_disc_pct", "ic_plus_visa_txn", "ic_plus_mc_txn", "ic_plus_amex_txn", "ic_plus_disc_txn", "interchange_remittance", "dual_pricing_rate", "dual_pricing_txn_fee", "flat_rate_pct", "flat_rate_txn_cost", "fee_chargeback", "fee_retrieval", "fee_arbitration", "fee_voice_auth", "fee_ebt_auth", "fee_ach_reject", "monthly_fee_statement", "pci_compliance_monthly", "pci_compliance_annual", "monthly_fee_custom_name", "monthly_fee_custom_amount", "partner_id"];
         for (const f of copyFields) { if (source[f] != null && source[f] !== "") insert[f] = source[f]; }
       }
     }
@@ -436,18 +434,35 @@ export default function LeadDetailPage() {
     monthly_fee_statement: { scheduleKey: 'fee_statement', label: 'Statement Fee', unit: '$' },
   };
 
-  // Get partner buy rate for a deal field, returns null if no partner/schedule
+  // Fuzzy match a partner schedule key — partner data comes from AI PDF extraction so keys vary
+  const fuzzyMatchPartnerKey = (scheduleKey: string): number | null => {
+    if (!partnerSchedule) return null;
+    // Direct match first
+    if (partnerSchedule[scheduleKey] != null && partnerSchedule[scheduleKey] !== '') return parseFloat(partnerSchedule[scheduleKey]);
+    // Fuzzy: split schedule key into tokens and find a partner key containing all tokens
+    const tokens = scheduleKey.toLowerCase().replace(/_/g, ' ').split(' ').filter(t => t.length > 1);
+    for (const [pk, pv] of Object.entries(partnerSchedule)) {
+      if (pk === 'schedule_name' || pk === 'label') continue;
+      const pkLower = pk.toLowerCase().replace(/_/g, ' ');
+      if (tokens.every(t => pkLower.includes(t))) {
+        const n = parseFloat(pv as string);
+        if (!isNaN(n)) return n;
+      }
+    }
+    return null;
+  };
+
+  // Get partner buy rate for a deal field
   const getPartnerCost = (dealField: string): number | null => {
-    if (!selectedSchedule) return null;
+    if (!partnerSchedule) return null;
     const mapping = DEAL_TO_PARTNER_COST[dealField];
     if (!mapping) return null;
-    const val = selectedSchedule[mapping.scheduleKey];
-    return val != null && val !== '' ? parseFloat(val) : null;
+    return fuzzyMatchPartnerKey(mapping.scheduleKey);
   };
 
   // Check all pricing fields for below-cost issues
   const getBelowCostFields = (): { label: string; sell: number; buy: number }[] => {
-    if (!deal || !selectedSchedule) return [];
+    if (!deal || !partnerSchedule) return [];
     const issues: { label: string; sell: number; buy: number }[] = [];
     for (const [dealField, mapping] of Object.entries(DEAL_TO_PARTNER_COST)) {
       const sell = parseFloat(deal[dealField]);
@@ -694,83 +709,18 @@ export default function LeadDetailPage() {
     fetchRepCodes();
   }, [lead?.assigned_to]);
 
-  // Partner pricing: fields that overlap between deal base pricing and partner schedule keys
-  const MAPPED_FIELDS = new Set([
-    "pricing_type", "ic_plus_visa_pct", "ic_plus_mc_pct", "ic_plus_amex_pct", "ic_plus_disc_pct",
-    "ic_plus_visa_txn", "ic_plus_mc_txn", "ic_plus_amex_txn", "ic_plus_disc_txn",
-    "dual_pricing_rate", "dual_pricing_txn_fee", "flat_rate_pct", "flat_rate_txn_cost",
-    "fee_chargeback", "fee_retrieval", "fee_arbitration", "fee_voice_auth", "fee_ebt_auth", "fee_ach_reject",
-    "monthly_fee_statement", "pci_compliance_monthly", "pci_compliance_annual",
-    "monthly_fee_custom_name", "monthly_fee_custom_amount", "interchange_remittance",
-    "visa_rate", "mc_rate", "amex_rate", "disc_rate", "per_txn_fee", "monthly_fee", "pci_fee",
-  ]);
-
-  const humanizeKey = (key: string) => key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-
+  // Partner pricing — simplified: use first schedule from partner's pricing_data for cost tooltips
   const selectedPartner = partners.find((p) => p.id === deal?.partner_id);
-  const selectedSchedule = selectedPartner?.pricing_data?.[deal?.partner_schedule_index ?? -1] || null;
-  const extraFields = selectedSchedule
-    ? Object.entries(selectedSchedule).filter(([k]) => !MAPPED_FIELDS.has(k) && k !== "schedule_name" && k !== "label")
-    : [];
-
-  const hasOverrides = deal?.partner_pricing_overrides && Object.keys(deal.partner_pricing_overrides).length > 0;
+  const partnerSchedule = selectedPartner?.pricing_data?.[0] || null;
 
   const handlePartnerChange = (newPartnerId: string) => {
-    if (hasOverrides && newPartnerId !== deal.partner_id) {
-      pendingPartnerSwitch.current = { partnerId: newPartnerId, scheduleIdx: null };
-      setShowPartnerSwitchModal(true);
-      return;
-    }
-    applyPartnerSwitch(newPartnerId, null);
-  };
-
-  const handleScheduleChange = (newIdx: number | null) => {
-    if (hasOverrides && newIdx !== deal.partner_schedule_index) {
-      pendingPartnerSwitch.current = { partnerId: deal.partner_id, scheduleIdx: newIdx };
-      setShowPartnerSwitchModal(true);
-      return;
-    }
-    applyScheduleSwitch(newIdx);
-  };
-
-  const applyPartnerSwitch = (partnerId: string, scheduleIdx: number | null) => {
     setDeals(prev => {
       const next = [...prev];
       const current = next[activeDealIdx];
       if (!current) return prev;
-      next[activeDealIdx] = { ...current, partner_id: partnerId || null, partner_schedule_index: scheduleIdx, partner_pricing_overrides: null };
+      next[activeDealIdx] = { ...current, partner_id: newPartnerId || null };
       return next;
     });
-  };
-
-  const applyScheduleSwitch = (scheduleIdx: number | null) => {
-    setDeals(prev => {
-      const next = [...prev];
-      const current = next[activeDealIdx];
-      if (!current) return prev;
-      next[activeDealIdx] = { ...current, partner_schedule_index: scheduleIdx, partner_pricing_overrides: null };
-      return next;
-    });
-  };
-
-  const confirmPartnerSwitch = () => {
-    if (pendingPartnerSwitch.current) {
-      const { partnerId, scheduleIdx } = pendingPartnerSwitch.current;
-      if (partnerId !== deal.partner_id) {
-        applyPartnerSwitch(partnerId, scheduleIdx);
-      } else {
-        applyScheduleSwitch(scheduleIdx);
-      }
-    }
-    pendingPartnerSwitch.current = null;
-    setShowPartnerSwitchModal(false);
-  };
-
-  const updateOverride = (key: string, value: string) => {
-    setDeal((prev: any) => ({
-      ...prev,
-      partner_pricing_overrides: { ...(prev.partner_pricing_overrides || {}), [key]: value },
-    }));
   };
 
   const formatEIN = (val: string) => {
@@ -1245,17 +1195,6 @@ export default function LeadDetailPage() {
                     ))}
                   </select>
                 </div>
-                {deal?.partner_id && selectedPartner?.pricing_data?.length > 0 && (
-                  <div>
-                    <label className={labelClass}>Pricing Schedule</label>
-                    <select value={deal.partner_schedule_index ?? ""} onChange={(e) => handleScheduleChange(e.target.value === "" ? null : parseInt(e.target.value))} className={inputClass}>
-                      <option value="">Select schedule...</option>
-                      {selectedPartner.pricing_data.map((s: any, i: number) => (
-                        <option key={i} value={i}>{s.schedule_name || s.label || `Schedule ${i + 1}`}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -1400,24 +1339,8 @@ export default function LeadDetailPage() {
               <button onClick={async () => { await ensureDeal(); const items = [...(deal?.software_items || [])]; items.push({ name: "", type: "", monthly_cost: "", per_txn: "" }); updateDealField("software_items", items); }} className="text-emerald-600 hover:text-emerald-700 text-sm font-medium">+ Add Software Item</button>
             </div>
 
-            {/* Partner Schedule — only when partner + schedule selected */}
-            {selectedSchedule && extraFields.length > 0 && (
-              <div className={sectionClass}>
-                <h4 className="font-semibold mb-1 text-emerald-600">Partner Schedule</h4>
-                <p className="text-xs text-slate-400 mb-4">{selectedPartner?.name} — {selectedSchedule.schedule_name || selectedSchedule.label || `Schedule ${(deal?.partner_schedule_index ?? 0) + 1}`}</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {extraFields.map(([key, defaultVal]) => (
-                    <div key={key}>
-                      <label className={labelClass}>{humanizeKey(key)}</label>
-                      <input type="text" value={deal?.partner_pricing_overrides?.[key] ?? (defaultVal as string) ?? ""} onChange={(e) => updateOverride(key, e.target.value)} className={inputClass} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Margin Summary */}
-            {deal && selectedSchedule && (() => {
+            {deal && partnerSchedule && (() => {
               const margins: number[] = [];
               for (const [dealField, mapping] of Object.entries(DEAL_TO_PARTNER_COST)) {
                 const sell = parseFloat(deal[dealField]);
@@ -2262,18 +2185,7 @@ export default function LeadDetailPage() {
         </div>
       )}
 
-      {showPartnerSwitchModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-8 border border-slate-200 shadow-sm w-full max-w-md mx-4">
-            <h3 className="text-lg font-bold mb-4">Switch Partner Pricing?</h3>
-            <p className="text-slate-500 text-sm mb-4">Switching partners will clear partner-specific pricing. Continue?</p>
-            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-              <button onClick={confirmPartnerSwitch} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition">Continue</button>
-              <button onClick={() => { pendingPartnerSwitch.current = null; setShowPartnerSwitchModal(false); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Partner switch modal removed — simplified pricing */}
     </div>
   );
 }
