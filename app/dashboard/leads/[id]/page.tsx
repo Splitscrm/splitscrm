@@ -70,6 +70,9 @@ export default function LeadDetailPage() {
   const [saveTplName, setSaveTplName] = useState('');
   const [saveTplDefault, setSaveTplDefault] = useState(false);
   const [saveTplSaving, setSaveTplSaving] = useState(false);
+  const [showBelowCostWarning, setShowBelowCostWarning] = useState(false);
+  const [belowCostItems, setBelowCostItems] = useState<{ label: string; sell: number; buy: number }[]>([]);
+  const [pendingStageAfterWarning, setPendingStageAfterWarning] = useState("");
 
   // Signature flow state
   const [sigBanks, setSigBanks] = useState<any[]>([]);
@@ -201,6 +204,16 @@ export default function LeadDetailPage() {
 
   const handleStatusChange = (newStatus: string) => {
     const fromSignedOrConverted = lead.status === "signed" || lead.status === "submitted" || lead.status === "converted";
+    // Pre-signature validation: check for below-cost pricing
+    if (newStatus === "send_for_signature" && selectedSchedule) {
+      const issues = getBelowCostFields();
+      if (issues.length > 0) {
+        setBelowCostItems(issues);
+        setPendingStageAfterWarning(newStatus);
+        setShowBelowCostWarning(true);
+        return;
+      }
+    }
     if (newStatus === "unqualified") { setShowModal("unqualified"); setModalData({ reason: "", reason_other: "" }); }
     else if (newStatus === "declined") { setShowModal("declined"); setModalData({ reason: "" }); }
     else if (newStatus === "recycled") { setShowModal("recycled"); setModalData({ reason: "", follow_up_date: "" }); }
@@ -392,6 +405,52 @@ export default function LeadDetailPage() {
     fee_ebt_auths: 'fee_ebt_auth', fee_ach_reject: 'fee_ach_reject',
     fee_statement: 'monthly_fee_statement',
     custom_fee_name: 'monthly_fee_custom_name', custom_fee_amount: 'monthly_fee_custom_amount',
+  };
+
+  // Deal field → partner schedule field mapping for cost comparison
+  const DEAL_TO_PARTNER_COST: Record<string, { scheduleKey: string; label: string; unit: string }> = {
+    ic_plus_visa_pct: { scheduleKey: 'visa_rate', label: 'Visa %', unit: '%' },
+    ic_plus_mc_pct: { scheduleKey: 'mc_rate', label: 'MC %', unit: '%' },
+    ic_plus_amex_pct: { scheduleKey: 'amex_rate', label: 'AMEX %', unit: '%' },
+    ic_plus_disc_pct: { scheduleKey: 'disc_rate', label: 'Disc %', unit: '%' },
+    ic_plus_visa_txn: { scheduleKey: 'visa_txn', label: 'Visa $/txn', unit: '$' },
+    ic_plus_mc_txn: { scheduleKey: 'mc_txn', label: 'MC $/txn', unit: '$' },
+    ic_plus_amex_txn: { scheduleKey: 'amex_txn', label: 'AMEX $/txn', unit: '$' },
+    ic_plus_disc_txn: { scheduleKey: 'disc_txn', label: 'Disc $/txn', unit: '$' },
+    dual_pricing_rate: { scheduleKey: 'dual_pricing_rate', label: 'Dual Pricing Rate', unit: '%' },
+    dual_pricing_txn_fee: { scheduleKey: 'dual_pricing_txn_fee', label: 'Dual Pricing Txn', unit: '$' },
+    flat_rate_pct: { scheduleKey: 'flat_rate_pct', label: 'Flat Rate', unit: '%' },
+    flat_rate_txn_cost: { scheduleKey: 'flat_rate_txn_cost', label: 'Flat Rate Txn', unit: '$' },
+    fee_chargeback: { scheduleKey: 'fee_chargeback', label: 'Chargebacks', unit: '$' },
+    fee_retrieval: { scheduleKey: 'fee_retrieval', label: 'Retrievals', unit: '$' },
+    fee_arbitration: { scheduleKey: 'fee_arbitration', label: 'Arbitration', unit: '$' },
+    fee_voice_auth: { scheduleKey: 'fee_voice_auth', label: 'Voice Auth', unit: '$' },
+    fee_ebt_auth: { scheduleKey: 'fee_ebt_auth', label: 'EBT Auth', unit: '$' },
+    fee_ach_reject: { scheduleKey: 'fee_ach_reject', label: 'ACH Reject', unit: '$' },
+    monthly_fee_statement: { scheduleKey: 'fee_statement', label: 'Statement Fee', unit: '$' },
+  };
+
+  // Get partner buy rate for a deal field, returns null if no partner/schedule
+  const getPartnerCost = (dealField: string): number | null => {
+    if (!selectedSchedule) return null;
+    const mapping = DEAL_TO_PARTNER_COST[dealField];
+    if (!mapping) return null;
+    const val = selectedSchedule[mapping.scheduleKey];
+    return val != null && val !== '' ? parseFloat(val) : null;
+  };
+
+  // Check all pricing fields for below-cost issues
+  const getBelowCostFields = (): { label: string; sell: number; buy: number }[] => {
+    if (!deal || !selectedSchedule) return [];
+    const issues: { label: string; sell: number; buy: number }[] = [];
+    for (const [dealField, mapping] of Object.entries(DEAL_TO_PARTNER_COST)) {
+      const sell = parseFloat(deal[dealField]);
+      const buy = getPartnerCost(dealField);
+      if (!isNaN(sell) && buy != null && sell < buy) {
+        issues.push({ label: mapping.label, sell, buy });
+      }
+    }
+    return issues;
   };
 
   // Auto-create a deal when user starts editing pricing fields (before qualified_prospect stage)
@@ -953,6 +1012,35 @@ export default function LeadDetailPage() {
   const labelClass = "text-base text-slate-500 block mb-1";
   const sectionClass = "bg-white rounded-xl p-6 border border-slate-200 shadow-sm mb-6";
 
+  // Helper: render a pricing input with optional partner cost tooltip
+  const renderCostInput = (label: string, dealField: string, value: any, onChange: (v: string) => void, step = "0.01") => {
+    const buyCost = getPartnerCost(dealField);
+    const sellVal = parseFloat(value);
+    const hasValue = !isNaN(sellVal);
+    const belowCost = hasValue && buyCost != null && sellVal < buyCost;
+    const mapping = DEAL_TO_PARTNER_COST[dealField];
+    const unit = mapping?.unit || '$';
+    return (
+      <div className="relative group">
+        <label className={labelClass}>
+          {label}
+          {buyCost != null && (
+            <span className="inline-block ml-1 relative">
+              <svg className={`w-3.5 h-3.5 inline ${belowCost ? 'text-red-400' : 'text-slate-300'}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2.5 py-1.5 bg-slate-800 text-white text-[11px] rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
+                {belowCost
+                  ? `\u26A0 Below cost! Partner: ${unit === '$' ? '$' : ''}${buyCost}${unit === '%' ? '%' : ''}, Yours: ${unit === '$' ? '$' : ''}${sellVal}${unit === '%' ? '%' : ''}, Loss: ${unit === '$' ? '$' : ''}${(buyCost - sellVal).toFixed(2)}${unit === '%' ? '%' : ''}`
+                  : `Partner cost: ${unit === '$' ? '$' : ''}${buyCost}${unit === '%' ? '%' : ''}${hasValue ? ` | Margin: ${unit === '$' ? '$' : ''}${(sellVal - buyCost).toFixed(2)}${unit === '%' ? '%' : ''}` : ''}`
+                }
+              </span>
+            </span>
+          )}
+        </label>
+        <input type="number" step={step} value={value || ""} onChange={(e) => onChange(e.target.value)} className={`${inputClass} ${belowCost ? '!border-red-300 !ring-red-200' : ''}`} />
+      </div>
+    );
+  };
+
   if (authLoading || loading) return <LoadingScreen />;
 
   if (permissionDenied) return (
@@ -1174,17 +1262,17 @@ export default function LeadDetailPage() {
                 <div>
                   <p className="text-sm text-slate-500 mb-2">Percentage Markups (%)</p>
                   <div className="grid grid-cols-4 gap-4 mb-4">
-                    <div><label className={labelClass}>Visa %</label><input type="number" step="0.01" value={deal.ic_plus_visa_pct || ""} onChange={(e) => updateDealField("ic_plus_visa_pct", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>MC %</label><input type="number" step="0.01" value={deal.ic_plus_mc_pct || ""} onChange={(e) => updateDealField("ic_plus_mc_pct", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>AMEX %</label><input type="number" step="0.01" value={deal.ic_plus_amex_pct || ""} onChange={(e) => updateDealField("ic_plus_amex_pct", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Disc %</label><input type="number" step="0.01" value={deal.ic_plus_disc_pct || ""} onChange={(e) => updateDealField("ic_plus_disc_pct", e.target.value)} className={inputClass} /></div>
+                    {renderCostInput("Visa %", "ic_plus_visa_pct", deal.ic_plus_visa_pct, v => updateDealField("ic_plus_visa_pct", v))}
+                    {renderCostInput("MC %", "ic_plus_mc_pct", deal.ic_plus_mc_pct, v => updateDealField("ic_plus_mc_pct", v))}
+                    {renderCostInput("AMEX %", "ic_plus_amex_pct", deal.ic_plus_amex_pct, v => updateDealField("ic_plus_amex_pct", v))}
+                    {renderCostInput("Disc %", "ic_plus_disc_pct", deal.ic_plus_disc_pct, v => updateDealField("ic_plus_disc_pct", v))}
                   </div>
                   <p className="text-sm text-slate-500 mb-2">Per Transaction ($)</p>
                   <div className="grid grid-cols-4 gap-4 mb-4">
-                    <div><label className={labelClass}>Visa $</label><input type="number" step="0.01" value={deal.ic_plus_visa_txn || ""} onChange={(e) => updateDealField("ic_plus_visa_txn", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>MC $</label><input type="number" step="0.01" value={deal.ic_plus_mc_txn || ""} onChange={(e) => updateDealField("ic_plus_mc_txn", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>AMEX $</label><input type="number" step="0.01" value={deal.ic_plus_amex_txn || ""} onChange={(e) => updateDealField("ic_plus_amex_txn", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Disc $</label><input type="number" step="0.01" value={deal.ic_plus_disc_txn || ""} onChange={(e) => updateDealField("ic_plus_disc_txn", e.target.value)} className={inputClass} /></div>
+                    {renderCostInput("Visa $", "ic_plus_visa_txn", deal.ic_plus_visa_txn, v => updateDealField("ic_plus_visa_txn", v))}
+                    {renderCostInput("MC $", "ic_plus_mc_txn", deal.ic_plus_mc_txn, v => updateDealField("ic_plus_mc_txn", v))}
+                    {renderCostInput("AMEX $", "ic_plus_amex_txn", deal.ic_plus_amex_txn, v => updateDealField("ic_plus_amex_txn", v))}
+                    {renderCostInput("Disc $", "ic_plus_disc_txn", deal.ic_plus_disc_txn, v => updateDealField("ic_plus_disc_txn", v))}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div><label className={labelClass}>Interchange Remittance</label><select value={deal.interchange_remittance || ""} onChange={(e) => updateDealField("interchange_remittance", e.target.value)} className={inputClass}><option value="">Select...</option><option value="daily">Daily</option><option value="monthly">Monthly</option></select></div>
@@ -1212,12 +1300,12 @@ export default function LeadDetailPage() {
             <div className={sectionClass}>
               <h4 className="font-semibold mb-4 text-emerald-600">Misc Fees ($)</h4>
               <div className="grid grid-cols-3 lg:grid-cols-6 gap-4">
-                <div><label className={labelClass}>Chargebacks</label><input type="number" step="0.01" value={deal?.fee_chargeback || ""} onChange={(e) => { updateDealField("fee_chargeback", e.target.value); }} className={inputClass} /></div>
-                <div><label className={labelClass}>Retrievals</label><input type="number" step="0.01" value={deal?.fee_retrieval || ""} onChange={(e) => { updateDealField("fee_retrieval", e.target.value); }} className={inputClass} /></div>
-                <div><label className={labelClass}>Arbitration</label><input type="number" step="0.01" value={deal?.fee_arbitration || ""} onChange={(e) => { updateDealField("fee_arbitration", e.target.value); }} className={inputClass} /></div>
-                <div><label className={labelClass}>Voice Auths</label><input type="number" step="0.01" value={deal?.fee_voice_auth || ""} onChange={(e) => { updateDealField("fee_voice_auth", e.target.value); }} className={inputClass} /></div>
-                <div><label className={labelClass}>EBT Auths</label><input type="number" step="0.01" value={deal?.fee_ebt_auth || ""} onChange={(e) => { updateDealField("fee_ebt_auth", e.target.value); }} className={inputClass} /></div>
-                <div><label className={labelClass}>ACH Reject</label><input type="number" step="0.01" value={deal?.fee_ach_reject || ""} onChange={(e) => { updateDealField("fee_ach_reject", e.target.value); }} className={inputClass} /></div>
+                {renderCostInput("Chargebacks", "fee_chargeback", deal?.fee_chargeback, v => updateDealField("fee_chargeback", v))}
+                {renderCostInput("Retrievals", "fee_retrieval", deal?.fee_retrieval, v => updateDealField("fee_retrieval", v))}
+                {renderCostInput("Arbitration", "fee_arbitration", deal?.fee_arbitration, v => updateDealField("fee_arbitration", v))}
+                {renderCostInput("Voice Auths", "fee_voice_auth", deal?.fee_voice_auth, v => updateDealField("fee_voice_auth", v))}
+                {renderCostInput("EBT Auths", "fee_ebt_auth", deal?.fee_ebt_auth, v => updateDealField("fee_ebt_auth", v))}
+                {renderCostInput("ACH Reject", "fee_ach_reject", deal?.fee_ach_reject, v => updateDealField("fee_ach_reject", v))}
               </div>
             </div>
 
@@ -1312,6 +1400,25 @@ export default function LeadDetailPage() {
                 </div>
               </div>
             )}
+
+            {/* Margin Summary */}
+            {deal && selectedSchedule && (() => {
+              const margins: number[] = [];
+              for (const [dealField, mapping] of Object.entries(DEAL_TO_PARTNER_COST)) {
+                const sell = parseFloat(deal[dealField]);
+                const buy = getPartnerCost(dealField);
+                if (!isNaN(sell) && buy != null) margins.push(sell - buy);
+              }
+              if (margins.length === 0) return null;
+              const avg = margins.reduce((s, m) => s + m, 0) / margins.length;
+              const negCount = margins.filter(m => m < 0).length;
+              return (
+                <div className={`rounded-lg px-4 py-3 flex items-center justify-between text-sm ${avg >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                  <span className="font-medium">Margin Summary</span>
+                  <span>Avg margin: {avg >= 0 ? '+' : ''}{avg.toFixed(3)} across {margins.length} fields{negCount > 0 ? ` \u00b7 ${negCount} below cost` : ''}</span>
+                </div>
+              );
+            })()}
 
             {/* Save Pricing button */}
             {deal && canEdit && (
@@ -2036,6 +2143,34 @@ export default function LeadDetailPage() {
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
               <button onClick={convertToMerchant} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition disabled:opacity-50">{saving ? "Creating..." : "Confirm & Create Merchant"}</button>
               <button onClick={() => setShowModal("")} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBelowCostWarning && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xl p-6 max-w-lg w-full mx-4">
+            <h3 className="text-lg font-semibold text-amber-600 mb-3">Pricing Below Partner Costs</h3>
+            <p className="text-sm text-slate-500 mb-4">The following fields are priced below your partner&apos;s buy rates:</p>
+            <div className="bg-amber-50 rounded-lg p-3 mb-4">
+              <table className="w-full text-sm">
+                <thead><tr className="text-left text-xs text-amber-700"><th className="pb-1">Field</th><th className="pb-1">Your Rate</th><th className="pb-1">Partner Cost</th><th className="pb-1">Diff</th></tr></thead>
+                <tbody>
+                  {belowCostItems.map((item, i) => (
+                    <tr key={i} className="text-amber-800">
+                      <td className="py-0.5">{item.label}</td>
+                      <td>{item.sell}</td>
+                      <td>{item.buy}</td>
+                      <td className="text-red-600 font-medium">{(item.sell - item.buy).toFixed(3)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => { setShowBelowCostWarning(false); setPendingStageAfterWarning(""); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">Go Back and Fix</button>
+              <button onClick={() => { setShowBelowCostWarning(false); updateStatus(pendingStageAfterWarning, {}); setPendingStageAfterWarning(""); }} className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition">Proceed Anyway</button>
             </div>
           </div>
         </div>
