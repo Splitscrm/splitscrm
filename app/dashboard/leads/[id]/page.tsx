@@ -25,7 +25,11 @@ export default function LeadDetailPage() {
   const [deals, setDeals] = useState<any[]>([]);
   const [activeDealIdx, setActiveDealIdx] = useState(0);
   const deal = deals[activeDealIdx] || null;
-  const setDeal = (d: any) => setDeals(prev => { const next = [...prev]; next[activeDealIdx] = d; return next; });
+  const setDeal = (d: any) => setDeals(prev => {
+    const next = [...prev];
+    next[activeDealIdx] = typeof d === 'function' ? d(prev[activeDealIdx]) : d;
+    return next;
+  });
   const [showAddLocation, setShowAddLocation] = useState(false);
   const [copyFromDealId, setCopyFromDealId] = useState("");
   const [newLocationName, setNewLocationName] = useState("");
