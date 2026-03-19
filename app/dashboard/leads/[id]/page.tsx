@@ -73,6 +73,7 @@ export default function LeadDetailPage() {
   const [saveTplName, setSaveTplName] = useState('');
   const [saveTplDefault, setSaveTplDefault] = useState(false);
   const [saveTplSaving, setSaveTplSaving] = useState(false);
+  const [appliedTemplateId, setAppliedTemplateId] = useState('');
   const [showBelowCostWarning, setShowBelowCostWarning] = useState(false);
   const [belowCostItems, setBelowCostItems] = useState<{ label: string; sell: number; buy: number }[]>([]);
   const [pendingStageAfterWarning, setPendingStageAfterWarning] = useState("");
@@ -434,19 +435,47 @@ export default function LeadDetailPage() {
     monthly_fee_statement: { scheduleKey: 'fee_statement', label: 'Statement Fee', unit: '$' },
   };
 
-  // Fuzzy match a partner schedule key — partner data comes from AI PDF extraction so keys vary
+  // Flatten nested partner schedule into flat key-value pairs for matching
+  // Partner pricing_data comes from AI PDF extraction with nested structure:
+  // { transaction_fees: { visa_rate: "0.05%", ... }, monthly_fees: { statement_fee: "$9.95" }, ... }
+  const flattenSchedule = (schedule: any): Record<string, string> => {
+    if (!schedule || typeof schedule !== 'object') return {};
+    const flat: Record<string, string> = {};
+    for (const [k, v] of Object.entries(schedule)) {
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        // Nested section — flatten its entries
+        for (const [innerK, innerV] of Object.entries(v as Record<string, any>)) {
+          if (innerV != null && typeof innerV !== 'object') flat[innerK] = String(innerV);
+        }
+      } else if (v != null && typeof v !== 'object') {
+        flat[k] = String(v);
+      }
+    }
+    return flat;
+  };
+
+  // Parse a pricing string like "0.05%", "$25.00", "25", "0.15% + $0.10" into a number
+  const parsePricingValue = (val: string): number | null => {
+    if (!val) return null;
+    const cleaned = val.replace(/[$%,]/g, '').trim();
+    // Handle "X + Y" format — take the first number (the rate part)
+    const parts = cleaned.split('+');
+    const n = parseFloat(parts[0].trim());
+    return isNaN(n) ? null : n;
+  };
+
+  // Fuzzy match a partner cost key — partner data comes from AI PDF extraction so keys vary
   const fuzzyMatchPartnerKey = (scheduleKey: string): number | null => {
     if (!partnerSchedule) return null;
-    // Direct match first
-    if (partnerSchedule[scheduleKey] != null && partnerSchedule[scheduleKey] !== '') return parseFloat(partnerSchedule[scheduleKey]);
+    // Direct match in flattened costs
+    if (flatPartnerCosts[scheduleKey]) return parsePricingValue(flatPartnerCosts[scheduleKey]);
     // Fuzzy: split schedule key into tokens and find a partner key containing all tokens
     const tokens = scheduleKey.toLowerCase().replace(/_/g, ' ').split(' ').filter(t => t.length > 1);
-    for (const [pk, pv] of Object.entries(partnerSchedule)) {
-      if (pk === 'schedule_name' || pk === 'label') continue;
+    for (const [pk, pv] of Object.entries(flatPartnerCosts)) {
       const pkLower = pk.toLowerCase().replace(/_/g, ' ');
       if (tokens.every(t => pkLower.includes(t))) {
-        const n = parseFloat(pv as string);
-        if (!isNaN(n)) return n;
+        const n = parsePricingValue(pv);
+        if (n != null) return n;
       }
     }
     return null;
@@ -520,6 +549,7 @@ export default function LeadDetailPage() {
     if (tpl.software_items?.length > 0) updates.software_items = tpl.software_items;
     setDeal(updates);
     setShowApplyConfirm(null);
+    setAppliedTemplateId(tpl.id);
     setDealMsg("Template applied!");
     setTimeout(() => setDealMsg(""), 2000);
   };
@@ -537,6 +567,7 @@ export default function LeadDetailPage() {
     cleared.flat_rate_pct = null;
     cleared.flat_rate_txn_cost = null;
     setDeal(cleared);
+    setAppliedTemplateId('');
     setDealMsg("Pricing cleared");
     setTimeout(() => setDealMsg(""), 2000);
   };
@@ -712,6 +743,7 @@ export default function LeadDetailPage() {
   // Partner pricing — simplified: use first schedule from partner's pricing_data for cost tooltips
   const selectedPartner = partners.find((p) => p.id === deal?.partner_id);
   const partnerSchedule = selectedPartner?.pricing_data?.[0] || null;
+  const flatPartnerCosts = partnerSchedule ? flattenSchedule(partnerSchedule) : {};
 
   const handlePartnerChange = (newPartnerId: string) => {
     setDeals(prev => {
@@ -1161,8 +1193,12 @@ export default function LeadDetailPage() {
             {/* Template Selector & Actions */}
             <div className="flex flex-wrap items-center gap-3">
               <select
-                onChange={(e) => { const tpl = pricingTemplates.find(t => t.id === e.target.value); if (tpl) setShowApplyConfirm(tpl); e.target.value = ''; }}
-                value=""
+                onChange={(e) => {
+                  if (e.target.value === '') { setAppliedTemplateId(''); return; }
+                  const tpl = pricingTemplates.find(t => t.id === e.target.value);
+                  if (tpl) setShowApplyConfirm(tpl);
+                }}
+                value={appliedTemplateId}
                 disabled={pricingTemplates.length === 0}
                 className="text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed"
               >
