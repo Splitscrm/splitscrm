@@ -412,81 +412,59 @@ export default function LeadDetailPage() {
     custom_fee_name: 'monthly_fee_custom_name', custom_fee_amount: 'monthly_fee_custom_amount',
   };
 
-  // Deal field → partner schedule field mapping for cost comparison
-  const DEAL_TO_PARTNER_COST: Record<string, { scheduleKey: string; label: string; unit: string }> = {
-    ic_plus_visa_pct: { scheduleKey: 'visa_rate', label: 'Visa %', unit: '%' },
-    ic_plus_mc_pct: { scheduleKey: 'mc_rate', label: 'MC %', unit: '%' },
-    ic_plus_amex_pct: { scheduleKey: 'amex_rate', label: 'AMEX %', unit: '%' },
-    ic_plus_disc_pct: { scheduleKey: 'disc_rate', label: 'Disc %', unit: '%' },
-    ic_plus_visa_txn: { scheduleKey: 'visa_txn', label: 'Visa $/txn', unit: '$' },
-    ic_plus_mc_txn: { scheduleKey: 'mc_txn', label: 'MC $/txn', unit: '$' },
-    ic_plus_amex_txn: { scheduleKey: 'amex_txn', label: 'AMEX $/txn', unit: '$' },
-    ic_plus_disc_txn: { scheduleKey: 'disc_txn', label: 'Disc $/txn', unit: '$' },
-    dual_pricing_rate: { scheduleKey: 'dual_pricing_rate', label: 'Dual Pricing Rate', unit: '%' },
-    dual_pricing_txn_fee: { scheduleKey: 'dual_pricing_txn_fee', label: 'Dual Pricing Txn', unit: '$' },
-    flat_rate_pct: { scheduleKey: 'flat_rate_pct', label: 'Flat Rate', unit: '%' },
-    flat_rate_txn_cost: { scheduleKey: 'flat_rate_txn_cost', label: 'Flat Rate Txn', unit: '$' },
-    fee_chargeback: { scheduleKey: 'fee_chargeback', label: 'Chargebacks', unit: '$' },
-    fee_retrieval: { scheduleKey: 'fee_retrieval', label: 'Retrievals', unit: '$' },
-    fee_arbitration: { scheduleKey: 'fee_arbitration', label: 'Arbitration', unit: '$' },
-    fee_voice_auth: { scheduleKey: 'fee_voice_auth', label: 'Voice Auth', unit: '$' },
-    fee_ebt_auth: { scheduleKey: 'fee_ebt_auth', label: 'EBT Auth', unit: '$' },
-    fee_ach_reject: { scheduleKey: 'fee_ach_reject', label: 'ACH Reject', unit: '$' },
-    monthly_fee_statement: { scheduleKey: 'fee_statement', label: 'Statement Fee', unit: '$' },
+  // ── Partner cost tooltip system ──────────────────────────────────────────
+  // Explicit mapping: deal field → path into partner pricing_data[0] nested structure
+  // Partner data has nested sections: transaction_fees.auth_fee, chargeback_fees.chargeback_fee, etc.
+  type CostMapping = { path: string[]; label: string; showBps?: boolean };
+  const DEAL_TO_PARTNER_COST: Record<string, CostMapping> = {
+    ic_plus_visa_pct:    { path: ['interchange_plus'], label: 'Visa %', showBps: true },
+    ic_plus_mc_pct:      { path: ['interchange_plus'], label: 'MC %', showBps: true },
+    ic_plus_amex_pct:    { path: ['interchange_plus'], label: 'AMEX %', showBps: true },
+    ic_plus_disc_pct:    { path: ['interchange_plus'], label: 'Disc %', showBps: true },
+    ic_plus_visa_txn:    { path: ['transaction_fees', 'auth_fee'], label: 'Visa $/txn' },
+    ic_plus_mc_txn:      { path: ['transaction_fees', 'auth_fee'], label: 'MC $/txn' },
+    ic_plus_amex_txn:    { path: ['transaction_fees', 'auth_fee'], label: 'AMEX $/txn' },
+    ic_plus_disc_txn:    { path: ['transaction_fees', 'auth_fee'], label: 'Disc $/txn' },
+    fee_chargeback:      { path: ['chargeback_fees', 'chargeback_fee'], label: 'Chargebacks' },
+    fee_retrieval:       { path: ['chargeback_fees', 'retrieval_fee'], label: 'Retrievals' },
+    fee_arbitration:     { path: ['chargeback_fees', 'arbitration_fee'], label: 'Arbitration' },
+    fee_voice_auth:      { path: ['transaction_fees', 'voice_auth_fee'], label: 'Voice Auth' },
+    fee_ebt_auth:        { path: ['transaction_fees', 'debit_ebt_fee'], label: 'EBT Auth' },
+    fee_ach_reject:      { path: ['other_fees', 'ach_returns_fee'], label: 'ACH Reject' },
+    monthly_fee_statement: { path: ['monthly_fees', 'statement_fee'], label: 'Statement Fee' },
   };
 
-  // Flatten nested partner schedule into flat key-value pairs for matching
-  // Partner pricing_data comes from AI PDF extraction with nested structure:
-  // { transaction_fees: { visa_rate: "0.05%", ... }, monthly_fees: { statement_fee: "$9.95" }, ... }
-  const flattenSchedule = (schedule: any): Record<string, string> => {
-    if (!schedule || typeof schedule !== 'object') return {};
-    const flat: Record<string, string> = {};
-    for (const [k, v] of Object.entries(schedule)) {
-      if (v && typeof v === 'object' && !Array.isArray(v)) {
-        // Nested section — flatten its entries
-        for (const [innerK, innerV] of Object.entries(v as Record<string, any>)) {
-          if (innerV != null && typeof innerV !== 'object') flat[innerK] = String(innerV);
-        }
-      } else if (v != null && typeof v !== 'object') {
-        flat[k] = String(v);
-      }
-    }
-    return flat;
-  };
-
-  // Parse a pricing string like "0.05%", "$25.00", "25", "0.15% + $0.10" into a number
-  const parsePricingValue = (val: string): number | null => {
-    if (!val) return null;
-    const cleaned = val.replace(/[$%,]/g, '').trim();
-    // Handle "X + Y" format — take the first number (the rate part)
-    const parts = cleaned.split('+');
-    const n = parseFloat(parts[0].trim());
-    return isNaN(n) ? null : n;
-  };
-
-  // Fuzzy match a partner cost key — partner data comes from AI PDF extraction so keys vary
-  const fuzzyMatchPartnerKey = (scheduleKey: string): number | null => {
+  // Resolve a dot-path into the partner schedule object, returning the raw string value
+  const resolvePartnerPath = (path: string[]): string | null => {
     if (!partnerSchedule) return null;
-    // Direct match in flattened costs
-    if (flatPartnerCosts[scheduleKey]) return parsePricingValue(flatPartnerCosts[scheduleKey]);
-    // Fuzzy: split schedule key into tokens and find a partner key containing all tokens
-    const tokens = scheduleKey.toLowerCase().replace(/_/g, ' ').split(' ').filter(t => t.length > 1);
-    for (const [pk, pv] of Object.entries(flatPartnerCosts)) {
-      const pkLower = pk.toLowerCase().replace(/_/g, ' ');
-      if (tokens.every(t => pkLower.includes(t))) {
-        const n = parsePricingValue(pv);
-        if (n != null) return n;
-      }
+    let current: any = partnerSchedule;
+    for (const key of path) {
+      if (current == null || typeof current !== 'object') return null;
+      current = current[key];
     }
-    return null;
+    if (current == null) return null;
+    return typeof current === 'object' ? JSON.stringify(current) : String(current);
   };
 
-  // Get partner buy rate for a deal field
-  const getPartnerCost = (dealField: string): number | null => {
+  // Get partner cost info for a deal field — returns { raw: string, numeric: number | null }
+  const getPartnerCostInfo = (dealField: string): { raw: string; numeric: number | null; bps: string | null } | null => {
     if (!partnerSchedule) return null;
     const mapping = DEAL_TO_PARTNER_COST[dealField];
     if (!mapping) return null;
-    return fuzzyMatchPartnerKey(mapping.scheduleKey);
+    const raw = resolvePartnerPath(mapping.path);
+    const displayRaw = raw || 'Not specified';
+    // Try to extract first number for comparison
+    let numeric: number | null = null;
+    if (raw) {
+      const match = raw.match(/[\d.]+/);
+      if (match) numeric = parseFloat(match[0]);
+    }
+    // Bank BPS for percentage fields
+    let bps: string | null = null;
+    if (mapping.showBps && partnerSchedule.bank_sponsorship_bps) {
+      bps = String(partnerSchedule.bank_sponsorship_bps);
+    }
+    return { raw: displayRaw, numeric: isNaN(numeric as number) ? null : numeric, bps };
   };
 
   // Check all pricing fields for below-cost issues
@@ -495,9 +473,9 @@ export default function LeadDetailPage() {
     const issues: { label: string; sell: number; buy: number }[] = [];
     for (const [dealField, mapping] of Object.entries(DEAL_TO_PARTNER_COST)) {
       const sell = parseFloat(deal[dealField]);
-      const buy = getPartnerCost(dealField);
-      if (!isNaN(sell) && buy != null && sell < buy) {
-        issues.push({ label: mapping.label, sell, buy });
+      const info = getPartnerCostInfo(dealField);
+      if (!isNaN(sell) && info?.numeric != null && sell < info.numeric) {
+        issues.push({ label: mapping.label, sell, buy: info.numeric });
       }
     }
     return issues;
@@ -743,7 +721,6 @@ export default function LeadDetailPage() {
   // Partner pricing — simplified: use first schedule from partner's pricing_data for cost tooltips
   const selectedPartner = partners.find((p) => p.id === deal?.partner_id);
   const partnerSchedule = selectedPartner?.pricing_data?.[0] || null;
-  const flatPartnerCosts = partnerSchedule ? flattenSchedule(partnerSchedule) : {};
 
   const handlePartnerChange = (newPartnerId: string) => {
     setDeals(prev => {
@@ -1005,24 +982,31 @@ export default function LeadDetailPage() {
 
   // Helper: render a pricing input with optional partner cost tooltip
   const renderCostInput = (label: string, dealField: string, value: any, onChange: (v: string) => void, step = "0.01") => {
-    const buyCost = getPartnerCost(dealField);
+    const costInfo = getPartnerCostInfo(dealField);
     const sellVal = parseFloat(value);
     const hasValue = !isNaN(sellVal);
-    const belowCost = hasValue && buyCost != null && sellVal < buyCost;
-    const mapping = DEAL_TO_PARTNER_COST[dealField];
-    const unit = mapping?.unit || '$';
+    const belowCost = hasValue && costInfo?.numeric != null && sellVal < costInfo.numeric;
+    const hasTooltip = costInfo != null;
+    // Build tooltip text
+    let tooltipText = '';
+    if (costInfo) {
+      if (belowCost) {
+        tooltipText = `\u26A0 Below cost! Partner: ${costInfo.raw}, Yours: ${sellVal}`;
+      } else {
+        tooltipText = `Partner cost: ${costInfo.raw}`;
+        if (hasValue && costInfo.numeric != null) tooltipText += ` | Margin: ${(sellVal - costInfo.numeric).toFixed(2)}`;
+      }
+      if (costInfo.bps) tooltipText += ` | Bank BPS: ${costInfo.bps}`;
+    }
     return (
       <div className="relative group">
         <label className={labelClass}>
           {label}
-          {buyCost != null && (
+          {hasTooltip && (
             <span className="inline-block ml-1 relative">
               <svg className={`w-3.5 h-3.5 inline ${belowCost ? 'text-red-400' : 'text-slate-300'}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2.5 py-1.5 bg-slate-800 text-white text-[11px] rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
-                {belowCost
-                  ? `\u26A0 Below cost! Partner: ${unit === '$' ? '$' : ''}${buyCost}${unit === '%' ? '%' : ''}, Yours: ${unit === '$' ? '$' : ''}${sellVal}${unit === '%' ? '%' : ''}, Loss: ${unit === '$' ? '$' : ''}${(buyCost - sellVal).toFixed(2)}${unit === '%' ? '%' : ''}`
-                  : `Partner cost: ${unit === '$' ? '$' : ''}${buyCost}${unit === '%' ? '%' : ''}${hasValue ? ` | Margin: ${unit === '$' ? '$' : ''}${(sellVal - buyCost).toFixed(2)}${unit === '%' ? '%' : ''}` : ''}`
-                }
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2.5 py-1.5 bg-slate-800 text-white text-[11px] rounded-lg whitespace-nowrap max-w-xs truncate opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
+                {tooltipText}
               </span>
             </span>
           )}
@@ -1378,10 +1362,10 @@ export default function LeadDetailPage() {
             {/* Margin Summary */}
             {deal && partnerSchedule && (() => {
               const margins: number[] = [];
-              for (const [dealField, mapping] of Object.entries(DEAL_TO_PARTNER_COST)) {
+              for (const [dealField] of Object.entries(DEAL_TO_PARTNER_COST)) {
                 const sell = parseFloat(deal[dealField]);
-                const buy = getPartnerCost(dealField);
-                if (!isNaN(sell) && buy != null) margins.push(sell - buy);
+                const info = getPartnerCostInfo(dealField);
+                if (!isNaN(sell) && info?.numeric != null) margins.push(sell - info.numeric);
               }
               if (margins.length === 0) return null;
               const avg = margins.reduce((s, m) => s + m, 0) / margins.length;
