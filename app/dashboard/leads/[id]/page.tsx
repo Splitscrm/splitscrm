@@ -62,6 +62,8 @@ export default function LeadDetailPage() {
   // Partner switch modal removed — simplified pricing
   const dealCreationGuard = useRef(false);
   const commLogRef = useRef<CommunicationLogHandle>(null);
+  const [showCommPanel, setShowCommPanel] = useState(false);
+  const [commCount, setCommCount] = useState(0);
   const [deleteLocationTarget, setDeleteLocationTarget] = useState<any>(null);
   const [deletingLocation, setDeletingLocation] = useState(false);
   const [agentRepCodes, setAgentRepCodes] = useState<any[]>([]);
@@ -168,6 +170,9 @@ export default function LeadDetailPage() {
           }
         }
         const { data: actData } = await supabase.from("activity_log").select("id, description, created_at").eq("lead_id", leadData.id).order("created_at", { ascending: false }).limit(50);
+        // Get communication count for badge
+        const { count: cCount } = await supabase.from("communications").select("*", { count: "exact", head: true }).eq("lead_id", leadData.id);
+        setCommCount(cCount || 0);
         if (actData) setActivities(actData);
         const { data: taskData } = await supabase.from("tasks").select("id, title, due_date, priority, status").eq("lead_id", leadData.id).eq("status", "pending").order("due_date", { ascending: true });
         if (taskData) setLeadTasks(taskData);
@@ -1085,6 +1090,10 @@ export default function LeadDetailPage() {
             <button onClick={() => commLogRef.current?.openTaskModal()} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-150">
               <span className="mr-1.5">📋</span>Follow-up
             </button>
+            <button onClick={() => setShowCommPanel(true)} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-150 relative">
+              <span className="mr-1.5">🕒</span>History
+              {commCount > 0 && <span className="ml-1.5 bg-slate-100 text-slate-600 text-[10px] px-1.5 py-0.5 rounded-full font-medium">{commCount}</span>}
+            </button>
           </div>
         </div>
 
@@ -1386,17 +1395,19 @@ export default function LeadDetailPage() {
             )}
           </div>
         </div>
-        {/* Communication Log */}
-        <CommunicationLog
-          ref={commLogRef}
-          leadId={lead.id}
-          dealId={deal?.id}
-          contactName={lead.contact_name}
-          contactPhone={lead.phone}
-          contactEmail={lead.email}
-          onTaskCreated={fetchTasks}
-          hideActionBar
-        />
+        {/* CommunicationLog: hidden from main flow, modals escape via fixed positioning */}
+        <div className="h-0 overflow-hidden" aria-hidden="true">
+          <CommunicationLog
+            ref={commLogRef}
+            leadId={lead.id}
+            dealId={deal?.id}
+            contactName={lead.contact_name}
+            contactPhone={lead.phone}
+            contactEmail={lead.email}
+            onTaskCreated={fetchTasks}
+            hideActionBar
+          />
+        </div>
 
         {/* Task Toast */}
         {taskToast && (
@@ -1941,29 +1952,6 @@ export default function LeadDetailPage() {
           );
         })()}
 
-        <div onClick={() => toggleGroup("activityLog")} className={`flex justify-between items-center cursor-pointer bg-white rounded-xl p-4 border border-slate-200 shadow-sm mb-2 ${openGroups.activityLog ? "border-l-4 border-l-emerald-500" : ""}`}>
-          <h3 className="text-lg font-semibold text-slate-700">Activity Log<span className="bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full ml-2">{activities.length}</span></h3>
-          <span className={`text-slate-400 transition-transform duration-200 ${openGroups.activityLog ? "rotate-180" : ""}`}>▼</span>
-        </div>
-        <div className="overflow-hidden transition-all duration-300 ease-in-out" style={{ maxHeight: openGroups.activityLog ? "5000px" : "0px", opacity: openGroups.activityLog ? 1 : 0 }}>
-          <div className={sectionClass}>
-            {activities.length === 0 ? (
-              <p className="text-slate-500 text-sm">No activity yet.</p>
-            ) : (
-              <div className="space-y-3">
-                {activities.map((a) => (
-                  <div key={a.id} className="flex items-start gap-3 text-sm">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0"></div>
-                    <div className="flex-1">
-                      <p className="text-slate-600">{a.description}</p>
-                      <p className="text-slate-400 text-xs">{new Date(a.created_at).toLocaleString()}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
       {/* ═══════════ REP CODES SECTION ═══════════ */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
         <h3 className="text-base font-semibold text-slate-900 mb-3">Agent Rep Codes</h3>
@@ -2000,7 +1988,56 @@ export default function LeadDetailPage() {
           </div>
         )}
       </div>
+        <div onClick={() => toggleGroup("activityLog")} className={`flex justify-between items-center cursor-pointer bg-white rounded-xl p-4 border border-slate-200 shadow-sm mb-2 ${openGroups.activityLog ? "border-l-4 border-l-emerald-500" : ""}`}>
+          <h3 className="text-lg font-semibold text-slate-700">Activity Log<span className="bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full ml-2">{activities.length}</span></h3>
+          <span className={`text-slate-400 transition-transform duration-200 ${openGroups.activityLog ? "rotate-180" : ""}`}>▼</span>
+        </div>
+        <div className="overflow-hidden transition-all duration-300 ease-in-out" style={{ maxHeight: openGroups.activityLog ? "5000px" : "0px", opacity: openGroups.activityLog ? 1 : 0 }}>
+          <div className={sectionClass}>
+            {activities.length === 0 ? (
+              <p className="text-slate-500 text-sm">No activity yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {activities.map((a) => (
+                  <div key={a.id} className="flex items-start gap-3 text-sm">
+                    <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0"></div>
+                    <div className="flex-1">
+                      <p className="text-slate-600">{a.description}</p>
+                      <p className="text-slate-400 text-xs">{new Date(a.created_at).toLocaleString()}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
+
+      {/* Communication History slide-out panel */}
+      {showCommPanel && (
+        <div className="fixed inset-0 z-40" onClick={() => setShowCommPanel(false)}>
+          <div className="absolute inset-0 bg-black/20" />
+          <div className="absolute top-0 right-0 h-full w-full sm:w-[400px] bg-white shadow-xl border-l border-slate-200 flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-slate-200">
+              <h3 className="text-base font-semibold text-slate-900">Communication History</h3>
+              <button onClick={() => setShowCommPanel(false)} className="text-slate-400 hover:text-slate-600 transition">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              <CommunicationLog
+                leadId={lead.id}
+                dealId={deal?.id}
+                contactName={lead.contact_name}
+                contactPhone={lead.phone}
+                contactEmail={lead.email}
+                onTaskCreated={fetchTasks}
+                hideActionBar
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal === "unqualified" && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
