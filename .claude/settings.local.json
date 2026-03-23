@@ -173,7 +173,8 @@
       "Bash(npm list:*)",
       "Bash(npm install:*)",
       "Bash(wc:*)",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Bash(node scripts/restructure-tabs.js)"
     ]
   }
 }

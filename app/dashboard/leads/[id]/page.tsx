@@ -93,12 +93,14 @@ export default function LeadDetailPage() {
   const toggleGroup = (key: string) => setOpenGroups(prev => ({ ...prev, [key]: !prev[key] }));
 
   const docTypes = [
-    { value: "dl", label: "Driver's License" },
-    { value: "processing_statements", label: "Processing Statements" },
-    { value: "bank_statements", label: "Bank Statements" },
-    { value: "articles", label: "Articles" },
-    { value: "marketing_materials", label: "Marketing Materials" },
-    { value: "supporting_docs", label: "Supporting Docs" },
+    { value: "processing_statement", label: "Processing Statement" },
+    { value: "voided_check", label: "Voided Check" },
+    { value: "government_id", label: "Government ID" },
+    { value: "bank_letter", label: "Bank Letter" },
+    { value: "business_license", label: "Business License" },
+    { value: "tax_documents", label: "Tax Documents (EIN Letter)" },
+    { value: "signed_mpa", label: "Signed MPA" },
+    { value: "other", label: "Other" },
   ];
 
   const statuses = [
@@ -821,8 +823,9 @@ export default function LeadDetailPage() {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || !e.target.files[0] || !deal || !selectedDocType) return;
-    setUploading(true);
     const file = e.target.files[0];
+    if (file.size > 10 * 1024 * 1024) { alert("File size must be under 10MB"); e.target.value = ""; return; }
+    setUploading(true);
     const filePath = userId + "/" + deal.id + "/" + selectedDocType + "/" + Date.now() + "_" + file.name;
 
     const { error: uploadError } = await supabase.storage.from("deal-documents").upload(filePath, file);
@@ -1956,6 +1959,64 @@ export default function LeadDetailPage() {
 
         {/* ═══════════ DOCUMENTS TAB ═══════════ */}
         {leadTab === "Documents" && (<>
+        {/* ═══════════ DOCUMENT UPLOAD & LIST ═══════════ */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-semibold text-slate-900">Documents</h3>
+            <div className="flex items-center gap-2">
+              <select value={selectedDocType} onChange={(e) => setSelectedDocType(e.target.value)} className="text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
+                <option value="">Select category...</option>
+                {docTypes.map(dt => <option key={dt.value} value={dt.value}>{dt.label}</option>)}
+              </select>
+              <label className={`${!selectedDocType || uploading || !deal ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'} bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition inline-block`}>
+                {uploading ? 'Uploading...' : 'Upload Document'}
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                  className="hidden"
+                  disabled={!selectedDocType || uploading || !deal}
+                  onChange={async (e) => { if (!deal) { await ensureDeal(); } handleFileUpload(e); }}
+                />
+              </label>
+            </div>
+          </div>
+
+          {documents.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-slate-400 text-sm">No documents uploaded yet.</p>
+              <p className="text-slate-400 text-xs mt-1">Upload processing statements, IDs, bank letters and other deal documents.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 text-left text-slate-500 text-xs">
+                    <th className="pb-2 pr-4 font-medium">File Name</th>
+                    <th className="pb-2 pr-4 font-medium">Category</th>
+                    <th className="pb-2 pr-4 font-medium">Date</th>
+                    <th className="pb-2 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {documents.map((doc: any) => (
+                    <tr key={doc.id} className="border-b border-slate-50">
+                      <td className="py-2.5 pr-4 text-slate-700 font-medium">{doc.file_name}</td>
+                      <td className="py-2.5 pr-4"><span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">{docTypeLabel(doc.doc_type)}</span></td>
+                      <td className="py-2.5 pr-4 text-xs text-slate-400">{new Date(doc.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</td>
+                      <td className="py-2.5">
+                        <div className="flex items-center gap-2">
+                          <button onClick={async () => { const url = signedUrls[doc.id] || await getSignedUrl(doc.file_url); if (url) window.open(url, '_blank'); }} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">View</button>
+                          <button onClick={() => deleteDocument(doc)} className="text-xs text-red-400 hover:text-red-500 font-medium">Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
         {/* ═══════════ SIGNED DOCUMENTS ═══════════ */}
         {["signed", "submitted", "converted", "send_for_signature"].includes(lead.status) && (() => {
           const allSessions = Object.values(sigSessions).flat().filter((s: any) => s.status === "signed");
