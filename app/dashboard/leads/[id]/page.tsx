@@ -52,6 +52,7 @@ export default function LeadDetailPage() {
   const [contactMsg, setContactMsg] = useState("");
   const [selectedDocType, setSelectedDocType] = useState("");
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ group1: true, group2: false, group3: false, activityLog: false });
+  const [leadTab, setLeadTab] = useState("Overview");
   const [revealedSsns, setRevealedSsns] = useState<Record<number, string>>({});
   const [revealingIdx, setRevealingIdx] = useState<number | null>(null);
   const [showStatementModal, setShowStatementModal] = useState(false);
@@ -1066,6 +1067,31 @@ export default function LeadDetailPage() {
           <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm mb-6">This lead has been converted to a merchant account.</div>
         )}
 
+        {/* ═══════════ TAB BAR ═══════════ */}
+        <div className="flex gap-1 border-b border-slate-200 mb-6 overflow-x-auto">
+          {[
+            { key: "Overview", label: "Overview" },
+            { key: "Pricing", label: "Pricing" },
+            { key: "Equipment", label: "Equipment" },
+            ...(["qualified_prospect", "send_for_signature", "signed", "submitted", "converted"].includes(lead.status) ? [{ key: "DealInfo", label: "Deal Info" }] : []),
+            { key: "Documents", label: "Documents", badge: documents.length },
+            ...(deals.length > 1 ? [{ key: "Locations", label: "Locations", badge: deals.length }] : []),
+            { key: "Activity", label: "Activity", badge: activities.length },
+          ].map((t: any) => (
+            <button
+              key={t.key}
+              onClick={() => setLeadTab(t.key)}
+              className={`px-4 py-2.5 text-sm font-medium transition-colors duration-150 cursor-pointer border-b-2 whitespace-nowrap ${
+                leadTab === t.key ? 'text-emerald-600 border-emerald-600' : 'text-slate-500 hover:text-slate-700 border-transparent'
+              }`}
+            >
+              {t.label}{t.badge > 0 ? ` (${t.badge})` : ''}
+            </button>
+          ))}
+        </div>
+
+        {/* ═══════════ OVERVIEW TAB ═══════════ */}
+        {leadTab === "Overview" && (<>
         {/* Action buttons */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4">
           <div className="flex items-center gap-3 flex-wrap">
@@ -1175,13 +1201,10 @@ export default function LeadDetailPage() {
           </div>
         </div>
 
-        {/* ═══════════ PRICING, FEES, HARDWARE, SOFTWARE (visible from lead creation) ═══════════ */}
-        <div onClick={() => toggleGroup("group3")} className={`flex justify-between items-center cursor-pointer bg-white rounded-xl p-4 border border-slate-200 shadow-sm mb-2 ${openGroups.group3 ? "border-l-4 border-l-emerald-500" : ""}`}>
-          <h3 className="text-lg font-semibold text-slate-700">Pricing, Fees & Equipment</h3>
-          <span className={`text-slate-400 transition-transform duration-200 ${openGroups.group3 ? "rotate-180" : ""}`}>▼</span>
-        </div>
-        <div className="overflow-hidden transition-all duration-300 ease-in-out" style={{ maxHeight: openGroups.group3 ? "5000px" : "0px", opacity: openGroups.group3 ? 1 : 0 }}>
-          <div className="space-y-6 mb-6" onFocus={ensureDeal}>
+        </>)}
+        {/* ═══════════ PRICING TAB ═══════════ */}
+        {leadTab === "Pricing" && (<>
+        <div className="space-y-6 mb-6" onFocus={ensureDeal}>
 
             {/* Template Selector & Actions */}
             <div className="flex flex-wrap items-center gap-3">
@@ -1325,6 +1348,37 @@ export default function LeadDetailPage() {
               </div>
             </div>
 
+            {/* Margin Summary */}
+            {deal && partnerSchedule && (() => {
+              const margins2: number[] = [];
+              for (const [dealField2] of Object.entries(DEAL_TO_PARTNER_COST)) {
+                const sell2 = parseFloat(deal[dealField2]);
+                const info2 = getPartnerCostInfo(dealField2);
+                if (!isNaN(sell2) && info2?.numeric != null) margins2.push(sell2 - info2.numeric);
+              }
+              if (margins2.length === 0) return null;
+              const avg2 = margins2.reduce((s, m) => s + m, 0) / margins2.length;
+              const negCount2 = margins2.filter(m => m < 0).length;
+              return (
+                <div className={`rounded-lg px-4 py-3 flex items-center justify-between text-sm ${avg2 >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                  <span className="font-medium">Margin Summary</span>
+                  <span>Avg margin: {avg2 >= 0 ? '+' : ''}{avg2.toFixed(3)} across {margins2.length} fields{negCount2 > 0 ? ` \u00b7 ${negCount2} below cost` : ''}</span>
+                </div>
+              );
+            })()}
+
+            {/* Save Pricing button */}
+            {deal && canEdit && (
+              <div className="flex justify-end mb-4">
+                <button onClick={saveDeal} disabled={dealSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">{dealSaving ? "Saving..." : "Save Pricing"}</button>
+              </div>
+            )}
+          </div>
+        </>)}
+
+        {/* ═══════════ EQUIPMENT TAB ═══════════ */}
+        {leadTab === "Equipment" && (<>
+          <div className="space-y-6" onFocus={ensureDeal}>
             {/* Hardware */}
             <div className={sectionClass}>
               <h4 className="font-semibold mb-4 text-emerald-600">Hardware</h4>
@@ -1368,34 +1422,16 @@ export default function LeadDetailPage() {
               <button onClick={async () => { await ensureDeal(); const items = [...(deal?.software_items || [])]; items.push({ name: "", type: "", monthly_cost: "", per_txn: "" }); updateDealField("software_items", items); }} className="text-emerald-600 hover:text-emerald-700 text-sm font-medium">+ Add Software Item</button>
             </div>
 
-            {/* Margin Summary */}
-            {deal && partnerSchedule && (() => {
-              const margins: number[] = [];
-              for (const [dealField] of Object.entries(DEAL_TO_PARTNER_COST)) {
-                const sell = parseFloat(deal[dealField]);
-                const info = getPartnerCostInfo(dealField);
-                if (!isNaN(sell) && info?.numeric != null) margins.push(sell - info.numeric);
-              }
-              if (margins.length === 0) return null;
-              const avg = margins.reduce((s, m) => s + m, 0) / margins.length;
-              const negCount = margins.filter(m => m < 0).length;
-              return (
-                <div className={`rounded-lg px-4 py-3 flex items-center justify-between text-sm ${avg >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
-                  <span className="font-medium">Margin Summary</span>
-                  <span>Avg margin: {avg >= 0 ? '+' : ''}{avg.toFixed(3)} across {margins.length} fields{negCount > 0 ? ` \u00b7 ${negCount} below cost` : ''}</span>
-                </div>
-              );
-            })()}
-
-            {/* Save Pricing button */}
+            {/* Save Equipment button */}
             {deal && canEdit && (
               <div className="flex justify-end mb-4">
-                <button onClick={saveDeal} disabled={dealSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">{dealSaving ? "Saving..." : "Save Pricing"}</button>
+                <button onClick={saveDeal} disabled={dealSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">{dealSaving ? "Saving..." : "Save Equipment"}</button>
               </div>
             )}
           </div>
-        </div>
-        {/* CommunicationLog: hidden from main flow, modals escape via fixed positioning */}
+        </>)}
+
+        {/* CommunicationLog: always rendered for modal system */}
         <div className="h-0 overflow-hidden" aria-hidden="true">
           <CommunicationLog
             ref={commLogRef}
@@ -1475,6 +1511,8 @@ export default function LeadDetailPage() {
         )}
 
 
+        {/* ═══════════ DEAL INFO TAB ═══════════ */}
+        {leadTab === "DealInfo" && (<>
         {/* ═══════════ SEND FOR SIGNATURE SECTION ═══════════ */}
         {lead.status === "send_for_signature" && deals.length > 0 && (
           <div className="space-y-4 mb-6">
@@ -1914,7 +1952,10 @@ export default function LeadDetailPage() {
             )}
           </>
         )}
+        </>)}
 
+        {/* ═══════════ DOCUMENTS TAB ═══════════ */}
+        {leadTab === "Documents" && (<>
         {/* ═══════════ SIGNED DOCUMENTS ═══════════ */}
         {["signed", "submitted", "converted", "send_for_signature"].includes(lead.status) && (() => {
           const allSessions = Object.values(sigSessions).flat().filter((s: any) => s.status === "signed");
@@ -1952,6 +1993,10 @@ export default function LeadDetailPage() {
           );
         })()}
 
+      </>)}
+
+      {/* ═══════════ ACTIVITY TAB ═══════════ */}
+      {leadTab === "Activity" && (<>
       {/* ═══════════ REP CODES SECTION ═══════════ */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
         <h3 className="text-base font-semibold text-slate-900 mb-3">Agent Rep Codes</h3>
@@ -2011,6 +2056,7 @@ export default function LeadDetailPage() {
             )}
           </div>
         </div>
+      </>)}
       </div>
 
       {/* Communication History slide-out panel */}
