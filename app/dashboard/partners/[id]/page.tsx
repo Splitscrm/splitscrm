@@ -104,37 +104,114 @@ export default function PartnerDetailPage() {
   const showMsg = (text: string) => { setMsg(text); setTimeout(() => setMsg(""), 2000); };
   const updatePartnerField = (field: string, value: any) => { setPartner({ ...partner, [field]: value }); };
 
+  // Coerce empty-string numeric fields to null so PostgREST doesn't choke on ""
+  const num = (v: any) => (v === "" || v === null || v === undefined) ? null : Number(v);
+  const pick = (obj: any, keys: string[]) => {
+    const out: any = {};
+    for (const k of keys) if (k in obj) out[k] = obj[k];
+    return out;
+  };
+
   const savePartner = async () => {
     setSaving(true);
-    const { id, created_at, ...updates } = partner;
-    await supabase.from("partners").update(updates).eq("id", partner.id);
-    showMsg("Partner saved!");
-    setSaving(false);
+    try {
+      const updates = {
+        name: partner.name,
+        relationship_manager: partner.relationship_manager,
+        status: partner.status,
+        support_phone: partner.support_phone,
+        rm_phone: partner.rm_phone,
+        email: partner.email,
+        website: partner.website,
+        residual_split: num(partner.residual_split),
+        restricted_split_pct: num(partner.restricted_split_pct),
+        notes: partner.notes,
+        pricing_data: partner.pricing_data,
+        department_contacts: partner.department_contacts,
+      };
+      const { error } = await supabase.from("partners").update(updates).eq("id", partner.id);
+      if (error) { showMsg("Save failed: " + error.message); return; }
+      showMsg("Partner saved!");
+    } catch (e: any) {
+      showMsg("Save failed: " + (e.message || "unknown error"));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const addBank = async () => { const { data } = await supabase.from("partner_sponsor_banks").insert({ partner_id: partner.id, bank_name: "" }).select().single(); if (data) setBanks([...banks, data]); };
   const updateBank = (idx: number, field: string, value: any) => { const u = [...banks]; u[idx] = { ...u[idx], [field]: value }; setBanks(u); };
-  const saveBank = async (idx: number) => { const b = banks[idx]; const { id, created_at, ...updates } = b; await supabase.from("partner_sponsor_banks").update(updates).eq("id", b.id); showMsg("Bank saved!"); };
+  const saveBank = async (idx: number) => {
+    try {
+      const b = banks[idx];
+      const updates = pick(b, ["bank_name", "cutoff_timezone", "next_day_funding", "batch_cutoff_time", "same_day_funding", "same_day_cutoff_time", "accepted_mcc_codes", "restricted_mcc_codes"]);
+      const { error } = await supabase.from("partner_sponsor_banks").update(updates).eq("id", b.id);
+      if (error) { showMsg("Save failed: " + error.message); return; }
+      showMsg("Bank saved!");
+    } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); }
+  };
   const removeBank = async (idx: number) => { await supabase.from("partner_sponsor_banks").delete().eq("id", banks[idx].id); setBanks(banks.filter((_, i) => i !== idx)); };
 
   const addHardware = async () => { const { data } = await supabase.from("partner_hardware").insert({ partner_id: partner.id, hardware_name: "" }).select().single(); if (data) setHardware([...hardware, data]); };
   const updateHw = (idx: number, field: string, value: any) => { const u = [...hardware]; u[idx] = { ...u[idx], [field]: value }; setHardware(u); };
-  const saveHw = async (idx: number) => { const h = hardware[idx]; const { id, created_at, ...updates } = h; await supabase.from("partner_hardware").update(updates).eq("id", h.id); showMsg("Hardware saved!"); };
+  const saveHw = async (idx: number) => {
+    try {
+      const h = hardware[idx];
+      const updates = pick(h, ["hardware_type", "hardware_name", "manufacturer", "model"]);
+      updates.cost = num(h.cost);
+      updates.msrp = num(h.msrp);
+      updates.free_placement = h.free_placement;
+      const { error } = await supabase.from("partner_hardware").update(updates).eq("id", h.id);
+      if (error) { showMsg("Save failed: " + error.message); return; }
+      showMsg("Hardware saved!");
+    } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); }
+  };
   const removeHw = async (idx: number) => { await supabase.from("partner_hardware").delete().eq("id", hardware[idx].id); setHardware(hardware.filter((_, i) => i !== idx)); };
 
   const addSoftware = async () => { const { data } = await supabase.from("partner_software").insert({ partner_id: partner.id, software_name: "" }).select().single(); if (data) setSoftware([...software, data]); };
   const updateSw = (idx: number, field: string, value: any) => { const u = [...software]; u[idx] = { ...u[idx], [field]: value }; setSoftware(u); };
-  const saveSw = async (idx: number) => { const s = software[idx]; const { id, created_at, ...updates } = s; await supabase.from("partner_software").update(updates).eq("id", s.id); showMsg("Software saved!"); };
+  const saveSw = async (idx: number) => {
+    try {
+      const s = software[idx];
+      const updates = pick(s, ["software_name", "software_type", "manufacturer", "notes"]);
+      updates.monthly_cost = num(s.monthly_cost);
+      updates.per_transaction_cost = num(s.per_transaction_cost);
+      const { error } = await supabase.from("partner_software").update(updates).eq("id", s.id);
+      if (error) { showMsg("Save failed: " + error.message); return; }
+      showMsg("Software saved!");
+    } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); }
+  };
   const removeSw = async (idx: number) => { await supabase.from("partner_software").delete().eq("id", software[idx].id); setSoftware(software.filter((_, i) => i !== idx)); };
 
   const addUw = async () => { const { data } = await supabase.from("partner_underwriting").insert({ partner_id: partner.id, guideline_name: "" }).select().single(); if (data) setUnderwriting([...underwriting, data]); };
   const updateUw = (idx: number, field: string, value: any) => { const u = [...underwriting]; u[idx] = { ...u[idx], [field]: value }; setUnderwriting(u); };
-  const saveUw = async (idx: number) => { const uw = underwriting[idx]; const { id, created_at, ...updates } = uw; await supabase.from("partner_underwriting").update(updates).eq("id", uw.id); showMsg("Guideline saved!"); };
+  const saveUw = async (idx: number) => {
+    try {
+      const uw = underwriting[idx];
+      const updates = pick(uw, ["guideline_name", "description", "restricted_industries"]);
+      updates.max_volume = num(uw.max_volume);
+      updates.max_ticket = num(uw.max_ticket);
+      const { error } = await supabase.from("partner_underwriting").update(updates).eq("id", uw.id);
+      if (error) { showMsg("Save failed: " + error.message); return; }
+      showMsg("Guideline saved!");
+    } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); }
+  };
   const removeUw = async (idx: number) => { await supabase.from("partner_underwriting").delete().eq("id", underwriting[idx].id); setUnderwriting(underwriting.filter((_, i) => i !== idx)); };
 
   const addPr = async () => { const { data } = await supabase.from("partner_pricing").insert({ partner_id: partner.id, schedule_name: "" }).select().single(); if (data) setPricing([...pricing, data]); };
   const updatePr = (idx: number, field: string, value: any) => { const u = [...pricing]; u[idx] = { ...u[idx], [field]: value }; setPricing(u); };
-  const savePr = async (idx: number) => { const pr = pricing[idx]; const { id, created_at, ...updates } = pr; await supabase.from("partner_pricing").update(updates).eq("id", pr.id); showMsg("Pricing saved!"); };
+  const savePr = async (idx: number) => {
+    try {
+      const pr = pricing[idx];
+      const updates = pick(pr, ["schedule_name", "pricing_model"]);
+      updates.discount_rate = num(pr.discount_rate);
+      updates.per_transaction_fee = num(pr.per_transaction_fee);
+      updates.monthly_fee = num(pr.monthly_fee);
+      const { error } = await supabase.from("partner_pricing").update(updates).eq("id", pr.id);
+      if (error) { showMsg("Save failed: " + error.message); return; }
+      showMsg("Pricing saved!");
+    } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); }
+  };
   const removePr = async (idx: number) => { await supabase.from("partner_pricing").delete().eq("id", pricing[idx].id); setPricing(pricing.filter((_, i) => i !== idx)); };
 
   // MPA documents state — uses mpa_templates table
