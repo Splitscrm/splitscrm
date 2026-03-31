@@ -85,7 +85,7 @@ export default function PartnerDetailPage() {
         const { data: b } = await supabase.from("partner_sponsor_banks").select("id, created_at, partner_id, bank_name, cutoff_timezone, next_day_funding, batch_cutoff_time, same_day_funding, same_day_cutoff_time, accepted_mcc_codes, restricted_mcc_codes").eq("partner_id", p.id).order("created_at");
         if (b) {
           setBanks(b);
-          fetchMpasForBanks(b.map((bank: any) => bank.id));
+          fetchMpasForBanks(b);
         }
         const { data: h } = await supabase.from("partner_hardware").select("id, created_at, partner_id, hardware_type, hardware_name, manufacturer, model, cost, msrp, free_placement").eq("partner_id", p.id).order("created_at");
         if (h) setHardware(h);
@@ -137,62 +137,47 @@ export default function PartnerDetailPage() {
   const savePr = async (idx: number) => { const pr = pricing[idx]; const { id, created_at, ...updates } = pr; await supabase.from("partner_pricing").update(updates).eq("id", pr.id); showMsg("Pricing saved!"); };
   const removePr = async (idx: number) => { await supabase.from("partner_pricing").delete().eq("id", pricing[idx].id); setPricing(pricing.filter((_, i) => i !== idx)); };
 
-  // MPA documents state
+  // MPA documents state — uses mpa_templates table
   const [bankMpas, setBankMpas] = useState<Record<string, any[]>>({});
-  const [bankTemplates, setBankTemplates] = useState<Record<string, any[]>>({});
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [mpaUploading, setMpaUploading] = useState<Record<string, boolean>>({});
 
-  const fetchMpasForBanks = async (bankIds: string[]) => {
-    if (bankIds.length === 0) return;
-    const { data } = await supabase
-      .from("sponsor_bank_mpas")
-      .select("id, created_at, sponsor_bank_id, file_name, file_url, storage_path")
-      .in("sponsor_bank_id", bankIds)
+  const fetchMpasForBanks = async (bankList: any[]) => {
+    if (!bankList.length || !partner) return;
+    const { data: tpls } = await supabase
+      .from("mpa_templates")
+      .select("*")
+      .eq("partner_id", partner.id)
       .order("created_at", { ascending: false });
-    const grouped: Record<string, any[]> = {};
-    for (const mpa of data || []) {
-      if (!grouped[mpa.sponsor_bank_id]) grouped[mpa.sponsor_bank_id] = [];
-      grouped[mpa.sponsor_bank_id].push(mpa);
-    }
-    setBankMpas(grouped);
-    // Also fetch mpa_templates grouped by sponsor bank name
-    if (partner) {
-      const { data: tpls } = await supabase.from("mpa_templates").select("*").eq("partner_id", partner.id).order("created_at", { ascending: false });
-      if (tpls) {
-        const tplGrouped: Record<string, any[]> = {};
-        for (const t of tpls) {
-          // Group by matching bank id (find bank by name)
-          const matchBank = banks.find(b => b.bank_name === t.sponsor_bank);
-          const key = matchBank?.id || t.sponsor_bank;
-          if (!tplGrouped[key]) tplGrouped[key] = [];
-          tplGrouped[key].push(t);
+    if (tpls) {
+      const grouped: Record<string, any[]> = {};
+      for (const t of tpls) {
+        const matchBank = bankList.find((b: any) => b.bank_name === t.sponsor_bank);
+        if (matchBank) {
+          if (!grouped[matchBank.id]) grouped[matchBank.id] = [];
+          grouped[matchBank.id].push(t);
         }
-        setBankTemplates(tplGrouped);
       }
+      setBankMpas(grouped);
     }
   };
 
   const fetchMpasForBank = async (bankId: string) => {
-    const { data } = await supabase
-      .from("sponsor_bank_mpas")
-      .select("id, created_at, sponsor_bank_id, file_name, file_url, storage_path")
-      .eq("sponsor_bank_id", bankId)
-      .order("created_at", { ascending: false });
-    setBankMpas(prev => ({ ...prev, [bankId]: data || [] }));
-    // Refresh templates too
     const bank = banks.find(b => b.id === bankId);
-    if (bank && partner) {
-      const { data: tpls } = await supabase.from("mpa_templates").select("*").eq("partner_id", partner.id).eq("sponsor_bank", bank.bank_name).order("created_at", { ascending: false });
-      setBankTemplates(prev => ({ ...prev, [bankId]: tpls || [] }));
-    }
+    if (!bank || !partner) return;
+    const { data: tpls } = await supabase
+      .from("mpa_templates")
+      .select("*")
+      .eq("partner_id", partner.id)
+      .eq("sponsor_bank", bank.bank_name)
+      .order("created_at", { ascending: false });
+    setBankMpas(prev => ({ ...prev, [bankId]: tpls || [] }));
   };
 
   const toggleTemplateActive = async (template: any, bankId: string) => {
     const bank = banks.find(b => b.id === bankId);
     if (!bank) return;
     if (!template.is_active) {
-      // Deactivate all others for this bank, activate this one
       await supabase.from("mpa_templates").update({ is_active: false }).eq("partner_id", partner.id).eq("sponsor_bank", bank.bank_name);
       await supabase.from("mpa_templates").update({ is_active: true }).eq("id", template.id);
     } else {
@@ -202,6 +187,9 @@ export default function PartnerDetailPage() {
   };
 
   const deleteTemplate = async (template: any, bankId: string) => {
+    if (template.template_file_url) {
+      await supabase.storage.from("deal-documents").remove([template.template_file_url]);
+    }
     await supabase.from("mpa_templates").delete().eq("id", template.id);
     await fetchMpasForBank(bankId);
   };
@@ -219,45 +207,32 @@ export default function PartnerDetailPage() {
       .upload(path, file);
 
     if (uploadError) {
-      console.error("Upload error:", uploadError);
+      showMsg("Upload failed — check bucket permissions");
       setMpaUploading(prev => ({ ...prev, [bankId]: false }));
       return;
     }
 
-    const signedUrl = await getSignedUrl(path);
-
-    // Find the bank name for this sponsor bank
     const bank = banks.find(b => b.id === bankId);
     const templateName = `${partner.name} - ${bank?.bank_name || "Bank"} - ${file.name}`;
 
-    await supabase.from("sponsor_bank_mpas").insert({
-      sponsor_bank_id: bankId,
-      user_id: user.id,
-      file_name: file.name,
-      file_url: path,
-      storage_path: path,
-    });
-
-    // Also create mpa_templates record
-    await supabase.from("mpa_templates").insert({
+    const { error: insertError } = await supabase.from("mpa_templates").insert({
       org_id: member?.org_id || null,
       partner_id: partner.id,
       sponsor_bank: bank?.bank_name || "",
       template_name: templateName,
       template_file_url: path,
       is_active: true,
-    }).then(() => {}, () => {}); // Ignore error if table doesn't exist yet
+    });
+
+    if (insertError) {
+      showMsg("Failed to save MPA record");
+      setMpaUploading(prev => ({ ...prev, [bankId]: false }));
+      return;
+    }
 
     await fetchMpasForBank(bankId);
     setMpaUploading(prev => ({ ...prev, [bankId]: false }));
-  };
-
-  const deleteMpa = async (mpa: any) => {
-    if (mpa.storage_path) {
-      await supabase.storage.from("deal-documents").remove([mpa.storage_path]);
-    }
-    await supabase.from("sponsor_bank_mpas").delete().eq("id", mpa.id);
-    await fetchMpasForBank(mpa.sponsor_bank_id);
+    showMsg("MPA uploaded!");
   };
 
   const openSignedUrl = async (fileUrlOrPath: string) => {
@@ -692,36 +667,31 @@ export default function PartnerDetailPage() {
                   <p className="text-xs text-slate-400 mt-2">No MPA templates uploaded</p>
                 ) : (
                   <div className="mt-2 divide-y divide-slate-50">
-                    {(bankMpas[b.id] || []).map((mpa: any) => {
-                      const template = (bankTemplates[b.id] || []).find((t: any) => t.template_file_url === mpa.storage_path || t.template_file_url === mpa.file_url);
-                      return (
-                        <div key={mpa.id} className="flex items-center justify-between py-2.5">
+                    {(bankMpas[b.id] || []).map((tpl: any) => (
+                        <div key={tpl.id} className="flex items-center justify-between py-2.5">
                           <div className="flex items-center gap-2 min-w-0">
-                            <button onClick={() => openSignedUrl(mpa.storage_path || mpa.file_url)} className="text-sm text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 truncate text-left">
-                              📄 {template?.template_name || mpa.file_name}
+                            <button onClick={() => openSignedUrl(tpl.template_file_url)} className="text-sm text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 truncate text-left">
+                              📄 {tpl.template_name}
                             </button>
-                            {template?.is_active && (
+                            {tpl.is_active && (
                               <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-medium shrink-0">Active</span>
                             )}
                           </div>
                           <div className="flex items-center gap-2 shrink-0 ml-3">
                             <span className="text-xs text-slate-400">
-                              {new Date(mpa.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                              {new Date(tpl.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                             </span>
-                            {template && (
-                              <button
-                                onClick={() => toggleTemplateActive(template, b.id)}
-                                className={`w-8 h-4 rounded-full relative transition-colors duration-200 ${template.is_active ? "bg-emerald-500" : "bg-slate-200"}`}
-                                title={template.is_active ? "Deactivate" : "Set as active"}
-                              >
-                                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform duration-200 ${template.is_active ? "right-0.5" : "left-0.5"}`} />
-                              </button>
-                            )}
-                            <button onClick={() => { if (template) deleteTemplate(template, b.id); deleteMpa(mpa); }} className="text-red-400 hover:text-red-500 text-xs">Remove</button>
+                            <button
+                              onClick={() => toggleTemplateActive(tpl, b.id)}
+                              className={`w-8 h-4 rounded-full relative transition-colors duration-200 ${tpl.is_active ? "bg-emerald-500" : "bg-slate-200"}`}
+                              title={tpl.is_active ? "Deactivate" : "Set as active"}
+                            >
+                              <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform duration-200 ${tpl.is_active ? "right-0.5" : "left-0.5"}`} />
+                            </button>
+                            <button onClick={() => deleteTemplate(tpl, b.id)} className="text-red-400 hover:text-red-500 text-xs">Remove</button>
                           </div>
                         </div>
-                      );
-                    })}
+                    ))}
                   </div>
                 )}
               </div>
