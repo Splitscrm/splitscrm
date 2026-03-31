@@ -52,7 +52,7 @@ export default function PartnerDetailPage() {
   const [agreements, setAgreements] = useState<any[]>([]);
   const [agreementsFetched, setAgreementsFetched] = useState(false);
   const [agreementUploading, setAgreementUploading] = useState(false);
-  const [agreementPending, setAgreementPending] = useState<{ file_name: string; file_url: string; storage_path: string } | null>(null);
+  const [agreementPending, setAgreementPending] = useState<{ file_name: string; file_url: string } | null>(null);
   const [agreementForm, setAgreementForm] = useState({ agreement_type: "", description: "" });
   // Residuals tab state
   const [resImports, setResImports] = useState<any[]>([]);
@@ -82,16 +82,16 @@ export default function PartnerDetailPage() {
       const { data: p } = await supabase.from("partners").select("id, created_at, name, relationship_manager, status, support_phone, rm_phone, email, website, residual_split, restricted_split_pct, notes, pricing_data, department_contacts, user_id").eq("id", params.id).single();
       if (p) {
         setPartner(p);
-        const { data: b } = await supabase.from("partner_sponsor_banks").select("id, created_at, partner_id, bank_name, cutoff_timezone, next_day_funding, batch_cutoff_time, same_day_funding, same_day_cutoff_time, accepted_mcc_codes, restricted_mcc_codes").eq("partner_id", p.id).order("created_at");
+        const { data: b } = await supabase.from("partner_sponsor_banks").select("id, created_at, partner_id, bank_name, cutoff_timezone, next_day_funding, batch_cutoff_time, same_day_funding, same_day_cutoff_time, accepted_mcc_codes, restricted_mcc_codes, details").eq("partner_id", p.id).order("created_at");
         if (b) {
           setBanks(b);
           fetchMpasForBanks(b);
         }
-        const { data: h } = await supabase.from("partner_hardware").select("id, created_at, partner_id, hardware_type, hardware_name, manufacturer, model, cost, msrp, free_placement").eq("partner_id", p.id).order("created_at");
+        const { data: h } = await supabase.from("partner_hardware").select("id, created_at, partner_id, hardware_type, hardware_name, manufacturer, model, cost, msrp, partner_cost, free_placement_eligible, details, notes").eq("partner_id", p.id).order("created_at");
         if (h) setHardware(h);
-        const { data: s } = await supabase.from("partner_software").select("id, created_at, partner_id, software_name, software_type, manufacturer, monthly_cost, per_transaction_cost, notes").eq("partner_id", p.id).order("created_at");
+        const { data: s } = await supabase.from("partner_software").select("id, created_at, partner_id, software_name, software_type, manufacturer, monthly_cost, per_transaction_cost, per_txn_cost, msrp, partner_cost, details, notes").eq("partner_id", p.id).order("created_at");
         if (s) setSoftware(s);
-        const { data: u } = await supabase.from("partner_underwriting").select("id, created_at, partner_id, guideline_name, description, max_volume, max_ticket, restricted_industries").eq("partner_id", p.id).order("created_at");
+        const { data: u } = await supabase.from("partner_underwriting").select("id, created_at, partner_id, guideline_name, description, max_volume, max_ticket, restricted_industries, details").eq("partner_id", p.id).order("created_at");
         if (u) setUnderwriting(u);
         const { data: pr } = await supabase.from("partner_pricing").select("id, created_at, partner_id, schedule_name, pricing_model, discount_rate, per_transaction_fee, monthly_fee").eq("partner_id", p.id).order("created_at");
         if (pr) setPricing(pr);
@@ -144,7 +144,7 @@ export default function PartnerDetailPage() {
   const saveBank = async (idx: number) => {
     try {
       const b = banks[idx];
-      const updates = pick(b, ["bank_name", "cutoff_timezone", "next_day_funding", "batch_cutoff_time", "same_day_funding", "same_day_cutoff_time", "accepted_mcc_codes", "restricted_mcc_codes"]);
+      const updates = pick(b, ["bank_name", "cutoff_timezone", "next_day_funding", "batch_cutoff_time", "same_day_funding", "same_day_cutoff_time", "accepted_mcc_codes", "restricted_mcc_codes", "details"]);
       const { error } = await supabase.from("partner_sponsor_banks").update(updates).eq("id", b.id);
       if (error) { showMsg("Save failed: " + error.message); return; }
       showMsg("Bank saved!");
@@ -157,10 +157,11 @@ export default function PartnerDetailPage() {
   const saveHw = async (idx: number) => {
     try {
       const h = hardware[idx];
-      const updates = pick(h, ["hardware_type", "hardware_name", "manufacturer", "model"]);
+      const updates = pick(h, ["hardware_type", "hardware_name", "manufacturer", "model", "details", "notes"]);
       updates.cost = num(h.cost);
       updates.msrp = num(h.msrp);
-      updates.free_placement = h.free_placement;
+      updates.partner_cost = num(h.partner_cost);
+      updates.free_placement_eligible = h.free_placement_eligible;
       const { error } = await supabase.from("partner_hardware").update(updates).eq("id", h.id);
       if (error) { showMsg("Save failed: " + error.message); return; }
       showMsg("Hardware saved!");
@@ -173,9 +174,12 @@ export default function PartnerDetailPage() {
   const saveSw = async (idx: number) => {
     try {
       const s = software[idx];
-      const updates = pick(s, ["software_name", "software_type", "manufacturer", "notes"]);
+      const updates = pick(s, ["software_name", "software_type", "manufacturer", "details", "notes"]);
       updates.monthly_cost = num(s.monthly_cost);
       updates.per_transaction_cost = num(s.per_transaction_cost);
+      updates.per_txn_cost = num(s.per_txn_cost);
+      updates.msrp = num(s.msrp);
+      updates.partner_cost = num(s.partner_cost);
       const { error } = await supabase.from("partner_software").update(updates).eq("id", s.id);
       if (error) { showMsg("Save failed: " + error.message); return; }
       showMsg("Software saved!");
@@ -188,7 +192,7 @@ export default function PartnerDetailPage() {
   const saveUw = async (idx: number) => {
     try {
       const uw = underwriting[idx];
-      const updates = pick(uw, ["guideline_name", "description", "restricted_industries"]);
+      const updates = pick(uw, ["guideline_name", "description", "restricted_industries", "details"]);
       updates.max_volume = num(uw.max_volume);
       updates.max_ticket = num(uw.max_ticket);
       const { error } = await supabase.from("partner_underwriting").update(updates).eq("id", uw.id);
@@ -377,7 +381,7 @@ export default function PartnerDetailPage() {
     if (agreementsFetched || !partner) return;
     const { data } = await supabase
       .from("partner_agreements")
-      .select("id, file_name, file_url, storage_path, agreement_type, description, uploaded_at, created_at")
+      .select("id, file_name, file_url, agreement_type, description, uploaded_at")
       .eq("partner_id", partner.id)
       .order("uploaded_at", { ascending: false });
     if (data) setAgreements(data);
@@ -877,7 +881,7 @@ export default function PartnerDetailPage() {
                           manufacturer: item.manufacturer || "",
                           cost: item.cost || null,
                           msrp: item.msrp || null,
-                          free_placement: item.free_placement_eligible ? "yes" : "no",
+                          free_placement_eligible: item.free_placement_eligible || false,
                         }).select().single();
                         if (inserted) setHardware((prev) => [...prev, inserted]);
                       }
@@ -896,7 +900,7 @@ export default function PartnerDetailPage() {
                           manufacturer: item.manufacturer || "",
                           cost: item.cost || null,
                           msrp: item.msrp || null,
-                          free_placement: item.free_placement_eligible ? "yes" : "no",
+                          free_placement_eligible: item.free_placement_eligible || false,
                         }).select().single();
                         if (inserted) setHardware((prev) => [...prev, inserted]);
                       }
@@ -930,8 +934,8 @@ export default function PartnerDetailPage() {
                   <div><label className={labelClass}>Partner Cost ($)</label><input type="number" step="0.01" value={h.cost || ""} onChange={(e) => updateHw(idx, "cost", e.target.value)} className={inputClass} /></div>
                   <div><label className={labelClass}>MSRP ($)</label><input type="number" step="0.01" value={h.msrp || ""} onChange={(e) => updateHw(idx, "msrp", e.target.value)} className={inputClass} /></div>
                   <div>
-                    <label className={labelClass}>Free Placement</label>
-                    <select value={h.free_placement || ""} onChange={(e) => updateHw(idx, "free_placement", e.target.value)} className={inputClass}>
+                    <label className={labelClass}>Free Placement Eligible</label>
+                    <select value={h.free_placement_eligible === true ? "yes" : h.free_placement_eligible === false ? "no" : ""} onChange={(e) => updateHw(idx, "free_placement_eligible", e.target.value === "yes" ? true : e.target.value === "no" ? false : null)} className={inputClass}>
                       <option value="">Select...</option>
                       <option value="yes">Yes</option>
                       <option value="no">No</option>
@@ -1281,7 +1285,7 @@ export default function PartnerDetailPage() {
                       const path = `${user.id}/${partner.id}/agreements/${timestamp}_${file.name}`;
                       const { error: uploadError } = await supabase.storage.from("deal-documents").upload(path, file);
                       if (uploadError) { showMsg("Upload failed."); setAgreementUploading(false); e.target.value = ""; return; }
-                      setAgreementPending({ file_name: file.name, file_url: path, storage_path: path });
+                      setAgreementPending({ file_name: file.name, file_url: path });
                       setAgreementForm({ agreement_type: "", description: "" });
                     } catch {
                       showMsg("Upload failed.");
@@ -1320,8 +1324,8 @@ export default function PartnerDetailPage() {
                   </div>
                   <div className="flex justify-end gap-3 mt-6">
                     <button onClick={async () => {
-                      if (agreementPending.storage_path) {
-                        await supabase.storage.from("deal-documents").remove([agreementPending.storage_path]);
+                      if (agreementPending.file_url) {
+                        await supabase.storage.from("deal-documents").remove([agreementPending.file_url]);
                       }
                       setAgreementPending(null);
                     }} className="text-slate-500 hover:text-slate-700 px-4 py-2 text-sm">Cancel</button>
@@ -1334,7 +1338,6 @@ export default function PartnerDetailPage() {
                         user_id: user.id,
                         file_name: agreementPending.file_name,
                         file_url: agreementPending.file_url,
-                        storage_path: agreementPending.storage_path,
                         agreement_type: agreementForm.agreement_type,
                         description: agreementForm.description || null,
                       }).select().single();
@@ -1353,7 +1356,7 @@ export default function PartnerDetailPage() {
               agreements.map((a) => (
                 <div key={a.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-3">
                   <div className="flex justify-between items-center">
-                    <button onClick={() => openSignedUrl(a.storage_path || a.file_url)} className="text-sm font-medium text-emerald-600 hover:text-emerald-700 truncate max-w-[60%] text-left">
+                    <button onClick={() => openSignedUrl(a.file_url)} className="text-sm font-medium text-emerald-600 hover:text-emerald-700 truncate max-w-[60%] text-left">
                       {a.file_name}
                     </button>
                     <span className="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full">{a.agreement_type}</span>
@@ -1362,12 +1365,12 @@ export default function PartnerDetailPage() {
                     <span className="text-xs text-slate-500">{a.description || "No description"}</span>
                     <div className="flex items-center gap-3">
                       <span className="text-xs text-slate-400">
-                        {new Date(a.uploaded_at || a.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                        {new Date(a.uploaded_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                       </span>
                       <button onClick={async () => {
                         if (!confirm("Remove this agreement?")) return;
-                        if (a.storage_path) {
-                          await supabase.storage.from("deal-documents").remove([a.storage_path]);
+                        if (a.file_url) {
+                          await supabase.storage.from("deal-documents").remove([a.file_url]);
                         }
                         await supabase.from("partner_agreements").delete().eq("id", a.id);
                         setAgreements((prev) => prev.filter((ag) => ag.id !== a.id));
