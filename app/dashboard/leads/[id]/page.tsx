@@ -11,6 +11,7 @@ import { useAuth } from "@/lib/auth-context";
 import LoadingScreen from "@/components/LoadingScreen";
 import { authFetch } from "@/lib/api-client";
 import { getSignedUrl, extractStoragePath } from "@/lib/storage";
+import { checkMpaCompleteness, getTabStatus, type MpaCompletenessResult } from "@/lib/mpa-completeness";
 
 const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC"];
 
@@ -729,6 +730,9 @@ export default function LeadDetailPage() {
   }, [lead?.assigned_to]);
 
   // Partner pricing — simplified: use first schedule from partner's pricing_data for cost tooltips
+  // MPA completeness
+  const mpaResult: MpaCompletenessResult = deal ? checkMpaCompleteness(deal, owners, documents) : { overallPercent: 0, sections: [], blockingCount: 0, warningCount: 0 };
+
   const selectedPartner = partners.find((p) => p.id === deal?.partner_id);
   const partnerSchedule = selectedPartner?.pricing_data?.[0] || null;
 
@@ -1082,17 +1086,21 @@ export default function LeadDetailPage() {
             { key: "Documents", label: "Documents", badge: documents.length },
             ...(deals.length > 1 ? [{ key: "Locations", label: "Locations", badge: deals.length }] : []),
             { key: "Activity", label: "Activity", badge: activities.length },
-          ].map((t: any) => (
-            <button
-              key={t.key}
-              onClick={() => setLeadTab(t.key)}
-              className={`px-4 py-2.5 text-sm font-medium transition-colors duration-150 cursor-pointer border-b-2 whitespace-nowrap ${
-                leadTab === t.key ? 'text-emerald-600 border-emerald-600' : 'text-slate-500 hover:text-slate-700 border-transparent'
-              }`}
-            >
-              {t.label}{t.badge > 0 ? ` (${t.badge})` : ''}
-            </button>
-          ))}
+          ].map((t: any) => {
+            const tabDot = deal ? getTabStatus(t.key, mpaResult) : null;
+            return (
+              <button
+                key={t.key}
+                onClick={() => setLeadTab(t.key)}
+                className={`px-4 py-2.5 text-sm font-medium transition-colors duration-150 cursor-pointer border-b-2 whitespace-nowrap flex items-center gap-1.5 ${
+                  leadTab === t.key ? 'text-emerald-600 border-emerald-600' : 'text-slate-500 hover:text-slate-700 border-transparent'
+                }`}
+              >
+                {t.label}{t.badge > 0 ? ` (${t.badge})` : ''}
+                {tabDot && <span className={`w-2 h-2 rounded-full inline-block ${tabDot === "green" ? "bg-emerald-500" : tabDot === "amber" ? "bg-amber-400" : "bg-red-500"}`} />}
+              </button>
+            );
+          })}
         </div>
 
         {/* ═══════════ OVERVIEW TAB ═══════════ */}
@@ -1205,6 +1213,47 @@ export default function LeadDetailPage() {
             )}
           </div>
         </div>
+
+        {/* MPA Readiness Widget */}
+        {deal && ["qualified_prospect", "send_for_signature", "signed", "submitted"].includes(lead.status) && (
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-slate-900">MPA Readiness</h3>
+              <span className={`text-sm font-medium ${mpaResult.overallPercent === 100 ? "text-emerald-600" : mpaResult.blockingCount > 0 ? "text-red-500" : "text-amber-500"}`}>
+                {mpaResult.overallPercent === 100 ? "Ready to Send" : `${mpaResult.overallPercent}% Complete`}
+              </span>
+            </div>
+            <div className="w-full bg-slate-100 rounded-full h-2.5 mb-4">
+              <div className={`h-2.5 rounded-full transition-all duration-500 ${mpaResult.overallPercent === 100 ? "bg-emerald-500" : mpaResult.blockingCount > 0 ? "bg-red-500" : "bg-amber-400"}`} style={{ width: `${mpaResult.overallPercent}%` }} />
+            </div>
+            {(mpaResult.blockingCount > 0 || mpaResult.warningCount > 0) && (
+              <div className="flex gap-3 mb-3 text-xs">
+                {mpaResult.blockingCount > 0 && <span className="text-red-500 font-medium">{mpaResult.blockingCount} blocking issue{mpaResult.blockingCount > 1 ? "s" : ""}</span>}
+                {mpaResult.warningCount > 0 && <span className="text-amber-500 font-medium">{mpaResult.warningCount} warning{mpaResult.warningCount > 1 ? "s" : ""}</span>}
+              </div>
+            )}
+            <div className="space-y-1.5">
+              {mpaResult.sections.map((sec) => (
+                <div key={sec.name} className="flex items-start gap-2">
+                  <span className="text-sm mt-0.5 shrink-0">
+                    {sec.status === "complete" ? <span className="text-emerald-500">✓</span> : sec.isBlocking ? <span className="text-red-500">✕</span> : <span className="text-amber-400">!</span>}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <button type="button" onClick={() => setLeadTab(sec.tab)} className="text-sm font-medium text-slate-700 hover:text-emerald-600 transition">
+                      {sec.name}
+                    </button>
+                    {sec.missingFields.length > 0 && (
+                      <p className="text-xs text-slate-400 truncate">{sec.missingFields.join(", ")}</p>
+                    )}
+                  </div>
+                  {sec.status === "complete" && <span className="bg-emerald-50 text-emerald-600 text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0">Complete</span>}
+                  {sec.status !== "complete" && sec.isBlocking && <span className="bg-red-50 text-red-500 text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0">{sec.missingFields.length} missing</span>}
+                  {sec.status !== "complete" && !sec.isBlocking && <span className="bg-amber-50 text-amber-500 text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0">{sec.missingFields.length} warning{sec.missingFields.length > 1 ? "s" : ""}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         </>)}
         {/* ═══════════ PRICING TAB ═══════════ */}
@@ -1656,14 +1705,24 @@ export default function LeadDetailPage() {
                             </select>
                           </div>
                         </div>
-                        <button
-                          onClick={() => sendForSignature(d.id)}
-                          disabled={sigSending || !sigSignerEmail || !sigSignerName || !d.partner_id || !d.sponsor_bank}
-                          className="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
-                        >
-                          {sigSending ? "Sending..." : "Send for Signature"}
-                        </button>
-                        {!allComplete && <p className="text-xs text-amber-500 mt-2">Some MPA fields are incomplete. The merchant may need to fill them in during signing.</p>}
+                        {mpaResult.blockingCount > 0 ? (
+                          <div className="mt-3">
+                            <button disabled className="bg-slate-300 text-slate-500 px-5 py-2.5 rounded-lg text-sm font-medium cursor-not-allowed">Send for Signature</button>
+                            <p className="text-xs text-red-500 mt-2">{mpaResult.blockingCount} blocking issue{mpaResult.blockingCount > 1 ? "s" : ""} must be resolved before sending. Review the MPA Readiness section on the Overview tab.</p>
+                          </div>
+                        ) : (
+                          <div className="mt-3">
+                            {mpaResult.warningCount > 0 && <p className="text-xs text-amber-500 mb-2">{mpaResult.warningCount} warning{mpaResult.warningCount > 1 ? "s" : ""} — you can still send, but review recommended.</p>}
+                            {mpaResult.blockingCount === 0 && mpaResult.warningCount === 0 && <p className="text-xs text-emerald-600 mb-2">All MPA fields complete — ready to send</p>}
+                            <button
+                              onClick={() => sendForSignature(d.id)}
+                              disabled={sigSending || !sigSignerEmail || !sigSignerName || !d.partner_id || !d.sponsor_bank}
+                              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                            >
+                              {sigSending ? "Sending..." : "Send for Signature"}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
