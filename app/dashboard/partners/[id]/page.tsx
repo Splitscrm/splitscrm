@@ -41,6 +41,7 @@ export default function PartnerDetailPage() {
   const [orgDefaultHouseSplit, setOrgDefaultHouseSplit] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingItem, setSavingItem] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
   const [activeTab, setActiveTab] = useState("banks");
   const [hwExtracting, setHwExtracting] = useState(false);
@@ -101,7 +102,7 @@ export default function PartnerDetailPage() {
     fetchData();
   }, [params.id, authLoading]);
 
-  const showMsg = (text: string) => { setMsg(text); setTimeout(() => setMsg(""), 2000); };
+  const showMsg = (text: string) => { setMsg(text); setTimeout(() => setMsg(""), 3000); };
   const updatePartnerField = (field: string, value: any) => { setPartner({ ...partner, [field]: value }); };
 
   // Coerce empty-string numeric fields to null so PostgREST doesn't choke on ""
@@ -142,19 +143,23 @@ export default function PartnerDetailPage() {
   const addBank = async () => { const { data } = await supabase.from("partner_sponsor_banks").insert({ partner_id: partner.id, bank_name: "" }).select().single(); if (data) setBanks([...banks, data]); };
   const updateBank = (idx: number, field: string, value: any) => { const u = [...banks]; u[idx] = { ...u[idx], [field]: value }; setBanks(u); };
   const saveBank = async (idx: number) => {
+    const key = "bank-" + idx;
+    setSavingItem(key);
     try {
       const b = banks[idx];
       const updates = pick(b, ["bank_name", "cutoff_timezone", "next_day_funding", "batch_cutoff_time", "same_day_funding", "same_day_cutoff_time", "accepted_mcc_codes", "restricted_mcc_codes", "details"]);
       const { error } = await supabase.from("partner_sponsor_banks").update(updates).eq("id", b.id);
       if (error) { showMsg("Save failed: " + error.message); return; }
       showMsg("Bank saved!");
-    } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); }
+    } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); } finally { setSavingItem(null); }
   };
   const removeBank = async (idx: number) => { await supabase.from("partner_sponsor_banks").delete().eq("id", banks[idx].id); setBanks(banks.filter((_, i) => i !== idx)); };
 
   const addHardware = async () => { const { data } = await supabase.from("partner_hardware").insert({ partner_id: partner.id, hardware_name: "" }).select().single(); if (data) setHardware([...hardware, data]); };
   const updateHw = (idx: number, field: string, value: any) => { const u = [...hardware]; u[idx] = { ...u[idx], [field]: value }; setHardware(u); };
   const saveHw = async (idx: number) => {
+    const key = "hw-" + idx;
+    setSavingItem(key);
     try {
       const h = hardware[idx];
       const updates = pick(h, ["hardware_type", "hardware_name", "manufacturer", "model", "details", "notes"]);
@@ -165,13 +170,15 @@ export default function PartnerDetailPage() {
       const { error } = await supabase.from("partner_hardware").update(updates).eq("id", h.id);
       if (error) { showMsg("Save failed: " + error.message); return; }
       showMsg("Hardware saved!");
-    } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); }
+    } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); } finally { setSavingItem(null); }
   };
   const removeHw = async (idx: number) => { await supabase.from("partner_hardware").delete().eq("id", hardware[idx].id); setHardware(hardware.filter((_, i) => i !== idx)); };
 
   const addSoftware = async () => { const { data } = await supabase.from("partner_software").insert({ partner_id: partner.id, software_name: "" }).select().single(); if (data) setSoftware([...software, data]); };
   const updateSw = (idx: number, field: string, value: any) => { const u = [...software]; u[idx] = { ...u[idx], [field]: value }; setSoftware(u); };
   const saveSw = async (idx: number) => {
+    const key = "sw-" + idx;
+    setSavingItem(key);
     try {
       const s = software[idx];
       const updates = pick(s, ["software_name", "software_type", "manufacturer", "details", "notes"]);
@@ -183,13 +190,15 @@ export default function PartnerDetailPage() {
       const { error } = await supabase.from("partner_software").update(updates).eq("id", s.id);
       if (error) { showMsg("Save failed: " + error.message); return; }
       showMsg("Software saved!");
-    } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); }
+    } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); } finally { setSavingItem(null); }
   };
   const removeSw = async (idx: number) => { await supabase.from("partner_software").delete().eq("id", software[idx].id); setSoftware(software.filter((_, i) => i !== idx)); };
 
   const addUw = async () => { const { data } = await supabase.from("partner_underwriting").insert({ partner_id: partner.id, guideline_name: "" }).select().single(); if (data) setUnderwriting([...underwriting, data]); };
   const updateUw = (idx: number, field: string, value: any) => { const u = [...underwriting]; u[idx] = { ...u[idx], [field]: value }; setUnderwriting(u); };
   const saveUw = async (idx: number) => {
+    const key = "uw-" + idx;
+    setSavingItem(key);
     try {
       const uw = underwriting[idx];
       const updates = pick(uw, ["guideline_name", "description", "restricted_industries", "details"]);
@@ -198,13 +207,15 @@ export default function PartnerDetailPage() {
       const { error } = await supabase.from("partner_underwriting").update(updates).eq("id", uw.id);
       if (error) { showMsg("Save failed: " + error.message); return; }
       showMsg("Guideline saved!");
-    } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); }
+    } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); } finally { setSavingItem(null); }
   };
   const removeUw = async (idx: number) => { await supabase.from("partner_underwriting").delete().eq("id", underwriting[idx].id); setUnderwriting(underwriting.filter((_, i) => i !== idx)); };
 
   const addPr = async () => { const { data } = await supabase.from("partner_pricing").insert({ partner_id: partner.id, schedule_name: "" }).select().single(); if (data) setPricing([...pricing, data]); };
   const updatePr = (idx: number, field: string, value: any) => { const u = [...pricing]; u[idx] = { ...u[idx], [field]: value }; setPricing(u); };
   const savePr = async (idx: number) => {
+    const key = "pr-" + idx;
+    setSavingItem(key);
     try {
       const pr = pricing[idx];
       const updates = pick(pr, ["schedule_name", "pricing_model"]);
@@ -214,7 +225,7 @@ export default function PartnerDetailPage() {
       const { error } = await supabase.from("partner_pricing").update(updates).eq("id", pr.id);
       if (error) { showMsg("Save failed: " + error.message); return; }
       showMsg("Pricing saved!");
-    } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); }
+    } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); } finally { setSavingItem(null); }
   };
   const removePr = async (idx: number) => { await supabase.from("partner_pricing").delete().eq("id", pricing[idx].id); setPricing(pricing.filter((_, i) => i !== idx)); };
 
@@ -571,7 +582,6 @@ export default function PartnerDetailPage() {
             <p className="text-slate-500 mt-1">{partner.relationship_manager || "No relationship manager set"}</p>
           </div>
           <div className="flex items-center gap-3">
-            {msg && <span className="text-emerald-600 text-sm">{msg}</span>}
             <select value={partner.status || "active"} onChange={(e) => updatePartnerField("status", e.target.value)} className="px-4 py-2 rounded-full text-sm font-medium bg-white border border-slate-200 focus:outline-none focus:border-emerald-500 cursor-pointer text-slate-900">
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
@@ -647,7 +657,7 @@ export default function PartnerDetailPage() {
           </div>
 
           <div className="mt-4 flex justify-end">
-            <button onClick={savePartner} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition disabled:opacity-50">{saving ? "Saving..." : "Save Partner Info"}</button>
+            <button type="button" onClick={savePartner} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition disabled:opacity-50">{saving ? "Saving..." : "Save Partner Info"}</button>
           </div>
         </div>
 
@@ -675,7 +685,7 @@ export default function PartnerDetailPage() {
                 <div className="flex justify-between items-center mb-3">
                   <span className="text-sm font-medium">Bank {idx + 1}</span>
                   <div className="flex gap-3">
-                    <button onClick={() => saveBank(idx)} className="text-emerald-600 hover:text-emerald-700 text-xs">Save</button>
+                    <button type="button" onClick={() => saveBank(idx)} disabled={savingItem === "bank-" + idx} className="text-emerald-600 hover:text-emerald-700 text-xs disabled:opacity-50">{savingItem === "bank-" + idx ? "Saving..." : "Save"}</button>
                     <button onClick={() => removeBank(idx)} className="text-red-400 hover:text-red-300 text-xs">Remove</button>
                   </div>
                 </div>
@@ -920,7 +930,7 @@ export default function PartnerDetailPage() {
                 <div className="flex justify-between items-center mb-3">
                   <span className="text-sm font-medium">Hardware {idx + 1}</span>
                   <div className="flex gap-3">
-                    <button onClick={() => saveHw(idx)} className="text-emerald-600 hover:text-emerald-700 text-xs">Save</button>
+                    <button type="button" onClick={() => saveHw(idx)} disabled={savingItem === "hw-" + idx} className="text-emerald-600 hover:text-emerald-700 text-xs disabled:opacity-50">{savingItem === "hw-" + idx ? "Saving..." : "Save"}</button>
                     <button onClick={() => removeHw(idx)} className="text-red-400 hover:text-red-300 text-xs">Remove</button>
                   </div>
                 </div>
@@ -1083,7 +1093,7 @@ export default function PartnerDetailPage() {
                 <div className="flex justify-between items-center mb-3">
                   <span className="text-sm font-medium">Software {idx + 1}</span>
                   <div className="flex gap-3">
-                    <button onClick={() => saveSw(idx)} className="text-emerald-600 hover:text-emerald-700 text-xs">Save</button>
+                    <button type="button" onClick={() => saveSw(idx)} disabled={savingItem === "sw-" + idx} className="text-emerald-600 hover:text-emerald-700 text-xs disabled:opacity-50">{savingItem === "sw-" + idx ? "Saving..." : "Save"}</button>
                     <button onClick={() => removeSw(idx)} className="text-red-400 hover:text-red-300 text-xs">Remove</button>
                   </div>
                 </div>
@@ -1114,7 +1124,7 @@ export default function PartnerDetailPage() {
                 <div className="flex justify-between items-center mb-3">
                   <span className="text-sm font-medium">Guideline {idx + 1}</span>
                   <div className="flex gap-3">
-                    <button onClick={() => saveUw(idx)} className="text-emerald-600 hover:text-emerald-700 text-xs">Save</button>
+                    <button type="button" onClick={() => saveUw(idx)} disabled={savingItem === "uw-" + idx} className="text-emerald-600 hover:text-emerald-700 text-xs disabled:opacity-50">{savingItem === "uw-" + idx ? "Saving..." : "Save"}</button>
                     <button onClick={() => removeUw(idx)} className="text-red-400 hover:text-red-300 text-xs">Remove</button>
                   </div>
                 </div>
@@ -1245,7 +1255,7 @@ export default function PartnerDetailPage() {
                 <div className="flex justify-between items-center mb-3">
                   <span className="text-sm font-medium">Schedule {idx + 1}</span>
                   <div className="flex gap-3">
-                    <button onClick={() => savePr(idx)} className="text-emerald-600 hover:text-emerald-700 text-xs">Save</button>
+                    <button type="button" onClick={() => savePr(idx)} disabled={savingItem === "pr-" + idx} className="text-emerald-600 hover:text-emerald-700 text-xs disabled:opacity-50">{savingItem === "pr-" + idx ? "Saving..." : "Save"}</button>
                     <button onClick={() => removePr(idx)} className="text-red-400 hover:text-red-300 text-xs">Remove</button>
                   </div>
                 </div>
@@ -1329,11 +1339,11 @@ export default function PartnerDetailPage() {
                       }
                       setAgreementPending(null);
                     }} className="text-slate-500 hover:text-slate-700 px-4 py-2 text-sm">Cancel</button>
-                    <button onClick={async () => {
+                    <button type="button" onClick={async () => {
                       if (!agreementForm.agreement_type) { showMsg("Please select an agreement type."); return; }
                       const { data: { user } } = await supabase.auth.getUser();
                       if (!user) return;
-                      const { data: inserted } = await supabase.from("partner_agreements").insert({
+                      const { data: inserted, error } = await supabase.from("partner_agreements").insert({
                         partner_id: partner.id,
                         user_id: user.id,
                         file_name: agreementPending.file_name,
@@ -1341,6 +1351,7 @@ export default function PartnerDetailPage() {
                         agreement_type: agreementForm.agreement_type,
                         description: agreementForm.description || null,
                       }).select().single();
+                      if (error) { showMsg("Save failed: " + error.message); return; }
                       if (inserted) setAgreements((prev) => [inserted, ...prev]);
                       setAgreementPending(null);
                       showMsg("Agreement uploaded!");
@@ -1559,7 +1570,7 @@ export default function PartnerDetailPage() {
                       {repError && <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-2.5 rounded-lg text-sm">{repError}</div>}
                       <div className="flex justify-end gap-3 pt-2">
                         <button onClick={() => setShowRepModal(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">Cancel</button>
-                        <button onClick={handleSavePartnerRepCode} disabled={repSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
+                        <button type="button" onClick={handleSavePartnerRepCode} disabled={repSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">
                           {repSaving ? "Saving..." : "Add Rep Code"}
                         </button>
                       </div>
@@ -1720,6 +1731,13 @@ export default function PartnerDetailPage() {
         )}
 
       </div>
+      {msg && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+          <div className={`px-5 py-3 rounded-lg shadow-lg text-sm font-medium ${msg.startsWith("Save failed") || msg.startsWith("Upload failed") || msg.startsWith("Failed") ? "bg-red-600 text-white" : "bg-emerald-600 text-white"}`}>
+            {msg}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
