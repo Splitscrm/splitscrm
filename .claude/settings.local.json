@@ -174,7 +174,9 @@
       "Bash(npm install:*)",
       "Bash(wc:*)",
       "Bash(node -e \":*)",
-      "Bash(node scripts/restructure-tabs.js)"
+      "Bash(node scripts/restructure-tabs.js)",
+      "Bash(grep -n \"from\\(\"\"merchants\"\"\\)\" /c/Users/ealvr/isocrm/app/dashboard/merchants/[id]/page.tsx)",
+      "Bash(grep -n \"from\\(\"\"activity_log\"\"\\)\" /c/Users/ealvr/isocrm/app/dashboard/leads/[id]/page.tsx)"
     ]
   }
 }

@@ -12,6 +12,8 @@ import LoadingScreen from "@/components/LoadingScreen";
 import { authFetch } from "@/lib/api-client";
 import { getSignedUrl, extractStoragePath } from "@/lib/storage";
 
+const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC"];
+
 export default function LeadDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -51,7 +53,7 @@ export default function LeadDetailPage() {
   const [contactSaving, setContactSaving] = useState(false);
   const [contactMsg, setContactMsg] = useState("");
   const [selectedDocType, setSelectedDocType] = useState("");
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ group1: true, group2: false, group3: false, activityLog: false });
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ group1: true, group2: false, group3: false, groupEcom: false, activityLog: false });
   const [leadTab, setLeadTab] = useState("Overview");
   const [revealedSsns, setRevealedSsns] = useState<Record<number, string>>({});
   const [revealingIdx, setRevealingIdx] = useState<number | null>(null);
@@ -153,11 +155,11 @@ export default function LeadDetailPage() {
           setActiveDealIdx(0);
           // Owners are shared at lead level — query by lead_id first, fall back to deal_id
           let ownerData: any[] | null = null;
-          const { data: leadOwners } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at").eq("lead_id", leadData.id).order("created_at");
+          const { data: leadOwners } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at, email, dl_state, dl_expiration, citizenship, us_resident, control_person, personal_guarantee, prior_bankruptcies, criminal_history, match_tmf_listed").eq("lead_id", leadData.id).order("created_at");
           if (leadOwners && leadOwners.length > 0) {
             ownerData = leadOwners;
           } else {
-            const { data: dealOwners } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at").eq("deal_id", allDeals[0].id).order("created_at");
+            const { data: dealOwners } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at, email, dl_state, dl_expiration, citizenship, us_resident, control_person, personal_guarantee, prior_bankruptcies, criminal_history, match_tmf_listed").eq("deal_id", allDeals[0].id).order("created_at");
             ownerData = dealOwners;
           }
           if (ownerData) setOwners(ownerData);
@@ -248,7 +250,7 @@ export default function LeadDetailPage() {
       if (deals.length === 0) {
         setDeals(existingDeals);
         setActiveDealIdx(0);
-        const { data: ownerData } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at").eq("lead_id", params.id as string).order("created_at");
+        const { data: ownerData } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at, email, dl_state, dl_expiration, citizenship, us_resident, control_person, personal_guarantee, prior_bankruptcies, criminal_history, match_tmf_listed").eq("lead_id", params.id as string).order("created_at");
         if (ownerData && ownerData.length > 0) setOwners(ownerData);
       }
     } else {
@@ -1758,6 +1760,42 @@ export default function LeadDetailPage() {
                     <div><label className={labelClass}>State</label><input type="text" value={deal.legal_state || ""} onChange={(e) => updateDealField("legal_state", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>Zip</label><input type="text" value={deal.legal_zip || ""} onChange={(e) => updateDealField("legal_zip", e.target.value)} className={inputClass} /></div>
                   </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+                    <div><label className={labelClass}>Business Phone</label><input type="tel" value={deal.business_phone || ""} onChange={(e) => updateDealField("business_phone", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Business Email</label><input type="email" value={deal.business_email || ""} onChange={(e) => updateDealField("business_email", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Customer Service Phone (for CNP)</label><input type="tel" value={deal.customer_service_phone || ""} onChange={(e) => updateDealField("customer_service_phone", e.target.value)} className={inputClass} /></div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+                    <div><label className={labelClass}>Business Start Date</label><input type="date" value={deal.business_start_date || ""} onChange={(e) => updateDealField("business_start_date", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Length of Current Ownership</label><input type="text" value={deal.length_of_ownership || ""} onChange={(e) => updateDealField("length_of_ownership", e.target.value)} className={inputClass} placeholder="e.g. 5 years" /></div>
+                    <div><label className={labelClass}>Number of Employees</label><input type="number" value={deal.num_employees ?? ""} onChange={(e) => updateDealField("num_employees", e.target.value)} className={inputClass} /></div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+                    <div><label className={labelClass}>MCC Code</label><input type="text" value={deal.mcc_code || ""} onChange={(e) => updateDealField("mcc_code", e.target.value)} className={inputClass} placeholder="e.g. 5812 - Eating Places, Restaurants" /></div>
+                    <div><label className={labelClass}>SIC Code</label><input type="text" value={deal.sic_code || ""} onChange={(e) => updateDealField("sic_code", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Annual Revenue</label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span><input type="number" value={deal.annual_revenue ?? ""} onChange={(e) => updateDealField("annual_revenue", e.target.value)} className={inputClass + " pl-7"} /></div></div>
+                  </div>
+                  <div className="mt-4"><label className={labelClass}>Products/Services Description</label><textarea rows={3} value={deal.products_services_description || ""} onChange={(e) => updateDealField("products_services_description", e.target.value)} className={inputClass + " resize-none"} /></div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                    <div><label className={labelClass}>Business License Number</label><input type="text" value={deal.business_license_number || ""} onChange={(e) => updateDealField("business_license_number", e.target.value)} className={inputClass} /></div>
+                    <div className="flex items-center gap-3 pt-7">
+                      <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!deal.seasonal_business} onChange={(e) => updateDealField("seasonal_business", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-sm text-slate-700">Seasonal Business</span></label>
+                    </div>
+                  </div>
+                  {deal.seasonal_business && (
+                    <div className="mt-4"><label className={labelClass}>Seasonal Months</label><input type="text" value={deal.seasonal_months || ""} onChange={(e) => updateDealField("seasonal_months", e.target.value)} className={inputClass} placeholder="e.g. June - August" /></div>
+                  )}
+                  <div className="mt-4">
+                    <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!deal.mailing_address_different} onChange={(e) => updateDealField("mailing_address_different", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-sm text-slate-700">Mailing address different from legal address</span></label>
+                  </div>
+                  {deal.mailing_address_different && (
+                    <div className="grid grid-cols-4 gap-4 mt-4">
+                      <div><label className={labelClass}>Mailing Street</label><input type="text" value={deal.mailing_street || ""} onChange={(e) => updateDealField("mailing_street", e.target.value)} className={inputClass} /></div>
+                      <div><label className={labelClass}>Mailing City</label><input type="text" value={deal.mailing_city || ""} onChange={(e) => updateDealField("mailing_city", e.target.value)} className={inputClass} /></div>
+                      <div><label className={labelClass}>Mailing State</label><select value={deal.mailing_state || ""} onChange={(e) => updateDealField("mailing_state", e.target.value)} className={inputClass}><option value="">Select...</option>{US_STATES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                      <div><label className={labelClass}>Mailing Zip</label><input type="text" value={deal.mailing_zip || ""} onChange={(e) => updateDealField("mailing_zip", e.target.value)} className={inputClass} /></div>
+                    </div>
+                  )}
                 </div>
 
                 <div className={sectionClass}>
@@ -1775,6 +1813,11 @@ export default function LeadDetailPage() {
                     </div>
                     <div><label className={labelClass}>EIN/ITIN</label><input type="text" value={deal.ein_itin || ""} onChange={(e) => updateDealField("ein_itin", formatEIN(e.target.value))} className={inputClass} placeholder="XX-XXXXXXX" maxLength={10} /></div>
                   </div>
+                  {["llc", "corp", "s_corp", "partnership"].includes(deal.entity_type || "") && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                      <div><label className={labelClass}>State of Incorporation</label><select value={deal.state_of_incorporation || ""} onChange={(e) => updateDealField("state_of_incorporation", e.target.value)} className={inputClass}><option value="">Select...</option>{US_STATES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                    </div>
+                  )}
                 </div>
 
                 <div className={sectionClass}>
@@ -1805,6 +1848,58 @@ export default function LeadDetailPage() {
                     <div><label className={labelClass}>EBT</label><select value={deal.ebt || ""} onChange={(e) => updateDealField("ebt", e.target.value)} className={inputClass}><option value="">Select...</option><option value="yes">Yes</option><option value="no">No</option></select></div>
                     <div><label className={labelClass}>Funding Type</label><select value={deal.funding_type || ""} onChange={(e) => updateDealField("funding_type", e.target.value)} className={inputClass}><option value="">Select...</option><option value="next_day">Next Day</option><option value="same_day">Same Day</option></select></div>
                   </div>
+                  {/* Cross-field validations */}
+                  {(() => {
+                    const warnings: React.ReactNode[] = [];
+                    const ht = Number(deal.high_ticket) || 0;
+                    const at = Number(deal.average_ticket) || 0;
+                    const mv = Number(deal.monthly_volume) || 0;
+                    const mt = Number(deal.monthly_transactions) || 0;
+                    if (ht > 0 && at > 0 && ht < at) warnings.push(<p key="ht" className="text-xs text-red-500 mt-2">High ticket (${ht}) should be &ge; average ticket (${at})</p>);
+                    if (mv > 0 && mt > 0) { const calc = (mv / mt).toFixed(2); warnings.push(<p key="calc" className="text-xs text-slate-400 mt-2">Calculated avg ticket: ${calc} (volume &divide; transactions)</p>); }
+                    return warnings;
+                  })()}
+                </div>
+
+                <div className={sectionClass}>
+                  <h4 className="font-semibold mb-4 text-emerald-600">Processing Details</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                    <div><label className={labelClass}>Current Processor MID</label><input type="text" value={deal.current_mid || ""} onChange={(e) => updateDealField("current_mid", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Monthly Transactions</label><input type="number" value={deal.monthly_transactions ?? ""} onChange={(e) => updateDealField("monthly_transactions", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Annual Card Volume</label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span><input type="number" value={deal.annual_card_volume ?? ""} onChange={(e) => updateDealField("annual_card_volume", e.target.value)} className={inputClass + " pl-7"} /></div></div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                    <div><label className={labelClass}>Amex SE Number</label><input type="text" value={deal.amex_se_number || ""} onChange={(e) => updateDealField("amex_se_number", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Discover MID</label><input type="text" value={deal.discover_mid || ""} onChange={(e) => updateDealField("discover_mid", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>B2B Percentage</label><input type="number" min="0" max="100" value={deal.b2b_pct ?? ""} onChange={(e) => updateDealField("b2b_pct", e.target.value)} className={inputClass} /></div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div><label className={labelClass}>International Cards %</label><input type="number" min="0" max="100" value={deal.international_cards_pct ?? ""} onChange={(e) => updateDealField("international_cards_pct", e.target.value)} className={inputClass} /></div>
+                  </div>
+                  <div className="mt-4"><label className={labelClass}>Reason for Leaving Current Processor</label><textarea rows={2} value={deal.reason_for_leaving || ""} onChange={(e) => updateDealField("reason_for_leaving", e.target.value)} className={inputClass + " resize-none"} /></div>
+                  {Number(deal.cnp_pct) > 0 && (
+                    <div className="mt-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                      <p className="text-sm font-medium text-slate-700 mb-3">CNP Breakdown</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div><label className={labelClass}>Internet %</label><input type="number" min="0" max="100" value={deal.cnp_internet_pct ?? ""} onChange={(e) => updateDealField("cnp_internet_pct", e.target.value)} className={inputClass} /></div>
+                        <div><label className={labelClass}>Mail Order %</label><input type="number" min="0" max="100" value={deal.cnp_mail_order_pct ?? ""} onChange={(e) => updateDealField("cnp_mail_order_pct", e.target.value)} className={inputClass} /></div>
+                        <div><label className={labelClass}>Telephone Order %</label><input type="number" min="0" max="100" value={deal.cnp_telephone_pct ?? ""} onChange={(e) => updateDealField("cnp_telephone_pct", e.target.value)} className={inputClass} /></div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                    <div className="flex items-center gap-3 pt-7">
+                      <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!deal.recurring_billing} onChange={(e) => updateDealField("recurring_billing", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-sm text-slate-700">Recurring Billing</span></label>
+                    </div>
+                    {deal.recurring_billing && (
+                      <div><label className={labelClass}>Frequency</label><select value={deal.recurring_frequency || ""} onChange={(e) => updateDealField("recurring_frequency", e.target.value)} className={inputClass}><option value="">Select...</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="annually">Annually</option></select></div>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                    <div><label className={labelClass}>Days between charge and delivery</label><input type="number" value={deal.fulfillment_timeframe ?? ""} onChange={(e) => updateDealField("fulfillment_timeframe", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Delivery Method</label><select value={deal.delivery_method || ""} onChange={(e) => updateDealField("delivery_method", e.target.value)} className={inputClass}><option value="">Select...</option><option value="digital">Digital/Download</option><option value="physical_shipping">Physical Shipping</option><option value="in_person_pickup">In-Person Pickup</option><option value="service_no_delivery">Service/No Delivery</option></select></div>
+                  </div>
+                  <div className="mt-4"><label className={labelClass}>Refund Policy</label><textarea rows={2} value={deal.refund_policy || ""} onChange={(e) => updateDealField("refund_policy", e.target.value)} className={inputClass + " resize-none"} /></div>
                 </div>
               </div>
             </div>
@@ -1822,6 +1917,22 @@ export default function LeadDetailPage() {
                     <button onClick={addOwner} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs transition">+ Add Owner</button>
                   </div>
                   {owners.length === 0 && <p className="text-slate-500 text-sm">No owners added yet.</p>}
+                  {(() => {
+                    const totalPct = owners.reduce((s, o) => s + (Number(o.ownership_pct) || 0), 0);
+                    const hasControlPerson = owners.some(o => !!o.control_person);
+                    return (
+                      <>
+                        {owners.length > 0 && (
+                          <div className="flex items-center gap-4 mb-3 text-sm">
+                            <span className={`font-medium ${totalPct === 100 ? "text-emerald-600" : "text-red-500"}`}>
+                              {totalPct === 100 ? "✓" : "!"} Ownership: {totalPct}%
+                            </span>
+                            {owners.length > 0 && !hasControlPerson && <span className="text-amber-600 text-xs">No control person designated</span>}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                   {owners.map((o, idx) => (
                     <div key={o.id} className="border border-slate-200 rounded-lg p-4 mb-4">
                       <div className="flex justify-between items-center mb-3">
@@ -1876,12 +1987,35 @@ export default function LeadDetailPage() {
                         </div>
                         <div><label className={labelClass}>Phone</label><input type="tel" value={o.phone || ""} onChange={(e) => updateOwner(idx, "phone", e.target.value)} className={inputClass} /></div>
                       </div>
-                      <div className="grid grid-cols-4 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-3">
+                        <div><label className={labelClass}>Email</label><input type="email" value={o.email || ""} onChange={(e) => updateOwner(idx, "email", e.target.value)} className={inputClass} /></div>
+                        <div><label className={labelClass}>DL State</label><select value={o.dl_state || ""} onChange={(e) => updateOwner(idx, "dl_state", e.target.value)} className={inputClass}><option value="">Select...</option>{US_STATES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                        <div>
+                          <label className={labelClass}>DL Expiration Date</label>
+                          <input type="date" value={o.dl_expiration || ""} onChange={(e) => updateOwner(idx, "dl_expiration", e.target.value)} className={inputClass} />
+                          {o.dl_expiration && new Date(o.dl_expiration) < new Date() && <p className="text-xs text-red-500 mt-0.5">Expired</p>}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-4 gap-4 mb-3">
                         <div><label className={labelClass}>Address</label><input type="text" value={o.address || ""} onChange={(e) => updateOwner(idx, "address", e.target.value)} className={inputClass} /></div>
                         <div><label className={labelClass}>City</label><input type="text" value={o.city || ""} onChange={(e) => updateOwner(idx, "city", e.target.value)} className={inputClass} /></div>
-                        <div><label className={labelClass}>State</label><input type="text" value={o.state || ""} onChange={(e) => updateOwner(idx, "state", e.target.value)} className={inputClass} /></div>
+                        <div><label className={labelClass}>State</label><select value={o.state || ""} onChange={(e) => updateOwner(idx, "state", e.target.value)} className={inputClass}><option value="">Select...</option>{US_STATES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
                         <div><label className={labelClass}>Zip</label><input type="text" value={o.zip || ""} onChange={(e) => updateOwner(idx, "zip", e.target.value)} className={inputClass} /></div>
                       </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
+                        <div><label className={labelClass}>Citizenship</label><input type="text" value={o.citizenship ?? "US"} onChange={(e) => updateOwner(idx, "citizenship", e.target.value)} className={inputClass} /></div>
+                        <div className="flex items-center gap-3 pt-7">
+                          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={o.us_resident !== false} onChange={(e) => updateOwner(idx, "us_resident", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-sm text-slate-700">US Resident</span></label>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-x-6 gap-y-2 mt-3 pt-3 border-t border-slate-100">
+                        <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.control_person} onChange={(e) => updateOwner(idx, "control_person", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Control Person (FinCEN CDD)</span></label>
+                        <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.personal_guarantee} onChange={(e) => updateOwner(idx, "personal_guarantee", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Personal Guarantee</span></label>
+                        <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.prior_bankruptcies} onChange={(e) => updateOwner(idx, "prior_bankruptcies", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Prior Bankruptcies</span></label>
+                        <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.criminal_history} onChange={(e) => updateOwner(idx, "criminal_history", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Criminal History</span></label>
+                        <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.match_tmf_listed} onChange={(e) => updateOwner(idx, "match_tmf_listed", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">MATCH/TMF Listed</span></label>
+                      </div>
+                      {o.match_tmf_listed && <p className="text-xs text-red-500 mt-2 bg-red-50 rounded p-2">Prior MATCH listing must be disclosed — undisclosed listings cause auto-decline</p>}
                     </div>
                   ))}
                 </div>
@@ -1892,6 +2026,10 @@ export default function LeadDetailPage() {
                     <div><label className={labelClass}>Routing Number</label><input type="text" value={deal.bank_routing || ""} onChange={(e) => updateDealField("bank_routing", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>Account Number</label><input type="text" value={deal.bank_account || ""} onChange={(e) => updateDealField("bank_account", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>Account Type</label><select value={deal.bank_account_type || ""} onChange={(e) => updateDealField("bank_account_type", e.target.value)} className={inputClass}><option value="">Select...</option><option value="checking">Checking</option><option value="savings">Savings</option></select></div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                    <div><label className={labelClass}>Bank Phone</label><input type="tel" value={deal.bank_phone || ""} onChange={(e) => updateDealField("bank_phone", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Bank Account Holder Name</label><input type="text" value={deal.bank_account_holder_name || ""} onChange={(e) => updateDealField("bank_account_holder_name", e.target.value)} className={inputClass} /><p className="text-xs text-slate-400 mt-0.5">Must match DBA or Legal Name</p></div>
                   </div>
                 </div>
 
@@ -1943,14 +2081,59 @@ export default function LeadDetailPage() {
                     <div><label className={labelClass}>Processing Account Ever Terminated?</label><select value={deal.processing_terminated || ""} onChange={(e) => updateDealField("processing_terminated", e.target.value)} className={inputClass}><option value="">Select...</option><option value="yes">Yes</option><option value="no">No</option></select></div>
                     <div><label className={labelClass}>Filed for Bankruptcy?</label><select value={deal.filed_bankruptcy || ""} onChange={(e) => updateDealField("filed_bankruptcy", e.target.value)} className={inputClass}><option value="">Select...</option><option value="yes">Yes</option><option value="no">No</option></select></div>
                   </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                    <div><label className={labelClass}>PCI Compliance Status</label><select value={deal.pci_compliance_status || ""} onChange={(e) => updateDealField("pci_compliance_status", e.target.value)} className={inputClass}><option value="">Select...</option><option value="compliant">Compliant</option><option value="non_compliant">Non-Compliant</option><option value="in_progress">In Progress</option><option value="not_started">Not Started</option></select></div>
+                    <div><label className={labelClass}>PCI Compliance Vendor</label><input type="text" value={deal.pci_compliance_vendor || ""} onChange={(e) => updateDealField("pci_compliance_vendor", e.target.value)} className={inputClass} placeholder="e.g. SecurityMetrics, Trustwave" /></div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                    <div><label className={labelClass}>Beneficial Ownership Certified</label><input type="date" value={deal.beneficial_ownership_certified || ""} onChange={(e) => updateDealField("beneficial_ownership_certified", e.target.value)} className={inputClass} /></div>
+                    <div className="flex items-center gap-3 pt-7">
+                      <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!deal.ach_debit_authorized} onChange={(e) => updateDealField("ach_debit_authorized", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-sm text-slate-700">ACH Debit Authorized</span></label>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
 
+            {/* eCommerce Section — conditional on CNP > 0 */}
+            {Number(deal.cnp_pct) > 0 && (
+              <>
+                <div onClick={() => toggleGroup("groupEcom")} className={`flex justify-between items-center cursor-pointer bg-white rounded-xl p-4 border border-slate-200 shadow-sm mb-2 ${openGroups.groupEcom ? "border-l-4 border-l-emerald-500" : ""}`}>
+                  <h3 className="text-lg font-semibold text-slate-700">eCommerce</h3>
+                  <span className={`text-slate-400 transition-transform duration-200 ${openGroups.groupEcom ? "rotate-180" : ""}`}>▼</span>
+                </div>
+                <div className="overflow-hidden transition-all duration-300 ease-in-out" style={{ maxHeight: openGroups.groupEcom ? "5000px" : "0px", opacity: openGroups.groupEcom ? 1 : 0 }}>
+                  <div className="space-y-6 mb-6">
+                    <div className={sectionClass}>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                        <div className="flex items-center gap-3 pt-1">
+                          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!deal.ssl_certificate} onChange={(e) => updateDealField("ssl_certificate", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-sm text-slate-700">SSL Certificate</span></label>
+                        </div>
+                        <div><label className={labelClass}>Shopping Cart Platform</label><input type="text" value={deal.shopping_cart_platform || ""} onChange={(e) => updateDealField("shopping_cart_platform", e.target.value)} className={inputClass} placeholder="e.g. Shopify, WooCommerce" /></div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                        <div>
+                          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!deal.stores_card_data} onChange={(e) => updateDealField("stores_card_data", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-sm text-slate-700">Stores Card Data</span></label>
+                          {deal.stores_card_data && <p className="text-xs text-red-500 mt-1 bg-red-50 rounded p-2">Storing card data increases PCI scope significantly</p>}
+                        </div>
+                        <div>
+                          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!deal.three_d_secure} onChange={(e) => updateDealField("three_d_secure", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-sm text-slate-700">3D Secure Enabled</span></label>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!deal.negative_option_billing} onChange={(e) => updateDealField("negative_option_billing", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-sm text-slate-700">Negative Option Billing</span></label>
+                        {deal.negative_option_billing && <p className="text-xs text-amber-600 mt-1 bg-amber-50 rounded p-2">This is a high-risk flag for underwriting</p>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+
             {canEdit && (
               <div className="flex justify-end mb-8">
-                <button onClick={async () => { await saveDeal(); await saveOwners(); }} disabled={dealSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-medium transition disabled:opacity-50">{dealSaving ? "Saving..." : "Save Deal"}</button>
+                <button type="button" onClick={async () => { await saveDeal(); await saveOwners(); }} disabled={dealSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-medium transition disabled:opacity-50">{dealSaving ? "Saving..." : "Save Deal"}</button>
               </div>
             )}
           </>
