@@ -259,10 +259,12 @@ export default function LeadDetailPage() {
   };
 
   const handleStatusChange = (newStatus: string) => {
+    console.log("[STAGE] handleStatusChange called:", { from: lead.status, to: newStatus, partnerSchedule: !!partnerSchedule, saving });
     const fromSignedOrConverted = lead.status === "signed" || lead.status === "submitted" || lead.status === "converted";
     // Pre-signature validation: check for below-cost pricing
     if (newStatus === "send_for_signature" && partnerSchedule) {
       const issues = getBelowCostFields();
+      console.log("[STAGE] Below-cost check:", issues.length, "issues");
       if (issues.length > 0) {
         setBelowCostItems(issues);
         setPendingStageAfterWarning(newStatus);
@@ -270,18 +272,20 @@ export default function LeadDetailPage() {
         return;
       }
     }
-    if (newStatus === "unqualified") { setShowModal("unqualified"); setModalData({ reason: "", reason_other: "" }); }
-    else if (newStatus === "declined") { setShowModal("declined"); setModalData({ reason: "" }); }
-    else if (newStatus === "recycled") { setShowModal("recycled"); setModalData({ reason: "", follow_up_date: "" }); }
-    else if (newStatus === "signed") { setShowModal("signed"); setModalData({}); }
-    else if (newStatus === "qualified_prospect") { createDealAndUpdateStatus(); }
+    if (newStatus === "unqualified") { console.log("[STAGE] → unqualified modal"); setShowModal("unqualified"); setModalData({ reason: "", reason_other: "" }); }
+    else if (newStatus === "declined") { console.log("[STAGE] → declined modal"); setShowModal("declined"); setModalData({ reason: "" }); }
+    else if (newStatus === "recycled") { console.log("[STAGE] → recycled modal"); setShowModal("recycled"); setModalData({ reason: "", follow_up_date: "" }); }
+    else if (newStatus === "signed") { console.log("[STAGE] → signed modal"); setShowModal("signed"); setModalData({}); }
+    else if (newStatus === "qualified_prospect") { console.log("[STAGE] → createDealAndUpdateStatus"); createDealAndUpdateStatus(); }
     else if (lead.status === "declined" && newStatus === "send_for_signature") {
+      console.log("[STAGE] → resubmit_from_declined modal");
       setShowModal("resubmit_from_declined"); setModalData({});
     }
     else if (fromSignedOrConverted && !["signed", "submitted", "converted"].includes(newStatus)) {
+      console.log("[STAGE] → backward_from_signed modal");
       setShowModal("backward_from_signed"); setModalData({ targetStatus: newStatus });
     }
-    else { updateStatus(newStatus, {}); }
+    else { console.log("[STAGE] → updateStatus(" + newStatus + ")"); updateStatus(newStatus, {}); }
   };
 
   const createDealAndUpdateStatus = async () => {
@@ -335,10 +339,15 @@ export default function LeadDetailPage() {
   };
 
   const updateStatus = async (newStatus: string, extraFields: any) => {
+    console.log("[STAGE] updateStatus called:", { newStatus, extraFields, currentStatus: lead.status });
     setSaving(true);
     const oldStatus = lead.status;
     const { error } = await supabase.from("leads").update({ status: newStatus, updated_at: new Date().toISOString(), ...extraFields }).eq("id", params.id);
-    if (!error) {
+    if (error) {
+      console.error("[STAGE] updateStatus FAILED:", JSON.stringify(error));
+      setDealMsg("Stage change failed: " + error.message);
+    } else {
+      console.log("[STAGE] updateStatus SUCCESS:", oldStatus, "→", newStatus);
       await logActivity("stage_change", "status", statusLabel(oldStatus), statusLabel(newStatus), "Stage changed from " + statusLabel(oldStatus) + " to " + statusLabel(newStatus));
       setLead({ ...lead, status: newStatus, updated_at: new Date().toISOString(), ...extraFields });
       setShowModal("");
