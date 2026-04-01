@@ -676,13 +676,16 @@ export default function LeadDetailPage() {
     // Fetch sessions for send_for_signature AND signed/submitted/converted (for signed docs display)
     if (["send_for_signature", "signed", "submitted", "converted"].includes(lead?.status) && deals.length > 0) {
       fetchSigSessions();
-      // Pre-fill signer info
-      if (!sigSignerName && lead.contact_name) setSigSignerName(lead.contact_name);
-      if (!sigSignerEmail && lead.email) setSigSignerEmail(lead.email);
+      // Pre-fill signer info from primary deal owner (control person, or first owner)
+      if (!sigSignerName || !sigSignerEmail) {
+        const controlOwner = owners.find((o: any) => o.is_control_prong) || owners[0];
+        if (!sigSignerName) setSigSignerName(controlOwner?.full_name || lead.contact_name || "");
+        if (!sigSignerEmail) setSigSignerEmail(controlOwner?.email || lead.email || "");
+      }
       // Load banks for current deal's partner
       if (deal?.partner_id) fetchBanksForPartner(deal.partner_id);
     }
-  }, [lead?.status, deals.length, deal?.partner_id]);
+  }, [lead?.status, deals.length, deal?.partner_id, owners.length]);
 
   const handleSigPartnerChange = async (partnerId: string) => {
     if (!deal) return;
