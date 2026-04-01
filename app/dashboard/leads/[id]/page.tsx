@@ -133,6 +133,9 @@ export default function LeadDetailPage() {
   const [sigCopied, setSigCopied] = useState<string | null>(null);
   const [sigHistoryOpen, setSigHistoryOpen] = useState(false);
   const [sigSnapshotWarning, setSigSnapshotWarning] = useState<{ changes: string[]; originalSession: any } | null>(null);
+  const [signedDocs, setSignedDocs] = useState<any[]>([]);
+  const [signedDocUrls, setSignedDocUrls] = useState<Record<string, string>>({});
+  const [regenerating, setRegenerating] = useState<string | null>(null);
   const toggleGroup = (key: string) => setOpenGroups(prev => ({ ...prev, [key]: !prev[key] }));
 
   const docTypes = [
@@ -686,6 +689,19 @@ export default function LeadDetailPage() {
       grouped[s.deal_id].push(s);
     }
     setSigSessions(grouped);
+    // Fetch signed PDF documents for all sessions
+    const signedSessionIds = (data || []).filter((s: any) => s.status === "signed").map((s: any) => s.id);
+    if (signedSessionIds.length > 0) {
+      const { data: docs } = await supabase.from("signed_documents").select("id, signature_session_id, document_type, file_url, created_at").in("signature_session_id", signedSessionIds).order("created_at");
+      if (docs) {
+        setSignedDocs(docs);
+        const urls: Record<string, string> = {};
+        await Promise.all(docs.map(async (doc: any) => {
+          if (doc.file_url) { const signed = await getSignedUrl(doc.file_url); if (signed) urls[doc.id] = signed; }
+        }));
+        setSignedDocUrls(urls);
+      }
+    }
   }, [lead, deals]);
 
   useEffect(() => {
@@ -753,6 +769,31 @@ export default function LeadDetailPage() {
     setSigCopied(token);
     setTimeout(() => setSigCopied(null), 2000);
   };
+
+  const regeneratePdfs = async (sessionId: string) => {
+    setRegenerating(sessionId);
+    try {
+      const res = await authFetch("/api/regenerate-pdfs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signature_session_id: sessionId }),
+      });
+      if (res.ok) {
+        await fetchSigSessions();
+        setDealMsg("PDFs regenerated!");
+        setTimeout(() => setDealMsg(""), 2000);
+      } else {
+        const data = await res.json();
+        setDealMsg("PDF regeneration failed: " + (data.error || "Unknown error"));
+      }
+    } catch {
+      setDealMsg("PDF regeneration failed");
+    }
+    setRegenerating(null);
+  };
+
+  // Helper to get signed document URLs for a session
+  const getSessionDocs = (sessionId: string) => signedDocs.filter(d => d.signature_session_id === sessionId);
 
   // Build a snapshot of critical deal fields for signature data change detection
   const buildDataSnapshot = (d: any, ownerList: any[]) => ({
@@ -2498,26 +2539,56 @@ export default function LeadDetailPage() {
           return (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4">
               <h3 className="text-base font-semibold text-slate-900 mb-3">Signed Documents</h3>
-              <div className="divide-y divide-slate-50">
+              <div className="divide-y divide-slate-100">
                 {allSessions.map((s: any) => {
                   const dealForSession = deals.find(d => d.id === s.deal_id);
+                  const docs = getSessionDocs(s.id);
+                  const certDoc = docs.find((d: any) => d.document_type === "signature_certificate");
+                  const mpaDoc = docs.find((d: any) => d.document_type === "mpa_summary");
                   return (
-                    <div key={s.id} className="flex flex-col sm:flex-row sm:items-center justify-between py-3 gap-2">
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{s.signer_name}</p>
-                        <p className="text-xs text-slate-500">{s.signer_email}{dealForSession ? ` \u00b7 ${dealForSession.location_name || dealForSession.dba_name || ""}` : ""}</p>
+                    <div key={s.id} className="py-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{s.signer_name}</p>
+                          <p className="text-xs text-slate-500">{s.signer_email}{dealForSession ? ` \u00b7 ${dealForSession.location_name || dealForSession.dba_name || ""}` : ""}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-slate-400">{new Date(s.signed_at).toLocaleString()}</span>
+                          <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-medium">Signed</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-slate-400">{new Date(s.signed_at).toLocaleString()}</span>
-                        {s.signer_ip && <span className="text-xs text-slate-300">IP: {s.signer_ip}</span>}
-                        <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-medium">Signed</span>
+                      <div className="flex items-center gap-3 mt-2 flex-wrap">
+                        {certDoc && signedDocUrls[certDoc.id] && (
+                          <a href={signedDocUrls[certDoc.id]} target="_blank" rel="noopener noreferrer" className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">Signature Certificate</a>
+                        )}
+                        {mpaDoc && signedDocUrls[mpaDoc.id] && (
+                          <a href={signedDocUrls[mpaDoc.id]} target="_blank" rel="noopener noreferrer" className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">MPA Summary</a>
+                        )}
                         {s.signature_data && (
                           <button onClick={() => {
                             const a = document.createElement("a");
                             a.href = s.signature_data;
                             a.download = `signature-${s.signer_name.replace(/\s+/g, "-")}.png`;
                             a.click();
-                          }} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">Download</button>
+                          }} className="text-xs text-slate-500 hover:text-slate-700 font-medium">Signature PNG</button>
+                        )}
+                        {(!certDoc || !mpaDoc) && (
+                          <button
+                            onClick={() => regeneratePdfs(s.id)}
+                            disabled={regenerating === s.id}
+                            className="text-xs text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
+                          >
+                            {regenerating === s.id ? "Generating..." : "Generate PDFs"}
+                          </button>
+                        )}
+                        {certDoc && mpaDoc && (
+                          <button
+                            onClick={() => regeneratePdfs(s.id)}
+                            disabled={regenerating === s.id}
+                            className="text-xs text-slate-400 hover:text-slate-600 font-medium disabled:opacity-50"
+                          >
+                            {regenerating === s.id ? "Regenerating..." : "Regenerate"}
+                          </button>
                         )}
                       </div>
                     </div>

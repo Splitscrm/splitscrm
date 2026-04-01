@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { rateLimit, rateLimitHeaders, rateLimitResponse } from "@/lib/rate-limit";
+import { generateSignatureCertificate, generateMpaSummary } from "@/lib/pdf-generation";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -155,6 +156,70 @@ export async function POST(req: NextRequest) {
 
     if (updateErr) {
       return NextResponse.json({ error: "Failed to save signature" }, { status: 500, headers });
+    }
+
+    // ── Generate PDFs (non-blocking — errors are logged but don't fail the signing) ──
+    try {
+      const { data: fullDeal } = await supabase.from("deals").select("*").eq("id", session.deal_id).single();
+      const { data: fullOwners } = await supabase.from("deal_owners").select("*").eq("lead_id", session.lead_id).order("created_at");
+      const { data: fullLead } = await supabase.from("leads").select("id, business_name, contact_name, email, phone, monthly_volume").eq("id", session.lead_id).single();
+      let partnerName: string | null = null;
+      if (fullDeal?.partner_id) {
+        const { data: p } = await supabase.from("partners").select("name").eq("id", fullDeal.partner_id).single();
+        partnerName = p?.name || null;
+      }
+
+      const ts = Date.now();
+      const storagePath = (name: string) => `${session.org_id}/${session.lead_id}/${name}-${ts}.pdf`;
+
+      // 1. Signature Certificate
+      const certBytes = await generateSignatureCertificate({
+        businessLegalName: fullDeal?.business_legal_name || fullLead?.business_name || "",
+        dbaName: fullDeal?.dba_name || "",
+        signerName: session.signer_name,
+        signerEmail: session.signer_email,
+        signedAt: now,
+        signerIp,
+        signerUserAgent,
+        signatureDataBase64: signature_data,
+      });
+      const certPath = storagePath("signature-certificate");
+      const { error: certUpErr } = await supabase.storage.from("deal-documents").upload(certPath, certBytes, { contentType: "application/pdf" });
+      if (certUpErr) console.error("Cert upload error:", certUpErr.message);
+      else {
+        await supabase.from("signed_documents").insert({
+          signature_session_id: session.id,
+          deal_id: session.deal_id,
+          org_id: session.org_id,
+          document_type: "signature_certificate",
+          file_url: certPath,
+        });
+      }
+
+      // 2. MPA Summary
+      const mpaBytes = await generateMpaSummary({
+        deal: fullDeal,
+        owners: fullOwners || [],
+        lead: fullLead,
+        partnerName,
+        signerName: session.signer_name,
+        signedAt: now,
+        signatureDataBase64: signature_data,
+      });
+      const mpaPath = storagePath("mpa-summary");
+      const { error: mpaUpErr } = await supabase.storage.from("deal-documents").upload(mpaPath, mpaBytes, { contentType: "application/pdf" });
+      if (mpaUpErr) console.error("MPA upload error:", mpaUpErr.message);
+      else {
+        await supabase.from("signed_documents").insert({
+          signature_session_id: session.id,
+          deal_id: session.deal_id,
+          org_id: session.org_id,
+          document_type: "mpa_summary",
+          file_url: mpaPath,
+        });
+      }
+    } catch (pdfErr: any) {
+      console.error("PDF generation failed (signature still saved):", pdfErr?.message || pdfErr);
     }
 
     // Multi-location: only update lead to 'signed' if ALL deals have signed sessions
