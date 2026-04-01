@@ -181,6 +181,10 @@ export default function LeadDetailPage() {
           return;
         }
         setLead(leadData);
+        // Auto-switch to DealInfo tab for stages that have deal-specific UI
+        if (["send_for_signature", "signed", "submitted"].includes(leadData.status)) {
+          setLeadTab("DealInfo");
+        }
         const { data: allDeals } = await supabase.from("deals").select("*").eq("lead_id", leadData.id).order("created_at");
         if (allDeals && allDeals.length > 0) {
           // Migrate legacy hardware/software fields on each deal
