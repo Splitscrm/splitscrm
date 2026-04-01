@@ -37,6 +37,7 @@ type Lead = {
   assigned_to?: string
   website?: string
   source?: string
+  declined_reason?: string
 }
 
 const statusColors: Record<string, string> = {
@@ -177,7 +178,7 @@ export default function LeadsPage() {
     if (!user) return
     let query = supabase
       .from('leads')
-      .select('id, business_name, contact_name, email, phone, status, monthly_volume, notes, created_at, updated_at, follow_up_date, assigned_to, user_id, website')
+      .select('id, business_name, contact_name, email, phone, status, monthly_volume, notes, created_at, updated_at, follow_up_date, assigned_to, user_id, website, declined_reason')
       .order('created_at', { ascending: false })
 
     if (!isOwnerOrManager) {
@@ -682,6 +683,7 @@ export default function LeadsPage() {
                         value={lead.status}
                         onClick={(e) => e.stopPropagation()}
                         onChange={(e) => updateStatus(lead.id, e.target.value)}
+                        title={lead.status === 'declined' && lead.declined_reason ? `Declined: ${lead.declined_reason}` : undefined}
                         className={`text-xs px-3 py-1 rounded-full border-0 font-medium cursor-pointer ${statusColors[lead.status] || 'bg-slate-100 text-slate-600'}`}
                       >
                         {Object.entries(statusLabels).map(([value, label]) => (
@@ -729,7 +731,10 @@ export default function LeadsPage() {
                 <p className="text-sm text-slate-500 mt-1">{selectedLead.contact_name}</p>
               )}
               <div className="flex items-center gap-3 mt-2">
-                <span className={`text-xs px-3 py-1 rounded-full font-medium ${statusColors[selectedLead.status] || 'bg-slate-100 text-slate-600'}`}>
+                <span
+                  className={`text-xs px-3 py-1 rounded-full font-medium ${statusColors[selectedLead.status] || 'bg-slate-100 text-slate-600'}`}
+                  title={selectedLead.status === 'declined' && selectedLead.declined_reason ? `Declined: ${selectedLead.declined_reason}` : undefined}
+                >
                   {statusLabels[selectedLead.status] || selectedLead.status}
                 </span>
                 <span className="text-xs text-slate-400">

@@ -175,7 +175,7 @@ export default function LeadDetailPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
       setUserId(user.id);
-      const { data: leadData } = await supabase.from("leads").select("id, assigned_to, user_id, status, business_name, contact_name, email, phone, website, monthly_volume, notes, created_at, updated_at, follow_up_date, unqualified_reason, unqualified_reason_other, recycled_reason").eq("id", params.id).single();
+      const { data: leadData } = await supabase.from("leads").select("id, assigned_to, user_id, status, business_name, contact_name, email, phone, website, monthly_volume, notes, created_at, updated_at, follow_up_date, unqualified_reason, unqualified_reason_other, recycled_reason, declined_reason").eq("id", params.id).single();
       if (leadData) {
         // Permission check: non-owner/manager can only see their own leads
         if (!isOwnerOrManager && leadData.assigned_to !== user.id && leadData.user_id !== user.id) {
@@ -1284,6 +1284,33 @@ export default function LeadDetailPage() {
 
         {lead.status === "converted" && (
           <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm mb-6">This lead has been converted to a merchant account.</div>
+        )}
+
+        {lead.status === "declined" && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-6 flex items-center gap-2 flex-wrap">
+            <span className="font-semibold">Declined</span>
+            {lead.declined_reason ? (
+              <>
+                <span className="text-red-400">&mdash;</span>
+                <span
+                  contentEditable={canEdit}
+                  suppressContentEditableWarning
+                  onBlur={async (e) => {
+                    const newReason = e.currentTarget.textContent || "";
+                    if (newReason !== lead.declined_reason) {
+                      await supabase.from("leads").update({ declined_reason: newReason, updated_at: new Date().toISOString() }).eq("id", params.id);
+                      setLead((prev: any) => ({ ...prev, declined_reason: newReason }));
+                    }
+                  }}
+                  className={`${canEdit ? "cursor-text hover:bg-red-100 focus:bg-red-100 focus:outline-none px-1 -mx-1 rounded" : ""}`}
+                >
+                  {lead.declined_reason}
+                </span>
+              </>
+            ) : (
+              <span className="text-red-400 italic">No reason provided</span>
+            )}
+          </div>
         )}
 
         {/* ═══════════ TAB BAR ═══════════ */}
