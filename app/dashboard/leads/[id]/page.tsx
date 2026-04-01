@@ -832,8 +832,13 @@ export default function LeadDetailPage() {
 
   const saveOwners = async () => {
     let ssnFailed = false;
-    for (const o of owners) {
+    for (let oi = 0; oi < owners.length; oi++) {
+      const o = owners[oi];
+      console.log(`[SSN DEBUG] Owner ${oi} raw object keys:`, Object.keys(o));
+      console.log(`[SSN DEBUG] Owner ${oi} _ssn_plain present:`, "_ssn_plain" in o, "value truthy:", !!o._ssn_plain);
+      console.log(`[SSN DEBUG] Owner ${oi} ssn_encrypted before save:`, o.ssn_encrypted ? "(has value, length=" + o.ssn_encrypted.length + ")" : o.ssn_encrypted);
       const { id, created_at, _ssn_plain, ...raw } = o;
+      console.log(`[SSN DEBUG] Owner ${oi} _ssn_plain after destructure:`, _ssn_plain ? `"${_ssn_plain.substring(0, 3)}..."` : _ssn_plain);
       // Filter to only valid DB columns to prevent 400 errors
       const updates: Record<string, any> = {};
       for (const key of Object.keys(raw)) {
@@ -845,31 +850,48 @@ export default function LeadDetailPage() {
       if ("us_resident" in raw && !("is_us_resident" in raw)) {
         updates.is_us_resident = raw.us_resident;
       }
+      console.log(`[SSN DEBUG] Owner ${oi} updates BEFORE encryption:`, Object.keys(updates), "ssn_encrypted:", updates.ssn_encrypted ? "(has value)" : updates.ssn_encrypted, "ssn:", updates.ssn);
       // If there's a plaintext SSN pending, encrypt it
       if (_ssn_plain) {
+        console.log(`[SSN DEBUG] Owner ${oi} calling encrypt-ssn API...`);
         try {
           const res = await authFetch("/api/encrypt-ssn", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ssn: _ssn_plain }),
           });
+          console.log(`[SSN DEBUG] Owner ${oi} encrypt-ssn response status:`, res.status);
           if (!res.ok) {
+            console.error(`[SSN DEBUG] Owner ${oi} encrypt API returned non-OK:`, res.status);
             ssnFailed = true;
             continue; // skip this owner's update to preserve _ssn_plain for retry
           }
           const data = await res.json();
+          console.log(`[SSN DEBUG] Owner ${oi} encrypt API response data keys:`, Object.keys(data), "encrypted truthy:", !!data.encrypted, "encrypted length:", data.encrypted?.length);
           if (data.encrypted) {
             updates.ssn_encrypted = data.encrypted;
+            console.log(`[SSN DEBUG] Owner ${oi} set updates.ssn_encrypted to encrypted value (length=${data.encrypted.length})`);
+          } else {
+            console.error(`[SSN DEBUG] Owner ${oi} encrypt API returned OK but data.encrypted is falsy:`, data);
           }
         } catch (err) {
+          console.error(`[SSN DEBUG] Owner ${oi} encrypt API threw error:`, err);
           ssnFailed = true;
           continue; // skip this owner's update to preserve _ssn_plain for retry
         }
+      } else {
+        console.log(`[SSN DEBUG] Owner ${oi} no _ssn_plain, skipping encryption`);
       }
-      const { error } = await supabase.from("deal_owners").update(updates).eq("id", id);
+      console.log(`[SSN DEBUG] Owner ${oi} FINAL update payload columns:`, Object.keys(updates));
+      console.log(`[SSN DEBUG] Owner ${oi} FINAL ssn_encrypted in payload:`, updates.ssn_encrypted ? `(has value, length=${updates.ssn_encrypted.length})` : updates.ssn_encrypted);
+      console.log(`[SSN DEBUG] Owner ${oi} updating deal_owners id=${id}...`);
+      const { data: updateData, error } = await supabase.from("deal_owners").update(updates).eq("id", id).select();
+      console.log(`[SSN DEBUG] Owner ${oi} Supabase response - error:`, error, "data:", updateData ? `(${updateData.length} rows, ssn_encrypted: ${updateData[0]?.ssn_encrypted ? "has value" : updateData[0]?.ssn_encrypted})` : updateData);
       if (error) {
-        console.error("Owner save failed:", error);
+        console.error(`[SSN DEBUG] Owner ${oi} save FAILED:`, JSON.stringify(error));
         setDealMsg("Error saving owner: " + error.message);
+      } else {
+        console.log(`[SSN DEBUG] Owner ${oi} save SUCCEEDED`);
       }
     }
     if (ssnFailed) {
