@@ -15,6 +15,43 @@ import { checkMpaCompleteness, getTabStatus, type MpaCompletenessResult } from "
 
 const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC"];
 
+// Valid DB columns for deals table — filter updates to prevent 400 errors from non-existent columns
+const VALID_DEAL_COLUMNS = new Set([
+  "business_legal_name", "business_start_date", "cnp_pct", "cp_pct", "dba_name",
+  "dual_pricing_rate", "dual_pricing_txn_fee", "entity_type", "fee_ach_reject", "fee_arbitration",
+  "fee_chargeback", "fee_ebt_auth", "fee_gateway_monthly", "fee_gateway_txn", "fee_retrieval",
+  "fee_voice_auth", "flat_rate_pct", "flat_rate_txn_cost", "free_hardware", "gateway_api",
+  "gateway_name", "hardware_items", "hardware_model", "high_ticket", "ic_plus_amex_pct",
+  "ic_plus_amex_txn", "ic_plus_disc_pct", "ic_plus_disc_txn", "ic_plus_mc_pct", "ic_plus_mc_txn",
+  "ic_plus_visa_pct", "ic_plus_visa_txn", "interchange_remittance", "is_primary_location",
+  "legal_city", "legal_state", "legal_street", "legal_zip", "location_city", "location_name",
+  "location_state", "location_street", "location_zip", "mcc_code", "monthly_fee_custom_amount",
+  "monthly_fee_custom_name", "monthly_fee_statement", "monthly_volume", "partner_id",
+  "pci_compliance_annual", "pci_compliance_monthly", "pct_b2b", "pct_internet", "pct_mail_order",
+  "pct_telephone_order", "pricing_type", "reason_for_leaving", "seasonal_business", "seasonal_months",
+  "sic_code", "software_items", "terminal_cost", "terminal_type", "three_d_secure_enabled",
+  "updated_at", "average_ticket", "business_phone", "business_email", "funding_type", "notes",
+  "bank_routing", "bank_account", "annual_revenue", "number_of_employees", "sponsor_bank",
+  "customer_service_phone", "ein_itin", "state_of_incorporation", "currently_takes_cards",
+  "amex_volume", "amex_esa", "pin_debit", "ebt", "current_mid", "monthly_transactions",
+  "annual_card_volume", "amex_se_number", "discover_mid", "international_cards_pct",
+  "recurring_billing", "recurring_frequency", "fulfillment_timeframe_days", "delivery_method",
+  "refund_policy_text", "bank_account_type", "bank_phone", "bank_account_holder_name",
+  "processing_terminated", "filed_bankruptcy", "pci_compliance_status", "pci_compliance_vendor",
+  "beneficial_ownership_certified", "ach_debit_authorized", "ssl_certificate",
+  "shopping_cart_platform", "stores_card_data", "negative_option_billing",
+  "mpa_extra_field_values", "business_license_number", "mailing_street", "mailing_city",
+  "mailing_state", "mailing_zip", "products_services_description", "org_id",
+]);
+
+// Valid DB columns for deal_owners table
+const VALID_OWNER_COLUMNS = new Set([
+  "full_name", "title", "ownership_pct", "dob", "phone", "address", "city", "state", "zip",
+  "ssn_encrypted", "email", "dl_state", "dl_expiration", "citizenship", "is_us_resident",
+  "personal_guarantee", "prior_bankruptcies", "criminal_history", "match_tmf_listed", "ssn",
+  "deal_id", "lead_id",
+]);
+
 export default function LeadDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -156,11 +193,11 @@ export default function LeadDetailPage() {
           setActiveDealIdx(0);
           // Owners are shared at lead level — query by lead_id first, fall back to deal_id
           let ownerData: any[] | null = null;
-          const { data: leadOwners } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at, email, dl_state, dl_expiration, citizenship, us_resident, control_person, personal_guarantee, prior_bankruptcies, criminal_history, match_tmf_listed").eq("lead_id", leadData.id).order("created_at");
+          const { data: leadOwners } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at, email, dl_state, dl_expiration, citizenship, is_us_resident, personal_guarantee, prior_bankruptcies, criminal_history, match_tmf_listed").eq("lead_id", leadData.id).order("created_at");
           if (leadOwners && leadOwners.length > 0) {
             ownerData = leadOwners;
           } else {
-            const { data: dealOwners } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at, email, dl_state, dl_expiration, citizenship, us_resident, control_person, personal_guarantee, prior_bankruptcies, criminal_history, match_tmf_listed").eq("deal_id", allDeals[0].id).order("created_at");
+            const { data: dealOwners } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at, email, dl_state, dl_expiration, citizenship, is_us_resident, personal_guarantee, prior_bankruptcies, criminal_history, match_tmf_listed").eq("deal_id", allDeals[0].id).order("created_at");
             ownerData = dealOwners;
           }
           if (ownerData) setOwners(ownerData);
@@ -251,7 +288,7 @@ export default function LeadDetailPage() {
       if (deals.length === 0) {
         setDeals(existingDeals);
         setActiveDealIdx(0);
-        const { data: ownerData } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at, email, dl_state, dl_expiration, citizenship, us_resident, control_person, personal_guarantee, prior_bankruptcies, criminal_history, match_tmf_listed").eq("lead_id", params.id as string).order("created_at");
+        const { data: ownerData } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at, email, dl_state, dl_expiration, citizenship, is_us_resident, personal_guarantee, prior_bankruptcies, criminal_history, match_tmf_listed").eq("lead_id", params.id as string).order("created_at");
         if (ownerData && ownerData.length > 0) setOwners(ownerData);
       }
     } else {
@@ -754,18 +791,21 @@ export default function LeadDetailPage() {
 
   const saveDeal = async () => {
     setDealSaving(true);
-    const { id, created_at, lead_id, user_id, ...updates } = deal;
-    updates.updated_at = new Date().toISOString();
-    Object.keys(updates).forEach(key => {
-      if (updates[key] === "") {
-        updates[key] = null;
+    const { id, created_at, lead_id, user_id, ...raw } = deal;
+    // Filter to only valid DB columns to prevent 400 errors
+    const updates: Record<string, any> = {};
+    for (const key of Object.keys(raw)) {
+      if (VALID_DEAL_COLUMNS.has(key)) {
+        updates[key] = raw[key] === "" ? null : raw[key];
       }
-    });
+    }
+    updates.updated_at = new Date().toISOString();
     const { error } = await supabase.from("deals").update(updates).eq("id", deal.id);
     if (error) {
       console.error("Deal save error:", JSON.stringify(error));
       setDealMsg("Error saving deal: " + error.message);
     } else {
+      console.log("Deal saved successfully");
       await supabase.from("leads").update({ updated_at: new Date().toISOString() }).eq("id", params.id);
       setLead({ ...lead, updated_at: new Date().toISOString() });
       await logActivity("deal_updated", null, null, null, "Deal details updated");
@@ -793,7 +833,18 @@ export default function LeadDetailPage() {
   const saveOwners = async () => {
     let ssnFailed = false;
     for (const o of owners) {
-      const { id, created_at, _ssn_plain, ...updates } = o;
+      const { id, created_at, _ssn_plain, ...raw } = o;
+      // Filter to only valid DB columns to prevent 400 errors
+      const updates: Record<string, any> = {};
+      for (const key of Object.keys(raw)) {
+        if (VALID_OWNER_COLUMNS.has(key)) {
+          updates[key] = raw[key];
+        }
+      }
+      // Map us_resident → is_us_resident if present
+      if ("us_resident" in raw && !("is_us_resident" in raw)) {
+        updates.is_us_resident = raw.us_resident;
+      }
       // If there's a plaintext SSN pending, encrypt it
       if (_ssn_plain) {
         try {
@@ -817,6 +868,7 @@ export default function LeadDetailPage() {
       }
       const { error } = await supabase.from("deal_owners").update(updates).eq("id", id);
       if (error) {
+        console.error("Owner save failed:", error);
         setDealMsg("Error saving owner: " + error.message);
       }
     }
@@ -1840,7 +1892,7 @@ export default function LeadDetailPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
                     <div><label className={labelClass}>Business Start Date</label><input type="date" value={deal.business_start_date || ""} onChange={(e) => updateDealField("business_start_date", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>Length of Current Ownership</label><input type="text" value={deal.length_of_ownership || ""} onChange={(e) => updateDealField("length_of_ownership", e.target.value)} className={inputClass} placeholder="e.g. 5 years" /></div>
-                    <div><label className={labelClass}>Number of Employees</label><input type="number" value={deal.num_employees ?? ""} onChange={(e) => updateDealField("num_employees", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Number of Employees</label><input type="number" value={deal.number_of_employees ?? ""} onChange={(e) => updateDealField("number_of_employees", e.target.value)} className={inputClass} /></div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
                     <div><label className={labelClass}>MCC Code</label><input type="text" value={deal.mcc_code || ""} onChange={(e) => updateDealField("mcc_code", e.target.value)} className={inputClass} placeholder="e.g. 5812 - Eating Places, Restaurants" /></div>
@@ -1971,7 +2023,7 @@ export default function LeadDetailPage() {
                     <div><label className={labelClass}>Days between charge and delivery</label><input type="number" value={deal.fulfillment_timeframe_days ?? ""} onChange={(e) => updateDealField("fulfillment_timeframe_days", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>Delivery Method</label><select value={deal.delivery_method || ""} onChange={(e) => updateDealField("delivery_method", e.target.value)} className={inputClass}><option value="">Select...</option><option value="digital">Digital/Download</option><option value="physical_shipping">Physical Shipping</option><option value="in_person_pickup">In-Person Pickup</option><option value="service_no_delivery">Service/No Delivery</option></select></div>
                   </div>
-                  <div className="mt-4"><label className={labelClass}>Refund Policy</label><textarea rows={2} value={deal.refund_policy || ""} onChange={(e) => updateDealField("refund_policy", e.target.value)} className={inputClass + " resize-none"} /></div>
+                  <div className="mt-4"><label className={labelClass}>Refund Policy</label><textarea rows={2} value={deal.refund_policy_text || ""} onChange={(e) => updateDealField("refund_policy_text", e.target.value)} className={inputClass + " resize-none"} /></div>
                 </div>
               </div>
             </div>
@@ -2077,7 +2129,7 @@ export default function LeadDetailPage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
                         <div><label className={labelClass}>Citizenship</label><input type="text" value={o.citizenship ?? "US"} onChange={(e) => updateOwner(idx, "citizenship", e.target.value)} className={inputClass} /></div>
                         <div className="flex items-center gap-3 pt-7">
-                          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={o.us_resident !== false} onChange={(e) => updateOwner(idx, "us_resident", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-sm text-slate-700">US Resident</span></label>
+                          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={o.is_us_resident !== false} onChange={(e) => updateOwner(idx, "is_us_resident", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-sm text-slate-700">US Resident</span></label>
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-x-6 gap-y-2 mt-3 pt-3 border-t border-slate-100">

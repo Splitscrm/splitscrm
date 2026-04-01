@@ -171,7 +171,7 @@ export function checkMpaCompleteness(
   if (Number(deal.cnp_pct) > 0) {
     const warnings: string[] = [];
     if (!deal.ssl_certificate) warnings.push("SSL Certificate not confirmed");
-    if (!deal.refund_policy) warnings.push("Refund Policy");
+    if (!deal.refund_policy_text) warnings.push("Refund Policy");
     if (warnings.length > 0) {
       sections.push({
         name: "eCommerce",
