@@ -430,7 +430,7 @@ export default function LeadDetailPage() {
     router.push("/dashboard/merchants/" + merchant.id);
   };
 
-  const updateDealField = (field: string, value: any) => { setDeal({ ...deal, [field]: value }); };
+  const updateDealField = (field: string, value: any) => { setDeal((prev: any) => ({ ...prev, [field]: value })); };
 
   const addLocation = async () => {
     if (!lead) return;
