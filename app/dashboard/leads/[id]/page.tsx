@@ -1943,7 +1943,7 @@ export default function LeadDetailPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                     <div><label className={labelClass}>Amex SE Number</label><input type="text" value={deal.amex_se_number || ""} onChange={(e) => updateDealField("amex_se_number", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>Discover MID</label><input type="text" value={deal.discover_mid || ""} onChange={(e) => updateDealField("discover_mid", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>B2B Percentage</label><input type="number" min="0" max="100" value={deal.b2b_pct ?? ""} onChange={(e) => updateDealField("b2b_pct", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>B2B Percentage</label><input type="number" min="0" max="100" value={deal.pct_b2b ?? ""} onChange={(e) => updateDealField("pct_b2b", e.target.value)} className={inputClass} /></div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                     <div><label className={labelClass}>International Cards %</label><input type="number" min="0" max="100" value={deal.international_cards_pct ?? ""} onChange={(e) => updateDealField("international_cards_pct", e.target.value)} className={inputClass} /></div>
@@ -1953,9 +1953,9 @@ export default function LeadDetailPage() {
                     <div className="mt-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
                       <p className="text-sm font-medium text-slate-700 mb-3">CNP Breakdown</p>
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div><label className={labelClass}>Internet %</label><input type="number" min="0" max="100" value={deal.cnp_internet_pct ?? ""} onChange={(e) => updateDealField("cnp_internet_pct", e.target.value)} className={inputClass} /></div>
-                        <div><label className={labelClass}>Mail Order %</label><input type="number" min="0" max="100" value={deal.cnp_mail_order_pct ?? ""} onChange={(e) => updateDealField("cnp_mail_order_pct", e.target.value)} className={inputClass} /></div>
-                        <div><label className={labelClass}>Telephone Order %</label><input type="number" min="0" max="100" value={deal.cnp_telephone_pct ?? ""} onChange={(e) => updateDealField("cnp_telephone_pct", e.target.value)} className={inputClass} /></div>
+                        <div><label className={labelClass}>Internet %</label><input type="number" min="0" max="100" value={deal.pct_internet ?? ""} onChange={(e) => updateDealField("pct_internet", e.target.value)} className={inputClass} /></div>
+                        <div><label className={labelClass}>Mail Order %</label><input type="number" min="0" max="100" value={deal.pct_mail_order ?? ""} onChange={(e) => updateDealField("pct_mail_order", e.target.value)} className={inputClass} /></div>
+                        <div><label className={labelClass}>Telephone Order %</label><input type="number" min="0" max="100" value={deal.pct_telephone_order ?? ""} onChange={(e) => updateDealField("pct_telephone_order", e.target.value)} className={inputClass} /></div>
                       </div>
                     </div>
                   )}
@@ -1968,7 +1968,7 @@ export default function LeadDetailPage() {
                     )}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                    <div><label className={labelClass}>Days between charge and delivery</label><input type="number" value={deal.fulfillment_timeframe ?? ""} onChange={(e) => updateDealField("fulfillment_timeframe", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Days between charge and delivery</label><input type="number" value={deal.fulfillment_timeframe_days ?? ""} onChange={(e) => updateDealField("fulfillment_timeframe_days", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>Delivery Method</label><select value={deal.delivery_method || ""} onChange={(e) => updateDealField("delivery_method", e.target.value)} className={inputClass}><option value="">Select...</option><option value="digital">Digital/Download</option><option value="physical_shipping">Physical Shipping</option><option value="in_person_pickup">In-Person Pickup</option><option value="service_no_delivery">Service/No Delivery</option></select></div>
                   </div>
                   <div className="mt-4"><label className={labelClass}>Refund Policy</label><textarea rows={2} value={deal.refund_policy || ""} onChange={(e) => updateDealField("refund_policy", e.target.value)} className={inputClass + " resize-none"} /></div>
@@ -2190,7 +2190,7 @@ export default function LeadDetailPage() {
                           {deal.stores_card_data && <p className="text-xs text-red-500 mt-1 bg-red-50 rounded p-2">Storing card data increases PCI scope significantly</p>}
                         </div>
                         <div>
-                          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!deal.three_d_secure} onChange={(e) => updateDealField("three_d_secure", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-sm text-slate-700">3D Secure Enabled</span></label>
+                          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!deal.three_d_secure_enabled} onChange={(e) => updateDealField("three_d_secure_enabled", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-sm text-slate-700">3D Secure Enabled</span></label>
                         </div>
                       </div>
                       <div>
