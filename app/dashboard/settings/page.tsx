@@ -731,7 +731,7 @@ export default function SettingsPage() {
     return repPartnersCache.find(p => p.id === pid)?.name || 'Unknown'
   }
 
-  const agentMembers = teamMembers.filter(m => ['agent', 'sub_agent', 'master_agent'].includes(m.role) && m.user_id)
+  const agentMembers = teamMembers.filter(m => m.status === 'active' && m.user_id)
 
   const filteredRepCodes = repCodes.filter(rc => {
     if (repFilterAgent && rc.user_id !== repFilterAgent) return false

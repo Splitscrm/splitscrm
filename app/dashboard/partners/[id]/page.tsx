@@ -421,13 +421,13 @@ export default function PartnerDetailPage() {
       const { data: orgData } = await supabase.from("organizations").select("default_house_split_pct").eq("id", member.org_id).single();
       setOrgDefaultHouseSplit(orgData?.default_house_split_pct || 0);
     }
-    // Fetch agents for add modal
+    // Fetch all active org members for rep code assignment
     if (member?.org_id) {
-      const { data: members } = await supabase.from("org_members").select("user_id, role").eq("org_id", member.org_id).eq("status", "active");
-      const agents = (members || []).filter(m => ["agent", "sub_agent", "master_agent"].includes(m.role) && m.user_id);
-      if (agents.length > 0) {
-        const { data: agentProfiles } = await supabase.from("user_profiles").select("user_id, full_name, email").in("user_id", agents.map(a => a.user_id));
-        const enriched = agents.map(a => {
+      const { data: members } = await supabase.from("org_members").select("user_id, role").eq("org_id", member.org_id).eq("status", "active").not("user_id", "is", null);
+      const activeMembers = members || [];
+      if (activeMembers.length > 0) {
+        const { data: agentProfiles } = await supabase.from("user_profiles").select("user_id, full_name, email").in("user_id", activeMembers.map(a => a.user_id));
+        const enriched = activeMembers.map(a => {
           const p = (agentProfiles || []).find(p => p.user_id === a.user_id);
           return { ...a, name: p?.full_name || p?.email || a.user_id.slice(0, 8) };
         });
