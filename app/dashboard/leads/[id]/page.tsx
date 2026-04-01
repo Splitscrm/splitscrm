@@ -131,6 +131,8 @@ export default function LeadDetailPage() {
   const [sigExpiry, setSigExpiry] = useState("7");
   const [sigSending, setSigSending] = useState(false);
   const [sigCopied, setSigCopied] = useState<string | null>(null);
+  const [sigHistoryOpen, setSigHistoryOpen] = useState(false);
+  const [sigSnapshotWarning, setSigSnapshotWarning] = useState<{ changes: string[]; originalSession: any } | null>(null);
   const toggleGroup = (key: string) => setOpenGroups(prev => ({ ...prev, [key]: !prev[key] }));
 
   const docTypes = [
@@ -273,6 +275,9 @@ export default function LeadDetailPage() {
     else if (newStatus === "recycled") { setShowModal("recycled"); setModalData({ reason: "", follow_up_date: "" }); }
     else if (newStatus === "signed") { setShowModal("signed"); setModalData({}); }
     else if (newStatus === "qualified_prospect") { createDealAndUpdateStatus(); }
+    else if (lead.status === "declined" && newStatus === "send_for_signature") {
+      setShowModal("resubmit_from_declined"); setModalData({});
+    }
     else if (fromSignedOrConverted && !["signed", "submitted", "converted"].includes(newStatus)) {
       setShowModal("backward_from_signed"); setModalData({ targetStatus: newStatus });
     }
@@ -674,7 +679,7 @@ export default function LeadDetailPage() {
 
   useEffect(() => {
     // Fetch sessions for send_for_signature AND signed/submitted/converted (for signed docs display)
-    if (["send_for_signature", "signed", "submitted", "converted"].includes(lead?.status) && deals.length > 0) {
+    if (["send_for_signature", "signed", "submitted", "converted", "declined"].includes(lead?.status) && deals.length > 0) {
       fetchSigSessions();
       // Pre-fill signer info from primary deal owner (control person, or first owner)
       if (!sigSignerName || !sigSignerEmail) {
@@ -705,6 +710,7 @@ export default function LeadDetailPage() {
 
   const sendForSignature = async (dealId: string) => {
     if (!lead || !sigSignerEmail || !sigSignerName) return;
+    const currentDeal = deals.find(d => d.id === dealId) || deal;
     setSigSending(true);
     const token = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + parseInt(sigExpiry) * 24 * 60 * 60 * 1000).toISOString();
@@ -712,6 +718,7 @@ export default function LeadDetailPage() {
       org_id: member?.org_id || null,
       deal_id: dealId,
       lead_id: lead.id,
+      partner_id: currentDeal?.partner_id || null,
       token,
       signer_name: sigSignerName,
       signer_email: sigSignerEmail,
@@ -734,6 +741,92 @@ export default function LeadDetailPage() {
     navigator.clipboard.writeText(url);
     setSigCopied(token);
     setTimeout(() => setSigCopied(null), 2000);
+  };
+
+  // Build a snapshot of critical deal fields for signature data change detection
+  const buildDataSnapshot = (d: any, ownerList: any[]) => ({
+    business_legal_name: d?.business_legal_name || null,
+    dba_name: d?.dba_name || null,
+    ein_itin: d?.ein_itin || null,
+    monthly_volume: d?.monthly_volume || null,
+    pricing_type: d?.pricing_type || null,
+    owners: ownerList.map(o => ({ full_name: o.full_name || null, ownership_pct: o.ownership_pct || null })),
+  });
+
+  // Compare current deal data against a stored snapshot, return list of human-readable changes
+  const getSnapshotChanges = (snapshot: any, d: any, ownerList: any[]): string[] => {
+    if (!snapshot) return [];
+    const changes: string[] = [];
+    const labels: Record<string, string> = {
+      business_legal_name: "Business Legal Name", dba_name: "DBA Name",
+      ein_itin: "EIN/ITIN", monthly_volume: "Monthly Volume", pricing_type: "Pricing Type",
+    };
+    for (const key of Object.keys(labels)) {
+      const oldVal = snapshot[key] ?? "";
+      const newVal = (d as any)?.[key] ?? "";
+      if (String(oldVal) !== String(newVal)) changes.push(`${labels[key]}: "${oldVal}" → "${newVal}"`);
+    }
+    const snapOwners = snapshot.owners || [];
+    const currentOwners = ownerList.map(o => ({ full_name: o.full_name || null, ownership_pct: o.ownership_pct || null }));
+    if (JSON.stringify(snapOwners) !== JSON.stringify(currentOwners)) changes.push("Owner names or ownership percentages changed");
+    return changes;
+  };
+
+  // Reuse an existing signed signature for a new partner submission
+  const reuseSignature = async (dealId: string, originalSession: any) => {
+    if (!lead) return;
+    const currentDeal = deals.find(d => d.id === dealId) || deal;
+    setSigSending(true);
+    await supabase.from("signature_sessions").insert({
+      org_id: member?.org_id || null,
+      deal_id: dealId,
+      lead_id: lead.id,
+      partner_id: currentDeal?.partner_id || null,
+      token: crypto.randomUUID(),
+      signer_name: originalSession.signer_name,
+      signer_email: originalSession.signer_email,
+      signer_ip: originalSession.signer_ip,
+      signer_user_agent: originalSession.signer_user_agent,
+      signature_data: originalSession.signature_data,
+      consent_given: originalSession.consent_given,
+      signed_at: originalSession.signed_at,
+      signed_data_snapshot: buildDataSnapshot(currentDeal, owners),
+      reused_from_session_id: originalSession.id,
+      status: "signed",
+      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    await saveDeal();
+    await logActivity("mpa_signature_reused", null, null, null,
+      `Signature reused from ${new Date(originalSession.signed_at).toLocaleDateString()} for new partner submission`);
+    await fetchSigSessions();
+    setSigSnapshotWarning(null);
+    setSigSending(false);
+  };
+
+  // Handle "Reuse Signature" click — check for data changes first
+  const handleReuseSignature = (dealId: string, originalSession: any) => {
+    const currentDeal = deals.find(d => d.id === dealId) || deal;
+    const changes = getSnapshotChanges(originalSession.signed_data_snapshot, currentDeal, owners);
+    if (changes.length > 0) {
+      setSigSnapshotWarning({ changes, originalSession });
+    } else {
+      reuseSignature(dealId, originalSession);
+    }
+  };
+
+  // Get the partner name by id
+  const getPartnerNameById = (pid: string | null) => {
+    if (!pid) return "Unknown Partner";
+    return partners.find(p => p.id === pid)?.name || "Unknown Partner";
+  };
+
+  // Find any signed session across all deals for this lead (for reuse detection)
+  const findReusableSession = () => {
+    for (const sessions of Object.values(sigSessions)) {
+      const signed = sessions.find((s: any) => s.status === "signed" && s.signature_data);
+      if (signed) return signed;
+    }
+    return null;
   };
 
   // Check MPA field completeness for a deal
@@ -1646,7 +1739,10 @@ export default function LeadDetailPage() {
               const latestSession = sessions[0];
               const isActiveDeal = dIdx === activeDealIdx;
               const mpaChecks = checkMpaFields(d);
-              const allComplete = mpaChecks.every(c => c.ok);
+              const reusableSession = findReusableSession();
+              // Only show reuse banner when there's no active/pending session for this deal
+              // and the reusable session is from a different partner than currently selected
+              const showReuseBanner = reusableSession && (!latestSession || latestSession.status === "expired" || latestSession.status === "revoked") && d.partner_id;
 
               return (
                 <div key={d.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
@@ -1657,22 +1753,50 @@ export default function LeadDetailPage() {
                     </div>
                   )}
 
+                  {/* Existing signature reuse banner */}
+                  {showReuseBanner && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4">
+                      <div className="flex items-start gap-3">
+                        <span className="text-lg mt-0.5">{"\u2705"}</span>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-emerald-800">Existing signature available</p>
+                          <p className="text-xs text-emerald-600 mt-0.5">
+                            Signed by {reusableSession.signer_name} on {new Date(reusableSession.signed_at).toLocaleDateString()}
+                            {reusableSession.partner_id ? ` (submitted to ${getPartnerNameById(reusableSession.partner_id)})` : ""}
+                          </p>
+                          <div className="flex items-center gap-2 mt-3">
+                            <button
+                              onClick={() => handleReuseSignature(d.id, reusableSession)}
+                              disabled={sigSending || !d.partner_id || !d.sponsor_bank}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:opacity-50"
+                            >
+                              {sigSending ? "Processing..." : "Reuse Signature"}
+                            </button>
+                            <span className="text-xs text-slate-400">or</span>
+                            <span className="text-xs text-slate-500">use the form below to request a new signature</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Show status if session exists */}
-                  {latestSession ? (
+                  {latestSession && latestSession.status !== "expired" && latestSession.status !== "revoked" ? (
                     <div className="space-y-3">
                       <div className="flex items-center gap-3">
                         <span className="text-lg">
-                          {latestSession.status === "pending" ? "\u23F3" : latestSession.status === "signed" ? "\u2705" : latestSession.status === "expired" ? "\u274C" : "\uD83D\uDEAB"}
+                          {latestSession.status === "pending" ? "\u23F3" : latestSession.status === "signed" ? "\u2705" : "\uD83D\uDEAB"}
                         </span>
                         <div>
                           <p className="text-sm font-medium text-slate-900">
-                            {latestSession.status === "pending" ? "Awaiting signature" : latestSession.status === "signed" ? "Signed" : latestSession.status === "expired" ? "Expired" : "Revoked"}
+                            {latestSession.status === "pending" ? "Awaiting signature" : latestSession.status === "signed" ? "Signed" : "Revoked"}
+                            {latestSession.partner_id ? ` — ${getPartnerNameById(latestSession.partner_id)}` : ""}
                           </p>
                           <p className="text-xs text-slate-400">Sent to {latestSession.signer_email} &middot; Expires {new Date(latestSession.expires_at).toLocaleDateString()}</p>
                         </div>
                       </div>
                       {latestSession.status === "signed" && latestSession.signed_at && (
-                        <p className="text-xs text-slate-500">Signed {new Date(latestSession.signed_at).toLocaleString()}{latestSession.signer_ip ? ` from ${latestSession.signer_ip}` : ""}</p>
+                        <p className="text-xs text-slate-500">Signed {new Date(latestSession.signed_at).toLocaleString()}{latestSession.signer_ip ? ` from ${latestSession.signer_ip}` : ""}{latestSession.reused_from_session_id ? " (reused)" : ""}</p>
                       )}
                       <div className="flex items-center gap-2 flex-wrap">
                         <button onClick={() => copySigLink(latestSession.token)} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-3 py-1.5 text-xs font-medium transition">
@@ -1683,9 +1807,6 @@ export default function LeadDetailPage() {
                             <button onClick={() => { sendForSignature(d.id); }} disabled={sigSending} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:opacity-50">Resend Link</button>
                             <button onClick={() => revokeSigSession(latestSession.id)} className="text-red-500 hover:text-red-600 text-xs font-medium">Revoke</button>
                           </>
-                        )}
-                        {(latestSession.status === "expired" || latestSession.status === "revoked") && (
-                          <button onClick={() => sendForSignature(d.id)} disabled={sigSending} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:opacity-50">Send New Link</button>
                         )}
                       </div>
                     </div>
@@ -1789,11 +1910,46 @@ export default function LeadDetailPage() {
                               disabled={sigSending || !sigSignerEmail || !sigSignerName || !d.partner_id || !d.sponsor_bank}
                               className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
                             >
-                              {sigSending ? "Sending..." : "Send for Signature"}
+                              {sigSending ? "Sending..." : "Request New Signature"}
                             </button>
                           </div>
                         )}
                       </div>
+                    </div>
+                  )}
+
+                  {/* Submission History Timeline */}
+                  {sessions.length > 0 && (
+                    <div className="mt-4 pt-4 border-t border-slate-100">
+                      <button onClick={() => setSigHistoryOpen(!sigHistoryOpen)} className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-700 font-medium transition">
+                        <svg className={`w-3 h-3 transition-transform ${sigHistoryOpen ? "rotate-90" : ""}`} fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
+                        Submission History ({sessions.length})
+                      </button>
+                      {sigHistoryOpen && (
+                        <div className="mt-3 space-y-2">
+                          {sessions.map((s: any, sIdx: number) => (
+                            <div key={s.id} className="flex items-start gap-3 text-xs">
+                              <div className="flex flex-col items-center">
+                                <span className={`w-2 h-2 rounded-full mt-1.5 ${s.status === "signed" ? "bg-emerald-500" : s.status === "pending" ? "bg-blue-500" : s.status === "expired" ? "bg-slate-300" : "bg-red-400"}`} />
+                                {sIdx < sessions.length - 1 && <div className="w-px h-6 bg-slate-200 mt-1" />}
+                              </div>
+                              <div className="flex-1 pb-2">
+                                <p className="font-medium text-slate-700">
+                                  {s.partner_id ? getPartnerNameById(s.partner_id) : "Unknown Partner"}:
+                                  <span className={`ml-1 ${s.status === "signed" ? "text-emerald-600" : s.status === "pending" ? "text-blue-600" : "text-slate-400"}`}>
+                                    {s.status === "signed" ? "Signed" : s.status === "pending" ? "Pending Signature" : s.status === "expired" ? "Expired" : "Revoked"}
+                                  </span>
+                                  {s.reused_from_session_id && <span className="text-slate-400 ml-1">(reused)</span>}
+                                </p>
+                                <p className="text-slate-400">
+                                  {s.status === "signed" && s.signed_at ? `Signed ${new Date(s.signed_at).toLocaleDateString()}` : `Sent ${new Date(s.created_at).toLocaleDateString()}`}
+                                  {s.decline_note && <span className="text-amber-500 ml-1">— {s.decline_note}</span>}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2513,6 +2669,52 @@ export default function LeadDetailPage() {
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mt-6">
               <button onClick={() => updateStatus("declined", { declined_reason: modalData.reason })} disabled={saving} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm transition disabled:opacity-50">{saving ? "Saving..." : "Confirm"}</button>
               <button onClick={() => setShowModal("")} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showModal === "resubmit_from_declined" && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-8 border border-slate-200 shadow-sm w-full max-w-md mx-4">
+            <h3 className="text-lg font-bold mb-4">Resubmit to Different Partner?</h3>
+            <p className="text-slate-500 text-sm mb-4">Move back to Send for Signature to submit to a different partner? The previous signature session will be preserved for audit trail.</p>
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+              <button onClick={async () => {
+                setSaving(true);
+                // Add decline note to existing signed sessions for this lead
+                const allSessions = Object.values(sigSessions).flat();
+                const previousPartnerName = deal?.partner_id ? getPartnerNameById(deal.partner_id) : "previous partner";
+                for (const s of allSessions) {
+                  if (s.status === "signed" && !s.decline_note) {
+                    await supabase.from("signature_sessions").update({
+                      decline_note: `Original submission declined by ${previousPartnerName}`
+                    }).eq("id", s.id);
+                  }
+                }
+                await updateStatus("send_for_signature", {});
+                setSaving(false);
+              }} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition disabled:opacity-50">{saving ? "Processing..." : "Move to Send for Signature"}</button>
+              <button onClick={() => setShowModal("")} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sigSnapshotWarning && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-8 border border-slate-200 shadow-sm w-full max-w-lg mx-4">
+            <h3 className="text-lg font-bold mb-2 text-amber-600">Business Data Changed</h3>
+            <p className="text-slate-500 text-sm mb-3">Business data has changed since the original signature. A new signature is recommended.</p>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 max-h-40 overflow-y-auto">
+              <ul className="text-xs text-amber-800 space-y-1">
+                {sigSnapshotWarning.changes.map((c, i) => <li key={i}>{c}</li>)}
+              </ul>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+              <button onClick={() => reuseSignature(deal.id, sigSnapshotWarning.originalSession)} disabled={sigSending} className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm transition disabled:opacity-50">{sigSending ? "Processing..." : "Proceed Anyway"}</button>
+              <button onClick={() => setSigSnapshotWarning(null)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition">Request New Signature</button>
+              <button onClick={() => setSigSnapshotWarning(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">Cancel</button>
             </div>
           </div>
         </div>

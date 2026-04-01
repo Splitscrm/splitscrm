@@ -55,6 +55,25 @@ export async function POST(req: NextRequest) {
     const signerIp = getClientIp(req);
     const signerUserAgent = req.headers.get("user-agent") || "";
 
+    // Build data snapshot of critical fields at signing time
+    let signedDataSnapshot: any = null;
+    let dbaName = "";
+    if (session.deal_id) {
+      const { data: dealRow } = await supabase.from("deals").select("business_legal_name, dba_name, location_name, ein_itin, monthly_volume, pricing_type").eq("id", session.deal_id).single();
+      dbaName = dealRow?.location_name || dealRow?.dba_name || "";
+      if (dealRow) {
+        const { data: ownerRows } = await supabase.from("deal_owners").select("full_name, ownership_pct").eq("lead_id", session.lead_id).order("created_at");
+        signedDataSnapshot = {
+          business_legal_name: dealRow.business_legal_name || null,
+          dba_name: dealRow.dba_name || null,
+          ein_itin: dealRow.ein_itin || null,
+          monthly_volume: dealRow.monthly_volume || null,
+          pricing_type: dealRow.pricing_type || null,
+          owners: (ownerRows || []).map((o: any) => ({ full_name: o.full_name || null, ownership_pct: o.ownership_pct || null })),
+        };
+      }
+    }
+
     // Update signature session
     const { error: updateErr } = await supabase
       .from("signature_sessions")
@@ -65,18 +84,12 @@ export async function POST(req: NextRequest) {
         signer_user_agent: signerUserAgent,
         signature_data,
         consent_given: true,
+        signed_data_snapshot: signedDataSnapshot,
       })
       .eq("id", session.id);
 
     if (updateErr) {
       return NextResponse.json({ error: "Failed to save signature" }, { status: 500, headers });
-    }
-
-    // Get deal DBA name for the activity log
-    let dbaName = "";
-    if (session.deal_id) {
-      const { data: dealRow } = await supabase.from("deals").select("dba_name, location_name").eq("id", session.deal_id).single();
-      dbaName = dealRow?.location_name || dealRow?.dba_name || "";
     }
 
     // Multi-location: only update lead to 'signed' if ALL deals have signed sessions
