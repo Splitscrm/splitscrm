@@ -259,12 +259,10 @@ export default function LeadDetailPage() {
   };
 
   const handleStatusChange = (newStatus: string) => {
-    console.log("[STAGE] handleStatusChange called:", { from: lead.status, to: newStatus, partnerSchedule: !!partnerSchedule, saving });
     const fromSignedOrConverted = lead.status === "signed" || lead.status === "submitted" || lead.status === "converted";
     // Pre-signature validation: check for below-cost pricing
     if (newStatus === "send_for_signature" && partnerSchedule) {
       const issues = getBelowCostFields();
-      console.log("[STAGE] Below-cost check:", issues.length, "issues");
       if (issues.length > 0) {
         setBelowCostItems(issues);
         setPendingStageAfterWarning(newStatus);
@@ -272,20 +270,18 @@ export default function LeadDetailPage() {
         return;
       }
     }
-    if (newStatus === "unqualified") { console.log("[STAGE] → unqualified modal"); setShowModal("unqualified"); setModalData({ reason: "", reason_other: "" }); }
-    else if (newStatus === "declined") { console.log("[STAGE] → declined modal"); setShowModal("declined"); setModalData({ reason: "" }); }
-    else if (newStatus === "recycled") { console.log("[STAGE] → recycled modal"); setShowModal("recycled"); setModalData({ reason: "", follow_up_date: "" }); }
-    else if (newStatus === "signed") { console.log("[STAGE] → signed modal"); setShowModal("signed"); setModalData({}); }
-    else if (newStatus === "qualified_prospect") { console.log("[STAGE] → createDealAndUpdateStatus"); createDealAndUpdateStatus(); }
+    if (newStatus === "unqualified") { setShowModal("unqualified"); setModalData({ reason: "", reason_other: "" }); }
+    else if (newStatus === "declined") { setShowModal("declined"); setModalData({ reason: "" }); }
+    else if (newStatus === "recycled") { setShowModal("recycled"); setModalData({ reason: "", follow_up_date: "" }); }
+    else if (newStatus === "signed") { setShowModal("signed"); setModalData({}); }
+    else if (newStatus === "qualified_prospect") { createDealAndUpdateStatus(); }
     else if (lead.status === "declined" && newStatus === "send_for_signature") {
-      console.log("[STAGE] → resubmit_from_declined modal");
       setShowModal("resubmit_from_declined"); setModalData({});
     }
     else if (fromSignedOrConverted && !["signed", "submitted", "converted"].includes(newStatus)) {
-      console.log("[STAGE] → backward_from_signed modal");
       setShowModal("backward_from_signed"); setModalData({ targetStatus: newStatus });
     }
-    else { console.log("[STAGE] → updateStatus(" + newStatus + ")"); updateStatus(newStatus, {}); }
+    else { updateStatus(newStatus, {}); }
   };
 
   const createDealAndUpdateStatus = async () => {
@@ -308,7 +304,7 @@ export default function LeadDetailPage() {
     }
     await supabase.from("leads").update({ status: "qualified_prospect", updated_at: new Date().toISOString() }).eq("id", params.id);
     await logActivity("stage_change", "status", statusLabel(oldStatus), "Qualified Prospect", "Stage changed from " + statusLabel(oldStatus) + " to Qualified Prospect");
-    setLead({ ...lead, status: "qualified_prospect", updated_at: new Date().toISOString() });
+    setLead((prev: any) => ({ ...prev, status: "qualified_prospect", updated_at: new Date().toISOString() }));
     setSaving(false);
     dealCreationGuard.current = false;
   };
@@ -339,18 +335,20 @@ export default function LeadDetailPage() {
   };
 
   const updateStatus = async (newStatus: string, extraFields: any) => {
-    console.log("[STAGE] updateStatus called:", { newStatus, extraFields, currentStatus: lead.status });
     setSaving(true);
     const oldStatus = lead.status;
     const { error } = await supabase.from("leads").update({ status: newStatus, updated_at: new Date().toISOString(), ...extraFields }).eq("id", params.id);
     if (error) {
-      console.error("[STAGE] updateStatus FAILED:", JSON.stringify(error));
+      console.error("Stage change failed:", JSON.stringify(error));
       setDealMsg("Stage change failed: " + error.message);
     } else {
-      console.log("[STAGE] updateStatus SUCCESS:", oldStatus, "→", newStatus);
       await logActivity("stage_change", "status", statusLabel(oldStatus), statusLabel(newStatus), "Stage changed from " + statusLabel(oldStatus) + " to " + statusLabel(newStatus));
-      setLead({ ...lead, status: newStatus, updated_at: new Date().toISOString(), ...extraFields });
+      setLead((prev: any) => ({ ...prev, status: newStatus, updated_at: new Date().toISOString(), ...extraFields }));
       setShowModal("");
+      // Auto-switch to DealInfo tab when entering stages that have deal-specific UI
+      if (["send_for_signature", "signed", "submitted"].includes(newStatus)) {
+        setLeadTab("DealInfo");
+      }
     }
     setSaving(false);
   };
@@ -419,7 +417,7 @@ export default function LeadDetailPage() {
     if (allConverted) {
       await supabase.from("leads").update({ status: "converted", updated_at: new Date().toISOString() }).eq("id", params.id);
       await logActivity("stage_change", "status", statusLabel(lead.status), "Converted", "All locations converted to merchants");
-      setLead({ ...lead, status: "converted", updated_at: new Date().toISOString() });
+      setLead((prev: any) => ({ ...prev, status: "converted", updated_at: new Date().toISOString() }));
     } else {
       await logActivity("deal_updated", null, null, null, `Location "${deal.location_name || deal.dba_name || 'Primary'}" converted to merchant`);
     }
@@ -911,9 +909,8 @@ export default function LeadDetailPage() {
       console.error("Deal save error:", JSON.stringify(error));
       setDealMsg("Error saving deal: " + error.message);
     } else {
-      console.log("Deal saved successfully");
       await supabase.from("leads").update({ updated_at: new Date().toISOString() }).eq("id", params.id);
-      setLead({ ...lead, updated_at: new Date().toISOString() });
+      setLead((prev: any) => ({ ...prev, updated_at: new Date().toISOString() }));
       await logActivity("deal_updated", null, null, null, "Deal details updated");
       setDealMsg("Deal saved!");
     }
@@ -937,16 +934,8 @@ export default function LeadDetailPage() {
   };
 
   const saveOwners = async () => {
-    console.log("[OWNER SAVE] saveOwners called, owners count:", owners.length);
     let ssnFailed = false;
-    for (let oi = 0; oi < owners.length; oi++) {
-      const o = owners[oi];
-      console.log(`[OWNER SAVE] Owner ${oi} id=${o.id}, keys:`, Object.keys(o).sort());
-      console.log(`[OWNER SAVE] Owner ${oi} booleans:`, {
-        is_control_prong: o.is_control_prong, personal_guarantee: o.personal_guarantee,
-        prior_bankruptcies: o.prior_bankruptcies, criminal_history: o.criminal_history,
-        match_tmf_listed: o.match_tmf_listed, is_us_resident: o.is_us_resident,
-      });
+    for (const o of owners) {
       const { id, created_at, _ssn_plain, ...raw } = o;
       // Filter to only valid DB columns to prevent 400 errors
       const updates: Record<string, any> = {};
@@ -964,7 +953,6 @@ export default function LeadDetailPage() {
             body: JSON.stringify({ ssn: _ssn_plain }),
           });
           if (!res.ok) {
-            console.error("Owner SSN encrypt failed, status:", res.status);
             ssnFailed = true;
             continue;
           }
@@ -972,18 +960,13 @@ export default function LeadDetailPage() {
           if (data.encrypted) {
             updates.ssn_encrypted = data.encrypted;
             updates.ssn = null;
-          } else {
-            console.error("Owner SSN encrypt returned OK but no encrypted value:", data);
           }
         } catch (err) {
-          console.error("Owner SSN encrypt threw:", err);
           ssnFailed = true;
           continue;
         }
       }
-      console.log(`[OWNER SAVE] Owner ${oi} update payload:`, JSON.stringify(updates));
-      const { data: updateResult, error } = await supabase.from("deal_owners").update(updates).eq("id", id).select();
-      console.log(`[OWNER SAVE] Owner ${oi} result:`, { error: error ? JSON.stringify(error) : null, rowsReturned: updateResult?.length, returnedBooleans: updateResult?.[0] ? { is_control_prong: updateResult[0].is_control_prong, personal_guarantee: updateResult[0].personal_guarantee } : null });
+      const { error } = await supabase.from("deal_owners").update(updates).eq("id", id);
       if (error) {
         console.error("Owner save failed for id=" + id + ":", JSON.stringify(error));
         setDealMsg("Error saving owner: " + error.message);
