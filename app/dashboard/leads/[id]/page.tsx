@@ -791,6 +791,7 @@ export default function LeadDetailPage() {
   };
 
   const saveOwners = async () => {
+    let ssnFailed = false;
     for (const o of owners) {
       const { id, created_at, _ssn_plain, ...updates } = o;
       // If there's a plaintext SSN pending, encrypt it
@@ -801,23 +802,35 @@ export default function LeadDetailPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ssn: _ssn_plain }),
           });
+          if (!res.ok) {
+            ssnFailed = true;
+            continue; // skip this owner's update to preserve _ssn_plain for retry
+          }
           const data = await res.json();
           if (data.encrypted) {
             updates.ssn_encrypted = data.encrypted;
-            updates.ssn = null;
           }
         } catch (err) {
-          console.error("Failed to encrypt SSN for owner", id, err);
+          ssnFailed = true;
+          continue; // skip this owner's update to preserve _ssn_plain for retry
         }
       }
-      await supabase.from("deal_owners").update(updates).eq("id", id);
+      const { error } = await supabase.from("deal_owners").update(updates).eq("id", id);
+      if (error) {
+        setDealMsg("Error saving owner: " + error.message);
+      }
     }
-    // Clear local plaintext markers
-    setOwners(prev => prev.map(o => {
-      const { _ssn_plain, ...rest } = o;
-      return rest;
-    }));
-    setRevealedSsns({});
+    if (ssnFailed) {
+      setDealMsg("SSN encryption failed — check your session and try again");
+    }
+    // Only clear plaintext markers for owners that saved successfully
+    if (!ssnFailed) {
+      setOwners(prev => prev.map(o => {
+        const { _ssn_plain, ...rest } = o;
+        return rest;
+      }));
+      setRevealedSsns({});
+    }
   };
 
   const removeOwner = async (idx: number) => {
