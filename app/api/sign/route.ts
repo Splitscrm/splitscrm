@@ -20,45 +20,50 @@ export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token");
   if (!token) return NextResponse.json({ error: "Token required" }, { status: 400, headers });
 
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error("[SIGN API] SUPABASE_SERVICE_ROLE_KEY is not set — falling back to anon key which will be blocked by RLS");
+  }
+
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-  const { data: session } = await supabase
+  const { data: session, error: sessionErr } = await supabase
     .from("signature_sessions")
     .select("id, status, expires_at, signed_at, signer_name, signer_email, deal_id, lead_id, partner_id")
     .eq("token", token)
     .single();
 
+  if (sessionErr) console.error("[SIGN API] Session lookup error:", sessionErr.message);
   if (!session) return NextResponse.json({ error: "Invalid token" }, { status: 404, headers });
 
   const result: any = { session };
 
   if (session.deal_id) {
-    const { data: deal } = await supabase.from("deals").select("*").eq("id", session.deal_id).single();
+    const { data: deal, error: dealErr } = await supabase.from("deals").select("*").eq("id", session.deal_id).single();
+    if (dealErr) console.error("[SIGN API] Deal fetch error:", dealErr.message);
     if (deal) {
-      // Strip fields that shouldn't be exposed publicly
       delete deal.user_id;
       result.deal = deal;
       if (deal.partner_id) {
         const { data: partner } = await supabase.from("partners").select("id, name").eq("id", deal.partner_id).single();
         if (partner) result.partner = partner;
       }
-      // Mask banking info — only show last 4
       if (deal.bank_routing) result.deal.bank_routing = "****" + deal.bank_routing.slice(-4);
       if (deal.bank_account) result.deal.bank_account = "****" + deal.bank_account.slice(-4);
     }
   }
 
   if (session.lead_id) {
-    const { data: lead } = await supabase.from("leads").select("id, business_name, contact_name, email, phone, monthly_volume").eq("id", session.lead_id).single();
+    const { data: lead, error: leadErr } = await supabase.from("leads").select("id, business_name, contact_name, email, phone, monthly_volume").eq("id", session.lead_id).single();
+    if (leadErr) console.error("[SIGN API] Lead fetch error:", leadErr.message);
     if (lead) result.lead = lead;
 
-    const { data: owners } = await supabase
+    const { data: owners, error: ownerErr } = await supabase
       .from("deal_owners")
       .select("id, full_name, title, ownership_pct, dob, email, phone, address, city, state, zip, dl_state, dl_expiration, citizenship, is_us_resident, is_control_prong, ssn_encrypted")
       .eq("lead_id", session.lead_id)
       .order("created_at");
+    if (ownerErr) console.error("[SIGN API] Owners fetch error:", ownerErr.message);
     if (owners) {
-      // Mask SSN — only expose last 4 placeholder, never the encrypted value
       result.owners = owners.map((o: any) => ({
         ...o,
         ssn_display: o.ssn_encrypted ? "***-**-" + o.ssn_encrypted.slice(-4) : null,
@@ -67,6 +72,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  console.log("[SIGN API] Response:", { hasSession: !!session, hasDeal: !!result.deal, hasLead: !!result.lead, ownerCount: result.owners?.length || 0, hasPartner: !!result.partner });
   return NextResponse.json(result, { headers });
 }
 
