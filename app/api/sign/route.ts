@@ -11,6 +11,65 @@ function getClientIp(req: NextRequest): string {
   return req.headers.get("x-real-ip") ?? "unknown";
 }
 
+// GET /api/sign?token=xxx — load session + deal data for the signing page (public, no auth)
+export async function GET(req: NextRequest) {
+  const rl = rateLimit(req, { limit: 30, windowMs: 60_000 });
+  if (!rl.success) return rateLimitResponse(30, rl.resetAt);
+  const headers = rateLimitHeaders(30, rl.remaining, rl.resetAt);
+
+  const token = req.nextUrl.searchParams.get("token");
+  if (!token) return NextResponse.json({ error: "Token required" }, { status: 400, headers });
+
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  const { data: session } = await supabase
+    .from("signature_sessions")
+    .select("id, status, expires_at, signed_at, signer_name, signer_email, deal_id, lead_id, partner_id")
+    .eq("token", token)
+    .single();
+
+  if (!session) return NextResponse.json({ error: "Invalid token" }, { status: 404, headers });
+
+  const result: any = { session };
+
+  if (session.deal_id) {
+    const { data: deal } = await supabase.from("deals").select("*").eq("id", session.deal_id).single();
+    if (deal) {
+      // Strip fields that shouldn't be exposed publicly
+      delete deal.user_id;
+      result.deal = deal;
+      if (deal.partner_id) {
+        const { data: partner } = await supabase.from("partners").select("id, name").eq("id", deal.partner_id).single();
+        if (partner) result.partner = partner;
+      }
+      // Mask banking info — only show last 4
+      if (deal.bank_routing) result.deal.bank_routing = "****" + deal.bank_routing.slice(-4);
+      if (deal.bank_account) result.deal.bank_account = "****" + deal.bank_account.slice(-4);
+    }
+  }
+
+  if (session.lead_id) {
+    const { data: lead } = await supabase.from("leads").select("id, business_name, contact_name, email, phone, monthly_volume").eq("id", session.lead_id).single();
+    if (lead) result.lead = lead;
+
+    const { data: owners } = await supabase
+      .from("deal_owners")
+      .select("id, full_name, title, ownership_pct, dob, email, phone, address, city, state, zip, dl_state, dl_expiration, citizenship, is_us_resident, is_control_prong, ssn_encrypted")
+      .eq("lead_id", session.lead_id)
+      .order("created_at");
+    if (owners) {
+      // Mask SSN — only expose last 4 placeholder, never the encrypted value
+      result.owners = owners.map((o: any) => ({
+        ...o,
+        ssn_display: o.ssn_encrypted ? "***-**-" + o.ssn_encrypted.slice(-4) : null,
+        ssn_encrypted: undefined,
+      }));
+    }
+  }
+
+  return NextResponse.json(result, { headers });
+}
+
 export async function POST(req: NextRequest) {
   const rl = rateLimit(req, { limit: 5, windowMs: 60_000 });
   if (!rl.success) return rateLimitResponse(5, rl.resetAt);

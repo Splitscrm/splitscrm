@@ -1,13 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 type PageState = "loading" | "invalid" | "expired" | "signed" | "revoked" | "signing" | "success";
 
@@ -39,37 +33,27 @@ export default function SignPage() {
   }, [token]);
 
   const loadSession = async () => {
-    const { data, error } = await supabase
-      .from("signature_sessions")
-      .select("*")
-      .eq("token", token)
-      .single();
+    try {
+      const res = await fetch(`/api/sign?token=${encodeURIComponent(token)}`);
+      if (!res.ok) { setState("invalid"); return; }
+      const data = await res.json();
 
-    if (error || !data) { setState("invalid"); return; }
+      if (!data.session) { setState("invalid"); return; }
+      setSession(data.session);
 
-    setSession(data);
+      if (data.session.status === "signed") { setState("signed"); return; }
+      if (data.session.status === "revoked") { setState("revoked"); return; }
+      if (new Date(data.session.expires_at) < new Date()) { setState("expired"); return; }
 
-    if (data.status === "signed") { setState("signed"); return; }
-    if (data.status === "revoked") { setState("revoked"); return; }
-    if (new Date(data.expires_at) < new Date()) { setState("expired"); return; }
+      if (data.deal) setDeal(data.deal);
+      if (data.lead) setLead(data.lead);
+      if (data.owners) setOwners(data.owners);
+      if (data.partner) setPartner(data.partner);
 
-    // Load deal, lead, owners, partner for the application summary
-    if (data.deal_id) {
-      const { data: d } = await supabase.from("deals").select("*").eq("id", data.deal_id).single();
-      if (d) setDeal(d);
-      if (d?.partner_id) {
-        const { data: p } = await supabase.from("partners").select("id, name").eq("id", d.partner_id).single();
-        if (p) setPartner(p);
-      }
+      setState("signing");
+    } catch {
+      setState("invalid");
     }
-    if (data.lead_id) {
-      const { data: l } = await supabase.from("leads").select("id, business_name, contact_name, email, phone, monthly_volume").eq("id", data.lead_id).single();
-      if (l) setLead(l);
-      const { data: ow } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, ssn_encrypted").eq("lead_id", data.lead_id).order("created_at");
-      if (ow) setOwners(ow);
-    }
-
-    setState("signing");
   };
 
   // ── Canvas drawing helpers ──────────────────────────────────────────────
@@ -124,7 +108,6 @@ export default function SignPage() {
   const getSignatureData = (): string | null => {
     if (sigMode === "type") {
       if (!typedSig.trim()) return null;
-      // Render typed text to a canvas and export as base64
       const tmpCanvas = document.createElement("canvas");
       tmpCanvas.width = 400;
       tmpCanvas.height = 100;
@@ -170,8 +153,10 @@ export default function SignPage() {
   };
 
   // ── Format helpers ──────────────────────────────────────────────────────
-  const fmt = (n: number | null) => n != null ? `$${Number(n).toLocaleString()}` : "—";
-  const maskSsn = (encrypted: string | null) => encrypted ? "***-**-" + (encrypted.slice(-4) || "****") : "—";
+  const fmt = (n: any) => n != null && n !== "" ? `$${Number(n).toLocaleString()}` : "\u2014";
+  const pct = (n: any) => n != null && n !== "" ? `${n}%` : "\u2014";
+  const val = (v: any) => v || "\u2014";
+  const titleCase = (s: string | null) => s ? s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "\u2014";
 
   // ── Render ──────────────────────────────────────────────────────────────
   const Logo = () => (
@@ -197,8 +182,7 @@ export default function SignPage() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 max-w-md w-full text-center">
           <Logo />
-          <p className="text-4xl mt-6 mb-4">🔗</p>
-          <h1 className="text-xl font-bold text-slate-900 mb-2">Invalid Link</h1>
+          <h1 className="text-xl font-bold text-slate-900 mt-6 mb-2">Invalid Link</h1>
           <p className="text-slate-500">This signing link is invalid. Please check the URL or contact your agent for a new link.</p>
         </div>
       </div>
@@ -210,8 +194,7 @@ export default function SignPage() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 max-w-md w-full text-center">
           <Logo />
-          <p className="text-4xl mt-6 mb-4">⏰</p>
-          <h1 className="text-xl font-bold text-slate-900 mb-2">Link Expired</h1>
+          <h1 className="text-xl font-bold text-slate-900 mt-6 mb-2">Link Expired</h1>
           <p className="text-slate-500">This signing link has expired. Please contact your agent for a new link.</p>
         </div>
       </div>
@@ -223,8 +206,7 @@ export default function SignPage() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 max-w-md w-full text-center">
           <Logo />
-          <p className="text-4xl mt-6 mb-4">✅</p>
-          <h1 className="text-xl font-bold text-slate-900 mb-2">Already Signed</h1>
+          <h1 className="text-xl font-bold text-slate-900 mt-6 mb-2">Already Signed</h1>
           <p className="text-slate-500">This application was signed on {session?.signed_at ? new Date(session.signed_at).toLocaleDateString() : "a previous date"}.</p>
           <p className="text-sm text-slate-400 mt-2">Thank you! Your agent will be in touch with next steps.</p>
         </div>
@@ -237,8 +219,7 @@ export default function SignPage() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 max-w-md w-full text-center">
           <Logo />
-          <p className="text-4xl mt-6 mb-4">🚫</p>
-          <h1 className="text-xl font-bold text-slate-900 mb-2">Link Revoked</h1>
+          <h1 className="text-xl font-bold text-slate-900 mt-6 mb-2">Link Revoked</h1>
           <p className="text-slate-500">This signing link has been revoked. Please contact your agent for a new link.</p>
         </div>
       </div>
@@ -250,8 +231,7 @@ export default function SignPage() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 max-w-md w-full text-center">
           <Logo />
-          <p className="text-4xl mt-6 mb-4">🎉</p>
-          <h1 className="text-xl font-bold text-emerald-600 mb-2">Application Signed!</h1>
+          <h1 className="text-xl font-bold text-emerald-600 mt-6 mb-2">Application Signed!</h1>
           <p className="text-slate-500">Thank you! Your application has been signed and submitted. Your agent will be in touch with next steps.</p>
         </div>
       </div>
@@ -285,24 +265,34 @@ export default function SignPage() {
           <div className="mb-4 pb-4 border-b border-slate-100">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Business Information</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
-              <div><span className={labelClass}>Business Name</span><p className={valueClass}>{deal?.business_legal_name || lead?.business_name || "—"}</p></div>
-              <div><span className={labelClass}>DBA</span><p className={valueClass}>{deal?.dba_name || "—"}</p></div>
-              <div className="sm:col-span-2"><span className={labelClass}>Address</span><p className={valueClass}>{[deal?.legal_street, deal?.legal_city, deal?.legal_state, deal?.legal_zip].filter(Boolean).join(", ") || "—"}</p></div>
-              <div><span className={labelClass}>Entity Type</span><p className={valueClass}>{deal?.entity_type?.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) || "—"}</p></div>
-              <div><span className={labelClass}>EIN/ITIN</span><p className={valueClass}>{deal?.ein_itin || "—"}</p></div>
+              <div><span className={labelClass}>Business Legal Name</span><p className={valueClass}>{val(deal?.business_legal_name || lead?.business_name)}</p></div>
+              <div><span className={labelClass}>DBA</span><p className={valueClass}>{val(deal?.dba_name)}</p></div>
+              <div className="sm:col-span-2"><span className={labelClass}>Legal Address</span><p className={valueClass}>{[deal?.legal_street, deal?.legal_city, deal?.legal_state, deal?.legal_zip].filter(Boolean).join(", ") || "\u2014"}</p></div>
+              <div><span className={labelClass}>Business Phone</span><p className={valueClass}>{val(deal?.business_phone || lead?.phone)}</p></div>
+              <div><span className={labelClass}>Business Email</span><p className={valueClass}>{val(deal?.business_email || lead?.email)}</p></div>
+              <div><span className={labelClass}>Entity Type</span><p className={valueClass}>{titleCase(deal?.entity_type)}</p></div>
+              <div><span className={labelClass}>EIN/ITIN</span><p className={valueClass}>{val(deal?.ein_itin)}</p></div>
+              <div><span className={labelClass}>MCC Code</span><p className={valueClass}>{val(deal?.mcc_code)}</p></div>
+              <div><span className={labelClass}>Business Start Date</span><p className={valueClass}>{deal?.business_start_date ? new Date(deal.business_start_date + "T00:00:00").toLocaleDateString() : "\u2014"}</p></div>
             </div>
+            {deal?.location_street && (
+              <div className="mt-2">
+                <span className={labelClass}>Location Address</span>
+                <p className={valueClass}>{[deal.location_name, deal.location_street, deal.location_city, deal.location_state, deal.location_zip].filter(Boolean).join(", ")}</p>
+              </div>
+            )}
           </div>
 
           {/* Owner Info */}
           {owners.length > 0 && (
             <div className="mb-4 pb-4 border-b border-slate-100">
               <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Ownership</h3>
-              {owners.map((o, i) => (
+              {owners.map((o) => (
                 <div key={o.id} className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mb-2">
-                  <div><span className={labelClass}>Name</span><p className={valueClass}>{o.full_name || "—"}</p></div>
-                  <div><span className={labelClass}>Title</span><p className={valueClass}>{o.title || "—"}</p></div>
-                  <div><span className={labelClass}>Ownership</span><p className={valueClass}>{o.ownership_pct ? `${o.ownership_pct}%` : "—"}</p></div>
-                  <div><span className={labelClass}>SSN</span><p className={valueClass}>{maskSsn(o.ssn_encrypted)}</p></div>
+                  <div><span className={labelClass}>Name</span><p className={valueClass}>{val(o.full_name)}</p></div>
+                  <div><span className={labelClass}>Title</span><p className={valueClass}>{val(o.title)}</p></div>
+                  <div><span className={labelClass}>Ownership</span><p className={valueClass}>{pct(o.ownership_pct)}</p></div>
+                  <div><span className={labelClass}>SSN</span><p className={valueClass}>{o.ssn_display || "\u2014"}</p></div>
                 </div>
               ))}
             </div>
@@ -314,8 +304,8 @@ export default function SignPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1">
               <div><span className={labelClass}>Monthly Volume</span><p className={valueClass}>{fmt(deal?.monthly_volume || lead?.monthly_volume)}</p></div>
               <div><span className={labelClass}>Avg Ticket</span><p className={valueClass}>{fmt(deal?.average_ticket)}</p></div>
-              <div><span className={labelClass}>Card Present</span><p className={valueClass}>{deal?.cp_pct ? `${deal.cp_pct}%` : "—"}</p></div>
-              <div><span className={labelClass}>Card Not Present</span><p className={valueClass}>{deal?.cnp_pct ? `${deal.cnp_pct}%` : "—"}</p></div>
+              <div><span className={labelClass}>Card Present</span><p className={valueClass}>{pct(deal?.cp_pct)}</p></div>
+              <div><span className={labelClass}>Card Not Present</span><p className={valueClass}>{pct(deal?.cnp_pct)}</p></div>
             </div>
           </div>
 
@@ -323,28 +313,62 @@ export default function SignPage() {
           <div className="mb-4 pb-4 border-b border-slate-100">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Pricing</h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1">
-              <div><span className={labelClass}>Type</span><p className={valueClass}>{deal?.pricing_type?.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) || "—"}</p></div>
+              <div><span className={labelClass}>Type</span><p className={valueClass}>{titleCase(deal?.pricing_type)}</p></div>
               {deal?.pricing_type === "interchange_plus" && (
                 <>
-                  <div><span className={labelClass}>Visa Rate</span><p className={valueClass}>{deal.ic_plus_visa_pct ? `${deal.ic_plus_visa_pct}% + $${deal.ic_plus_visa_txn || "0"}` : "—"}</p></div>
-                  <div><span className={labelClass}>MC Rate</span><p className={valueClass}>{deal.ic_plus_mc_pct ? `${deal.ic_plus_mc_pct}% + $${deal.ic_plus_mc_txn || "0"}` : "—"}</p></div>
+                  <div><span className={labelClass}>Visa Rate</span><p className={valueClass}>{deal.ic_plus_visa_pct ? `${deal.ic_plus_visa_pct}% + $${deal.ic_plus_visa_txn || "0"}` : "\u2014"}</p></div>
+                  <div><span className={labelClass}>MC Rate</span><p className={valueClass}>{deal.ic_plus_mc_pct ? `${deal.ic_plus_mc_pct}% + $${deal.ic_plus_mc_txn || "0"}` : "\u2014"}</p></div>
+                  <div><span className={labelClass}>AMEX Rate</span><p className={valueClass}>{deal.ic_plus_amex_pct ? `${deal.ic_plus_amex_pct}% + $${deal.ic_plus_amex_txn || "0"}` : "\u2014"}</p></div>
+                  <div><span className={labelClass}>Disc Rate</span><p className={valueClass}>{deal.ic_plus_disc_pct ? `${deal.ic_plus_disc_pct}% + $${deal.ic_plus_disc_txn || "0"}` : "\u2014"}</p></div>
                 </>
               )}
               {deal?.pricing_type === "dual_pricing" && (
-                <div><span className={labelClass}>Rate</span><p className={valueClass}>{deal.dual_pricing_rate ? `${deal.dual_pricing_rate}%` : "—"}</p></div>
+                <>
+                  <div><span className={labelClass}>Rate</span><p className={valueClass}>{pct(deal.dual_pricing_rate)}</p></div>
+                  <div><span className={labelClass}>Per Txn</span><p className={valueClass}>{deal.dual_pricing_txn_fee ? `$${deal.dual_pricing_txn_fee}` : "\u2014"}</p></div>
+                </>
               )}
               {deal?.pricing_type === "flat_rate" && (
-                <div><span className={labelClass}>Rate</span><p className={valueClass}>{deal.flat_rate_pct ? `${deal.flat_rate_pct}%` : "—"}</p></div>
+                <>
+                  <div><span className={labelClass}>Rate</span><p className={valueClass}>{pct(deal.flat_rate_pct)}</p></div>
+                  <div><span className={labelClass}>Per Txn</span><p className={valueClass}>{deal.flat_rate_txn_cost ? `$${deal.flat_rate_txn_cost}` : "\u2014"}</p></div>
+                </>
               )}
             </div>
+            {/* Fees */}
+            {(deal?.fee_chargeback || deal?.monthly_fee_statement || deal?.pci_compliance_monthly) && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 mt-2 pt-2 border-t border-slate-50">
+                {deal.fee_chargeback && <div><span className={labelClass}>Chargeback Fee</span><p className={valueClass}>${deal.fee_chargeback}</p></div>}
+                {deal.fee_retrieval && <div><span className={labelClass}>Retrieval Fee</span><p className={valueClass}>${deal.fee_retrieval}</p></div>}
+                {deal.monthly_fee_statement && <div><span className={labelClass}>Statement Fee</span><p className={valueClass}>${deal.monthly_fee_statement}/mo</p></div>}
+                {deal.pci_compliance_monthly && <div><span className={labelClass}>PCI Monthly</span><p className={valueClass}>${deal.pci_compliance_monthly}/mo</p></div>}
+                {deal.pci_compliance_annual && <div><span className={labelClass}>PCI Annual</span><p className={valueClass}>${deal.pci_compliance_annual}/yr</p></div>}
+              </div>
+            )}
           </div>
 
-          {/* Equipment */}
-          {(deal?.hardware_items || []).length > 0 && (
+          {/* Banking */}
+          {(deal?.bank_routing || deal?.bank_account) && (
             <div className="mb-4 pb-4 border-b border-slate-100">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Equipment</h3>
-              {deal.hardware_items.map((hw: any, i: number) => (
-                <p key={i} className="text-sm text-slate-700">{hw.quantity}x {hw.model || hw.type || "Hardware"}{hw.free === "yes" ? " (Free placement)" : hw.cost ? ` ($${hw.cost})` : ""}</p>
+              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Banking</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1">
+                {deal.bank_account_holder_name && <div><span className={labelClass}>Account Holder</span><p className={valueClass}>{deal.bank_account_holder_name}</p></div>}
+                <div><span className={labelClass}>Routing</span><p className={valueClass}>{val(deal.bank_routing)}</p></div>
+                <div><span className={labelClass}>Account</span><p className={valueClass}>{val(deal.bank_account)}</p></div>
+                {deal.bank_account_type && <div><span className={labelClass}>Type</span><p className={valueClass}>{titleCase(deal.bank_account_type)}</p></div>}
+              </div>
+            </div>
+          )}
+
+          {/* Equipment */}
+          {((deal?.hardware_items || []).length > 0 || (deal?.software_items || []).length > 0) && (
+            <div className="mb-4 pb-4 border-b border-slate-100">
+              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Equipment & Software</h3>
+              {(deal.hardware_items || []).map((hw: any, i: number) => (
+                <p key={"hw" + i} className="text-sm text-slate-700">{hw.quantity || 1}x {hw.model || hw.type || "Hardware"}{hw.free === "yes" ? " (Free placement)" : hw.cost ? ` ($${hw.cost})` : ""}</p>
+              ))}
+              {(deal.software_items || []).map((sw: any, i: number) => (
+                <p key={"sw" + i} className="text-sm text-slate-700">{sw.name || "Software"}{sw.type ? ` (${sw.type})` : ""}{sw.monthly_cost ? ` \u2014 $${sw.monthly_cost}/mo` : ""}{sw.per_txn ? ` + $${sw.per_txn}/txn` : ""}</p>
               ))}
             </div>
           )}
@@ -381,7 +405,6 @@ export default function SignPage() {
         <div className={sectionClass}>
           <h2 className="text-base font-semibold text-slate-900 mb-3">Signature</h2>
 
-          {/* Tab toggle */}
           <div className="flex bg-slate-100 rounded-lg p-1 mb-4">
             <button
               onClick={() => setSigMode("type")}
