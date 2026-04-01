@@ -928,8 +928,16 @@ export default function LeadDetailPage() {
   };
 
   const saveOwners = async () => {
+    console.log("[OWNER SAVE] saveOwners called, owners count:", owners.length);
     let ssnFailed = false;
-    for (const o of owners) {
+    for (let oi = 0; oi < owners.length; oi++) {
+      const o = owners[oi];
+      console.log(`[OWNER SAVE] Owner ${oi} id=${o.id}, keys:`, Object.keys(o).sort());
+      console.log(`[OWNER SAVE] Owner ${oi} booleans:`, {
+        is_control_prong: o.is_control_prong, personal_guarantee: o.personal_guarantee,
+        prior_bankruptcies: o.prior_bankruptcies, criminal_history: o.criminal_history,
+        match_tmf_listed: o.match_tmf_listed, is_us_resident: o.is_us_resident,
+      });
       const { id, created_at, _ssn_plain, ...raw } = o;
       // Filter to only valid DB columns to prevent 400 errors
       const updates: Record<string, any> = {};
@@ -964,7 +972,9 @@ export default function LeadDetailPage() {
           continue;
         }
       }
-      const { error } = await supabase.from("deal_owners").update(updates).eq("id", id);
+      console.log(`[OWNER SAVE] Owner ${oi} update payload:`, JSON.stringify(updates));
+      const { data: updateResult, error } = await supabase.from("deal_owners").update(updates).eq("id", id).select();
+      console.log(`[OWNER SAVE] Owner ${oi} result:`, { error: error ? JSON.stringify(error) : null, rowsReturned: updateResult?.length, returnedBooleans: updateResult?.[0] ? { is_control_prong: updateResult[0].is_control_prong, personal_guarantee: updateResult[0].personal_guarantee } : null });
       if (error) {
         console.error("Owner save failed for id=" + id + ":", JSON.stringify(error));
         setDealMsg("Error saving owner: " + error.message);
