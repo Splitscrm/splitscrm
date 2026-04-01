@@ -47,9 +47,10 @@ const VALID_DEAL_COLUMNS = new Set([
 // Valid DB columns for deal_owners table
 const VALID_OWNER_COLUMNS = new Set([
   "full_name", "title", "ownership_pct", "dob", "phone", "address", "city", "state", "zip",
-  "ssn_encrypted", "email", "dl_state", "dl_expiration", "citizenship", "is_us_resident",
-  "personal_guarantee", "prior_bankruptcies", "criminal_history", "match_tmf_listed", "ssn",
-  "deal_id", "lead_id",
+  "ssn_encrypted", "encryption_version", "email", "dl_state", "dl_expiration",
+  "citizenship", "is_us_resident", "is_control_prong",
+  "personal_guarantee", "prior_bankruptcies", "criminal_history", "match_tmf_listed",
+  "ssn", "deal_id", "lead_id",
 ]);
 
 export default function LeadDetailPage() {
@@ -193,11 +194,11 @@ export default function LeadDetailPage() {
           setActiveDealIdx(0);
           // Owners are shared at lead level — query by lead_id first, fall back to deal_id
           let ownerData: any[] | null = null;
-          const { data: leadOwners } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at, email, dl_state, dl_expiration, citizenship, is_us_resident, personal_guarantee, prior_bankruptcies, criminal_history, match_tmf_listed").eq("lead_id", leadData.id).order("created_at");
+          const { data: leadOwners } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at, email, dl_state, dl_expiration, citizenship, is_us_resident, is_control_prong, personal_guarantee, prior_bankruptcies, criminal_history, match_tmf_listed").eq("lead_id", leadData.id).order("created_at");
           if (leadOwners && leadOwners.length > 0) {
             ownerData = leadOwners;
           } else {
-            const { data: dealOwners } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at, email, dl_state, dl_expiration, citizenship, is_us_resident, personal_guarantee, prior_bankruptcies, criminal_history, match_tmf_listed").eq("deal_id", allDeals[0].id).order("created_at");
+            const { data: dealOwners } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at, email, dl_state, dl_expiration, citizenship, is_us_resident, is_control_prong, personal_guarantee, prior_bankruptcies, criminal_history, match_tmf_listed").eq("deal_id", allDeals[0].id).order("created_at");
             ownerData = dealOwners;
           }
           if (ownerData) setOwners(ownerData);
@@ -288,7 +289,7 @@ export default function LeadDetailPage() {
       if (deals.length === 0) {
         setDeals(existingDeals);
         setActiveDealIdx(0);
-        const { data: ownerData } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at, email, dl_state, dl_expiration, citizenship, is_us_resident, personal_guarantee, prior_bankruptcies, criminal_history, match_tmf_listed").eq("lead_id", params.id as string).order("created_at");
+        const { data: ownerData } = await supabase.from("deal_owners").select("id, full_name, title, ownership_pct, dob, phone, address, city, state, zip, ssn_encrypted, created_at, email, dl_state, dl_expiration, citizenship, is_us_resident, is_control_prong, personal_guarantee, prior_bankruptcies, criminal_history, match_tmf_listed").eq("lead_id", params.id as string).order("created_at");
         if (ownerData && ownerData.length > 0) setOwners(ownerData);
       }
     } else {
@@ -832,13 +833,8 @@ export default function LeadDetailPage() {
 
   const saveOwners = async () => {
     let ssnFailed = false;
-    for (let oi = 0; oi < owners.length; oi++) {
-      const o = owners[oi];
-      console.log(`[SSN DEBUG] Owner ${oi} raw object keys:`, Object.keys(o));
-      console.log(`[SSN DEBUG] Owner ${oi} _ssn_plain present:`, "_ssn_plain" in o, "value truthy:", !!o._ssn_plain);
-      console.log(`[SSN DEBUG] Owner ${oi} ssn_encrypted before save:`, o.ssn_encrypted ? "(has value, length=" + o.ssn_encrypted.length + ")" : o.ssn_encrypted);
+    for (const o of owners) {
       const { id, created_at, _ssn_plain, ...raw } = o;
-      console.log(`[SSN DEBUG] Owner ${oi} _ssn_plain after destructure:`, _ssn_plain ? `"${_ssn_plain.substring(0, 3)}..."` : _ssn_plain);
       // Filter to only valid DB columns to prevent 400 errors
       const updates: Record<string, any> = {};
       for (const key of Object.keys(raw)) {
@@ -846,52 +842,36 @@ export default function LeadDetailPage() {
           updates[key] = raw[key];
         }
       }
-      // Map us_resident → is_us_resident if present
-      if ("us_resident" in raw && !("is_us_resident" in raw)) {
-        updates.is_us_resident = raw.us_resident;
-      }
-      console.log(`[SSN DEBUG] Owner ${oi} updates BEFORE encryption:`, Object.keys(updates), "ssn_encrypted:", updates.ssn_encrypted ? "(has value)" : updates.ssn_encrypted, "ssn:", updates.ssn);
-      // If there's a plaintext SSN pending, encrypt it
+      // If there's a plaintext SSN pending, encrypt it then null out the raw ssn column
       if (_ssn_plain) {
-        console.log(`[SSN DEBUG] Owner ${oi} calling encrypt-ssn API...`);
         try {
           const res = await authFetch("/api/encrypt-ssn", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ssn: _ssn_plain }),
           });
-          console.log(`[SSN DEBUG] Owner ${oi} encrypt-ssn response status:`, res.status);
           if (!res.ok) {
-            console.error(`[SSN DEBUG] Owner ${oi} encrypt API returned non-OK:`, res.status);
+            console.error("Owner SSN encrypt failed, status:", res.status);
             ssnFailed = true;
-            continue; // skip this owner's update to preserve _ssn_plain for retry
+            continue;
           }
           const data = await res.json();
-          console.log(`[SSN DEBUG] Owner ${oi} encrypt API response data keys:`, Object.keys(data), "encrypted truthy:", !!data.encrypted, "encrypted length:", data.encrypted?.length);
           if (data.encrypted) {
             updates.ssn_encrypted = data.encrypted;
-            console.log(`[SSN DEBUG] Owner ${oi} set updates.ssn_encrypted to encrypted value (length=${data.encrypted.length})`);
+            updates.ssn = null;
           } else {
-            console.error(`[SSN DEBUG] Owner ${oi} encrypt API returned OK but data.encrypted is falsy:`, data);
+            console.error("Owner SSN encrypt returned OK but no encrypted value:", data);
           }
         } catch (err) {
-          console.error(`[SSN DEBUG] Owner ${oi} encrypt API threw error:`, err);
+          console.error("Owner SSN encrypt threw:", err);
           ssnFailed = true;
-          continue; // skip this owner's update to preserve _ssn_plain for retry
+          continue;
         }
-      } else {
-        console.log(`[SSN DEBUG] Owner ${oi} no _ssn_plain, skipping encryption`);
       }
-      console.log(`[SSN DEBUG] Owner ${oi} FINAL update payload columns:`, Object.keys(updates));
-      console.log(`[SSN DEBUG] Owner ${oi} FINAL ssn_encrypted in payload:`, updates.ssn_encrypted ? `(has value, length=${updates.ssn_encrypted.length})` : updates.ssn_encrypted);
-      console.log(`[SSN DEBUG] Owner ${oi} updating deal_owners id=${id}...`);
-      const { data: updateData, error } = await supabase.from("deal_owners").update(updates).eq("id", id).select();
-      console.log(`[SSN DEBUG] Owner ${oi} Supabase response - error:`, error, "data:", updateData ? `(${updateData.length} rows, ssn_encrypted: ${updateData[0]?.ssn_encrypted ? "has value" : updateData[0]?.ssn_encrypted})` : updateData);
+      const { error } = await supabase.from("deal_owners").update(updates).eq("id", id);
       if (error) {
-        console.error(`[SSN DEBUG] Owner ${oi} save FAILED:`, JSON.stringify(error));
+        console.error("Owner save failed for id=" + id + ":", JSON.stringify(error));
         setDealMsg("Error saving owner: " + error.message);
-      } else {
-        console.log(`[SSN DEBUG] Owner ${oi} save SUCCEEDED`);
       }
     }
     if (ssnFailed) {
@@ -2065,7 +2045,7 @@ export default function LeadDetailPage() {
                   {owners.length === 0 && <p className="text-slate-500 text-sm">No owners added yet.</p>}
                   {(() => {
                     const totalPct = owners.reduce((s, o) => s + (Number(o.ownership_pct) || 0), 0);
-                    const hasControlPerson = owners.some(o => !!o.control_person);
+                    const hasControlPerson = owners.some(o => !!o.is_control_prong);
                     return (
                       <>
                         {owners.length > 0 && (
@@ -2155,7 +2135,7 @@ export default function LeadDetailPage() {
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-x-6 gap-y-2 mt-3 pt-3 border-t border-slate-100">
-                        <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.control_person} onChange={(e) => updateOwner(idx, "control_person", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Control Person (FinCEN CDD)</span></label>
+                        <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.is_control_prong} onChange={(e) => updateOwner(idx, "is_control_prong", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Control Person (FinCEN CDD)</span></label>
                         <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.personal_guarantee} onChange={(e) => updateOwner(idx, "personal_guarantee", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Personal Guarantee</span></label>
                         <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.prior_bankruptcies} onChange={(e) => updateOwner(idx, "prior_bankruptcies", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Prior Bankruptcies</span></label>
                         <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.criminal_history} onChange={(e) => updateOwner(idx, "criminal_history", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Criminal History</span></label>

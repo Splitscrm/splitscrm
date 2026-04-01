@@ -69,7 +69,7 @@ export function checkMpaCompleteness(
       }
       const totalPct = owners.reduce((s: number, o: any) => s + (Number(o.ownership_pct) || 0), 0);
       if (totalPct !== 100) missing.push(`Ownership total is ${totalPct}% (must be 100%)`);
-      const hasControl = owners.some((o: any) => !!o.control_person);
+      const hasControl = owners.some((o: any) => !!o.is_control_prong);
       if (!hasControl) missing.push("No control person designated");
     }
     sections.push({
