@@ -63,7 +63,7 @@ export default function PartnerDetailPage() {
   const [resTrending, setResTrending] = useState<{ month: string; net: number }[]>([]);
 
   const tabs = [
-    { key: "banks", label: "Sponsor Banks" },
+    { key: "banks", label: "Merchant Applications" },
     { key: "hardware", label: "Hardware" },
     { key: "software", label: "Software" },
     { key: "underwriting", label: "Underwriting" },
@@ -676,10 +676,10 @@ export default function PartnerDetailPage() {
         {activeTab === "banks" && (
           <div>
             <div className="flex justify-between items-center mb-4">
-              <h4 className="font-semibold text-emerald-600">Sponsor Banks</h4>
+              <h4 className="font-semibold text-emerald-600">Merchant Applications</h4>
               <button onClick={addBank} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs transition">+ Add Bank</button>
             </div>
-            {banks.length === 0 && <p className="text-slate-500 text-sm">No sponsor banks added yet.</p>}
+            {banks.length === 0 && <p className="text-slate-500 text-sm">No merchant applications added yet.</p>}
             {banks.map((b, idx) => (
               <div key={b.id} className={cardClass}>
                 <div className="flex justify-between items-center mb-3">
@@ -689,9 +689,9 @@ export default function PartnerDetailPage() {
                     <button onClick={() => removeBank(idx)} className="text-red-400 hover:text-red-300 text-xs">Remove</button>
                   </div>
                 </div>
-                {/* ROW 1: Bank Name + Cutoff Timezone */}
+                {/* ROW 1: Application Name + Cutoff Timezone */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
-                  <div><label className={labelClass}>Bank Name</label><input type="text" value={b.bank_name || ""} onChange={(e) => updateBank(idx, "bank_name", e.target.value)} className={inputClass} /></div>
+                  <div><label className={labelClass}>Application Name</label><input type="text" value={b.bank_name || ""} onChange={(e) => updateBank(idx, "bank_name", e.target.value)} className={inputClass} /></div>
                   <div>
                     <label className={labelClass}>Cutoff Timezone</label>
                     <select value={b.cutoff_timezone || "ET"} onChange={(e) => updateBank(idx, "cutoff_timezone", e.target.value)} className={inputClass}>

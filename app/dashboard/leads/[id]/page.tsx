@@ -1999,12 +1999,12 @@ export default function LeadDetailPage() {
                     </div>
                   )}
 
-                  {/* Partner & Sponsor Bank — always shown */}
+                  {/* Partner & Merchant Application — always shown */}
                   <div className="space-y-5">
                     <div>
                       <div className="flex items-center gap-2 mb-3">
                         <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">1</span>
-                        <h4 className="text-sm font-semibold text-slate-900">Select Partners & Sponsor Banks</h4>
+                        <h4 className="text-sm font-semibold text-slate-900">Select Partners & Merchant Applications</h4>
                       </div>
                       {(() => {
                         const signedPids = getSignedPartnerIds(d.id);
@@ -2035,7 +2035,7 @@ export default function LeadDetailPage() {
                                           onChange={(e) => setPartnerBank(p.id, e.target.value)}
                                           className="text-xs px-2 py-1 rounded border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500 flex-1 max-w-[200px]"
                                         >
-                                          <option value="">Sponsor Bank...</option>
+                                          <option value="">Merchant Application...</option>
                                           {(sel?.banks || []).map((b: any) => <option key={b.id} value={b.bank_name}>{b.bank_name}</option>)}
                                         </select>
                                         {sel?.bank && (
@@ -2082,7 +2082,7 @@ export default function LeadDetailPage() {
                                 <button
                                   onClick={() => {
                                     const allHaveBanks = selectedNewIds.every(pid => sigPartnerSelections[pid]?.bank);
-                                    if (!allHaveBanks) { setDealMsg("Select a sponsor bank for each partner first"); setTimeout(() => setDealMsg(""), 3000); return; }
+                                    if (!allHaveBanks) { setDealMsg("Select a merchant application for each partner first"); setTimeout(() => setDealMsg(""), 3000); return; }
                                     reuseBatchSignature(d.id, signedSession, selectedNewIds);
                                   }}
                                   disabled={sigSending}
@@ -2167,7 +2167,7 @@ export default function LeadDetailPage() {
                               const selectedNew = Object.keys(sigPartnerSelections).filter(pid => !getSignedPartnerIds(d.id).has(pid));
                               if (selectedNew.length > 0) {
                                 const allHaveBanks = selectedNew.every(pid => sigPartnerSelections[pid]?.bank);
-                                if (!allHaveBanks) { setDealMsg("Select a sponsor bank for each partner first"); setTimeout(() => setDealMsg(""), 3000); return; }
+                                if (!allHaveBanks) { setDealMsg("Select a merchant application for each partner first"); setTimeout(() => setDealMsg(""), 3000); return; }
                                 sendBatchForSignature(d.id);
                               } else {
                                 sendForSignature(d.id);

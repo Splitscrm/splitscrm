@@ -384,7 +384,7 @@ export default function SignPage() {
               ) : (
                 <div className="grid grid-cols-2 gap-x-4">
                   {partner && <div><span className={labelClass}>Partner</span><p className={valueClass}>{partner.name}</p></div>}
-                  {deal?.sponsor_bank && <div><span className={labelClass}>Sponsor Bank</span><p className={valueClass}>{deal.sponsor_bank}</p></div>}
+                  {deal?.sponsor_bank && <div><span className={labelClass}>Merchant Application</span><p className={valueClass}>{deal.sponsor_bank}</p></div>}
                 </div>
               )}
             </div>
