@@ -894,13 +894,9 @@ export default function ReportsPage() {
   const payoutData = useMemo(() => {
     if (!payoutMonth) return []
 
+    // Use records filtered by month only — no double-filter through imports
     const monthRecords = records.filter(r => r.report_month === payoutMonth)
-    const monthImports = imports.filter(i => i.report_month === payoutMonth)
-    const monthImportIds = new Set(monthImports.map(i => i.id))
-    const filteredRecords = monthRecords.filter(r => monthImportIds.has(r.import_id))
-
-    const impPartner: Record<string, string> = {}
-    for (const imp of monthImports) { if (imp.partner_id) impPartner[imp.id] = imp.partner_id }
+    if (monthRecords.length === 0) return []
 
     const userMemberMap: Record<string, OrgMember> = {}
     for (const m of orgMembers) if (m.user_id) userMemberMap[m.user_id] = m
@@ -915,24 +911,27 @@ export default function ReportsPage() {
       if (!rcByUserPartner[key]) rcByUserPartner[key] = []
       rcByUserPartner[key].push(rc)
     }
-    // Also key by rep_code string for matching
-    const rcByCode: Record<string, any> = {}
-    for (const rc of repCodes) rcByCode[`${rc.partner_id}:${rc.rep_code}`] = rc
 
     const clawbackMap: Record<string, number> = {}
     for (const cb of clawbacks) { clawbackMap[cb.user_id] = (clawbackMap[cb.user_id] || 0) + (cb.amount || 0) }
 
     // Group records by agent_user_id + partner + code_type
-    const grouped: Record<string, { recs: typeof filteredRecords; rc: any }> = {}
-    for (const r of filteredRecords) {
-      const uid = r.agent_user_id
-      if (!uid) continue
-      const pid = impPartner[r.import_id] || ''
+    // Records without agent_user_id go into a special "unassigned" bucket
+    const grouped: Record<string, { recs: typeof monthRecords; rc: any }> = {}
+    let unassignedRecs: typeof monthRecords = []
+
+    for (const r of monthRecords) {
+      const pid = importPartnerMap[r.import_id] || ''
       if (payoutPartnerFilter && pid !== payoutPartnerFilter) continue
+
+      const uid = r.agent_user_id
+      if (!uid) {
+        unassignedRecs.push(r)
+        continue
+      }
 
       // Find the specific rep code for this record
       const agentCodes = rcByUserPartner[`${uid}:${pid}`] || []
-      // Try to match by agent_id_external (rep_code string)
       let matchedRc = agentCodes.find((rc: any) => rc.rep_code === (r as any).agent_id_external) || agentCodes[0] || null
       const codeType = matchedRc?.code_type || 'standard'
       const key = `${uid}:${pid}:${codeType}`
@@ -969,6 +968,7 @@ export default function ReportsPage() {
       const agentRole = agentMember?.role || 'agent'
       const partnerName = partnerMap[pid]?.name || 'Unknown'
       const isPartnerDirect = rc?.payout_type === 'partner_direct'
+      const hasSplitPct = rc?.split_pct != null
 
       let totalGross = 0, totalIsoCut = 0, totalAgentPayout = 0, totalOverride = 0
       const merchantDetails: any[] = []
@@ -979,7 +979,6 @@ export default function ReportsPage() {
         const isRestricted = mer?.risk_category && mer.risk_category !== 'standard'
 
         if (isPartnerDirect || codeType === 'override' || codeType === 'direct_sub') {
-          // Partner-direct / override / direct_sub: no waterfall, just pass through
           totalGross += netRev
           totalAgentPayout += netRev
           merchantDetails.push({
@@ -990,7 +989,7 @@ export default function ReportsPage() {
             netRevenue: netRev, isoCut: 0, splitPct: 100, agentPayout: netRev, isRestricted,
           })
         } else {
-          // Agent-paid standard: full waterfall
+          // Agent-paid standard: full waterfall (works with 0% house split)
           const housePct = rc?.house_split_override_pct ?? orgHouseSplit
           const isoCut = netRev * (housePct / 100)
           let remainder = netRev - isoCut
@@ -1025,7 +1024,6 @@ export default function ReportsPage() {
       if (clawback > 0) clawbackUsed.add(uid)
       const netOwed = totalAgentPayout + bonus - clawback
 
-      // Verification: for partner_direct, compare expected vs reported
       const partnerReported = (isPartnerDirect || codeType === 'override' || codeType === 'direct_sub') ? totalGross : null
       const expectedCalc = (isPartnerDirect || codeType === 'override' || codeType === 'direct_sub')
         ? totalGross * ((rc?.split_pct ?? 100) / 100)
@@ -1037,6 +1035,7 @@ export default function ReportsPage() {
         codeType, payoutType: rc?.payout_type || 'agent_paid',
         merchantCount, grossRevenue: totalGross, isoCut: totalIsoCut,
         splitPct: rc?.split_pct ?? (isPartnerDirect ? 100 : 0),
+        hasSplitPct,
         residualPayout: totalAgentPayout, bonus, clawback, netOwed,
         overrideEarned: totalOverride,
         partnerReported, expectedCalc, verifyDiff,
@@ -1044,10 +1043,37 @@ export default function ReportsPage() {
       })
     }
 
-    // Sort by agent name then code type for grouping
-    results.sort((a, b) => a.agentName.localeCompare(b.agentName) || a.codeType.localeCompare(b.codeType))
+    // Add unassigned records summary row (visible to owners/managers)
+    if (isOwnerOrManager && unassignedRecs.length > 0) {
+      const unassignedRevenue = unassignedRecs.reduce((s, r) => s + (r.net_revenue || 0), 0)
+      const unassignedMids = new Set(unassignedRecs.map(r => r.merchant_id || r.merchant_id_external).filter(Boolean))
+      results.push({
+        userId: '__unassigned__', agentName: 'Unassigned Records', role: 'unassigned', partnerId: '', partnerName: 'Various',
+        codeType: 'standard', payoutType: 'agent_paid',
+        merchantCount: unassignedMids.size, grossRevenue: unassignedRevenue, isoCut: 0,
+        splitPct: 0, hasSplitPct: false,
+        residualPayout: 0, bonus: 0, clawback: 0, netOwed: 0,
+        overrideEarned: 0,
+        partnerReported: null, expectedCalc: null, verifyDiff: null,
+        isUnassigned: true,
+        merchantDetails: unassignedRecs.map(r => ({
+          name: r.dba_name || r.merchant_id_external || 'Unknown',
+          mid: r.merchant_id_external || '', partner: importPartnerMap[r.import_id] ? (partnerMap[importPartnerMap[r.import_id]]?.name || 'Unknown') : 'Unknown',
+          volume: r.net_volume || r.sales_amount || 0,
+          grossIncome: r.gross_income || 0, expenses: r.total_expenses || 0,
+          netRevenue: r.net_revenue || 0, isoCut: 0, splitPct: 0, agentPayout: 0, isRestricted: false,
+        })).sort((a: any, b: any) => b.netRevenue - a.netRevenue),
+      })
+    }
+
+    results.sort((a, b) => {
+      // Push unassigned to bottom
+      if (a.isUnassigned) return 1
+      if (b.isUnassigned) return -1
+      return a.agentName.localeCompare(b.agentName) || a.codeType.localeCompare(b.codeType)
+    })
     return results
-  }, [payoutMonth, records, imports, orgMembers, profiles, repCodes, clawbacks, orgHouseSplit, merchants, merchantMap, partnerMap, isOwnerOrManager, user, payoutPartnerFilter])
+  }, [payoutMonth, records, imports, orgMembers, profiles, repCodes, clawbacks, orgHouseSplit, merchants, merchantMap, partnerMap, isOwnerOrManager, user, payoutPartnerFilter, importPartnerMap])
 
   // Master agent downline overrides
   const downlineOverrides = useMemo(() => {
@@ -1769,25 +1795,32 @@ export default function ReportsPage() {
               </div>
             </div>
 
-            {/* Info banners */}
+            {/* Info note */}
             {orgHouseSplit === 0 && isOwnerOrManager && (
-              <div className="bg-blue-50 border border-blue-200 text-blue-700 text-sm p-3 rounded-lg">
-                ISO house split is set to 0%. Configure in Settings {'\u2192'} Organization.
-              </div>
+              <p className="text-xs text-slate-400">ISO house split: 0% (configure in Settings {'\u2192'} Organization)</p>
             )}
 
             {sortedMonths.length === 0 ? (
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
-                <p className="text-slate-500">No residual data for this period.</p>
-              </div>
-            ) : payoutData.length === 0 && repCodes.length === 0 ? (
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
-                <p className="text-slate-500">No agent payouts calculated.</p>
-                <p className="text-sm text-slate-400 mt-1">Assign rep codes to agents first in Settings {'\u2192'} Team.</p>
+                <p className="text-slate-500">No residual data imported yet.</p>
+                <p className="text-sm text-slate-400 mt-1">Import residual files to see payout calculations.</p>
               </div>
             ) : payoutData.length === 0 ? (
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-12 text-center">
-                <p className="text-slate-500">No matched agent records for {monthLabel(payoutMonth)}.</p>
+                {repCodes.length === 0 ? (
+                  <>
+                    <p className="text-slate-500">No rep codes configured yet.</p>
+                    <p className="text-sm text-slate-400 mt-1">Assign rep codes to agents in Settings {'\u2192'} Team to calculate payouts.</p>
+                    {records.filter(r => r.report_month === payoutMonth).length > 0 && (
+                      <p className="text-sm text-amber-600 mt-2">{records.filter(r => r.report_month === payoutMonth).length} residual records exist for {monthLabel(payoutMonth)} — assign rep codes to calculate payouts.</p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className="text-slate-500">No matched records for {monthLabel(payoutMonth)}.</p>
+                    <p className="text-sm text-slate-400 mt-1">{repCodes.length} rep code{repCodes.length !== 1 ? 's' : ''} configured but no residual records matched for this period.</p>
+                  </>
+                )}
               </div>
             ) : (
               <>
@@ -1826,24 +1859,31 @@ export default function ReportsPage() {
                           const rowKey = `${row.userId}:${row.partnerId}:${row.codeType}`
                           return (
                             <>
-                              <tr key={rowKey} className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" onClick={() => togglePayoutExpand(rowKey)}>
+                              <tr key={rowKey} className={`border-t border-slate-100 hover:bg-slate-50 cursor-pointer ${row.isUnassigned ? 'bg-amber-50/50' : ''}`} onClick={() => togglePayoutExpand(rowKey)}>
                                 <td className="px-3 py-3 font-medium">
                                   <span className="mr-1 text-slate-400">{expandedPayouts.has(rowKey) ? '\u25BC' : '\u25B6'}</span>
                                   {row.agentName}
-                                  <span className="ml-1 text-xs text-slate-400 capitalize">{row.role.replace('_', ' ')}</span>
+                                  {row.isUnassigned
+                                    ? <span className="ml-1 text-[10px] text-amber-600">assign rep codes to calculate payouts</span>
+                                    : <span className="ml-1 text-xs text-slate-400 capitalize">{row.role.replace('_', ' ')}</span>
+                                  }
                                 </td>
                                 <td className="px-3 py-3">
-                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${row.codeType === 'override' ? 'bg-purple-50 text-purple-700' : row.codeType === 'direct_sub' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
-                                    {row.codeType === 'override' ? 'Override' : row.codeType === 'direct_sub' ? 'Direct' : 'Standard'}
-                                  </span>
-                                  {row.payoutType === 'partner_direct' && <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700">PD</span>}
+                                  {row.isUnassigned ? <span className="text-slate-400">{'\u2014'}</span> : (
+                                    <>
+                                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${row.codeType === 'override' ? 'bg-purple-50 text-purple-700' : row.codeType === 'direct_sub' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
+                                        {row.codeType === 'override' ? 'Override' : row.codeType === 'direct_sub' ? 'Direct' : 'Standard'}
+                                      </span>
+                                      {row.payoutType === 'partner_direct' && <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700">PD</span>}
+                                    </>
+                                  )}
                                 </td>
                                 <td className="px-3 py-3">{row.partnerName}</td>
                                 <td className="px-3 py-3">{row.merchantCount}</td>
                                 <td className="px-3 py-3">{fmt(row.grossRevenue)}</td>
-                                <td className="px-3 py-3 text-red-500">{fmt(row.isoCut)}</td>
-                                <td className="px-3 py-3">{row.splitPct}%</td>
-                                <td className="px-3 py-3">{fmt(row.residualPayout)}</td>
+                                <td className="px-3 py-3 text-red-500">{row.isUnassigned ? '\u2014' : fmt(row.isoCut)}</td>
+                                <td className="px-3 py-3">{row.isUnassigned ? '\u2014' : !row.hasSplitPct ? <span className="text-amber-600 text-xs">Not set</span> : `${row.splitPct}%`}</td>
+                                <td className="px-3 py-3">{row.isUnassigned ? '\u2014' : fmt(row.residualPayout)}</td>
                                 <td className="px-3 py-3 text-emerald-600">{row.bonus > 0 ? fmt(row.bonus) : '\u2014'}</td>
                                 <td className="px-3 py-3 text-red-500">{row.clawback > 0 ? fmt(row.clawback) : '\u2014'}</td>
                                 <td className={`px-3 py-3 font-semibold ${row.netOwed >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmt(row.netOwed)}</td>
