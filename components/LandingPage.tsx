@@ -3,15 +3,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import SplitsLogo from '@/components/SplitsLogo'
 import { supabase } from '@/lib/supabase'
 
 const carouselSlides = [
-  { label: 'Dashboard Overview', color: 'from-slate-700 to-slate-800' },
-  { label: 'Lead Management', color: 'from-slate-700 to-slate-600' },
-  { label: 'AI Residual Import', color: 'from-emerald-900 to-slate-700' },
-  { label: 'Partner Profitability Reports', color: 'from-slate-800 to-emerald-900' },
-  { label: 'E-Signature Flow', color: 'from-slate-600 to-slate-800' },
+  { label: 'Dashboard Overview', src: '/screenshots/dashboard_screenshot.png' },
+  { label: 'Lead Management', src: '/screenshots/lead_management_screenshot.png' },
+  { label: 'AI Residual Reports', src: '/screenshots/AI_Residual_Reports_Screenshot.png' },
+  { label: 'Partner Profitability Reports', src: '/screenshots/Partner_Profitability_Report_Screenshot.png' },
+  { label: 'E-Signature Flow', src: '/screenshots/Signature_Flow_Screenshot.png' },
 ]
 
 const faqs = [
@@ -219,64 +220,16 @@ export default function LandingPage() {
               {carouselSlides.map((slide, i) => (
                 <div
                   key={slide.label}
-                  className={`absolute inset-0 bg-slate-100 transition-opacity duration-700 ease-in-out ${i === activeSlide ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                  className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${i === activeSlide ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                 >
-                  {/* Mock app UI */}
-                  <div className="flex h-full">
-                    {/* Sidebar mock */}
-                    <div className="hidden sm:flex flex-col w-40 bg-[#0F172A] p-3 shrink-0">
-                      <div className="flex items-center gap-1.5 mb-4">
-                        <span className="inline-block w-1.5 h-1.5 rounded-sm bg-emerald-500"></span>
-                        <span className="text-[10px] font-bold text-white">Splits</span>
-                      </div>
-                      <div className="space-y-1">
-                        {['Dashboard', 'Leads', 'Merchants', 'Partners', 'Residuals', 'Reports'].map((n, j) => (
-                          <div key={n} className={`text-[9px] px-2 py-1 rounded ${j === i % 6 ? 'bg-white/10 text-white' : 'text-slate-500'}`}>{n}</div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Main content area */}
-                    <div className="flex-1 p-4 sm:p-6 flex flex-col">
-                      <div className="flex items-center justify-between mb-4">
-                        <div>
-                          <div className="h-5 w-32 bg-slate-300 rounded mb-1"></div>
-                          <div className="h-3 w-48 bg-slate-200 rounded"></div>
-                        </div>
-                        <div className="h-8 w-24 bg-emerald-100 rounded-lg"></div>
-                      </div>
-
-                      {/* Stat cards row */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-                        {[1, 2, 3, 4].map(n => (
-                          <div key={n} className="bg-white rounded-lg p-2.5 border border-slate-200">
-                            <div className="h-2 w-12 bg-slate-200 rounded mb-1.5"></div>
-                            <div className="h-4 w-10 bg-slate-300 rounded"></div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Content block */}
-                      <div className="flex-1 bg-white rounded-lg border border-slate-200 p-4">
-                        <div className="h-3 w-24 bg-slate-200 rounded mb-3"></div>
-                        <div className="space-y-2">
-                          {[1, 2, 3, 4, 5].map(n => (
-                            <div key={n} className="flex items-center gap-3">
-                              <div className="h-2.5 w-2.5 rounded-full bg-emerald-200"></div>
-                              <div className="h-2 flex-1 bg-slate-100 rounded"></div>
-                              <div className="h-2 w-12 bg-slate-200 rounded"></div>
-                              <div className="h-2 w-16 bg-slate-100 rounded"></div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Label overlay */}
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <span className="bg-slate-900/70 text-white text-lg sm:text-xl font-semibold px-5 py-2 rounded-lg backdrop-blur-sm">{slide.label}</span>
-                      </div>
-                    </div>
-                  </div>
+                  <Image
+                    src={slide.src}
+                    alt={slide.label}
+                    fill
+                    className="object-cover object-top"
+                    sizes="(max-width: 768px) 100vw, 900px"
+                    priority={i === 0}
+                  />
                 </div>
               ))}
             </div>
