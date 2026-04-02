@@ -1,10 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import SplitsLogo from '@/components/SplitsLogo'
 import { supabase } from '@/lib/supabase'
+
+const carouselSlides = [
+  { label: 'Dashboard Overview', color: 'from-slate-700 to-slate-800' },
+  { label: 'Lead Management', color: 'from-slate-700 to-slate-600' },
+  { label: 'AI Residual Import', color: 'from-emerald-900 to-slate-700' },
+  { label: 'Partner Profitability Reports', color: 'from-slate-800 to-emerald-900' },
+  { label: 'E-Signature Flow', color: 'from-slate-600 to-slate-800' },
+]
 
 const faqs = [
   {
@@ -94,6 +102,20 @@ export default function LandingPage() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
+  // Carousel state
+  const [activeSlide, setActiveSlide] = useState(0)
+  const [paused, setPaused] = useState(false)
+
+  const nextSlide = useCallback(() => {
+    setActiveSlide(prev => (prev + 1) % carouselSlides.length)
+  }, [])
+
+  useEffect(() => {
+    if (paused) return
+    const timer = setInterval(nextSlide, 4000)
+    return () => clearInterval(timer)
+  }, [paused, nextSlide])
+
   const scrollTo = (id: string) => {
     setMobileOpen(false)
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
@@ -101,151 +123,130 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-white text-slate-900">
-      {/* NAV */}
-      <nav className={`sticky top-0 z-50 transition-all duration-150 ${scrolled ? 'bg-white/80 backdrop-blur-md border-b border-slate-200' : 'bg-transparent'}`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <SplitsLogo size="md" variant="dark" />
+      {/* DARK HERO (nav + hero + carousel) */}
+      <div className="relative bg-gradient-to-b from-slate-900 via-slate-900 to-emerald-950">
+        {/* NAV */}
+        <nav className={`sticky top-0 z-50 transition-all duration-150 ${scrolled ? 'bg-slate-900/90 backdrop-blur-md border-b border-white/10' : 'bg-transparent'}`}>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-16">
+              <SplitsLogo size="md" variant="light" />
 
-            {/* Desktop nav */}
-            <div className="hidden md:flex items-center gap-8">
-              <button onClick={() => scrollTo('features')} className="text-slate-600 hover:text-slate-900 text-base transition duration-150">Features</button>
-              <button onClick={() => scrollTo('pricing')} className="text-slate-600 hover:text-slate-900 text-base transition duration-150">Pricing</button>
-              <button onClick={() => scrollTo('faq')} className="text-slate-600 hover:text-slate-900 text-base transition duration-150">FAQ</button>
-              <Link href="/login" className="text-slate-600 hover:text-slate-900 border border-slate-200 px-5 py-2.5 rounded-lg text-base transition duration-150">Log In</Link>
-              <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg text-base font-medium transition duration-150">Start Free Trial</Link>
-            </div>
-
-            {/* Mobile hamburger */}
-            <button onClick={() => setMobileOpen(!mobileOpen)} className="md:hidden text-slate-600 hover:text-slate-900 w-12 h-12 flex items-center justify-center -mr-2">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                {mobileOpen ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                )}
-              </svg>
-            </button>
-          </div>
-
-          {/* Mobile menu */}
-          {mobileOpen && (
-            <div className="md:hidden pb-4 space-y-2 bg-white">
-              <button onClick={() => scrollTo('features')} className="block w-full text-left px-4 py-3 min-h-[48px] text-slate-600 hover:text-slate-900 text-base">Features</button>
-              <button onClick={() => scrollTo('pricing')} className="block w-full text-left px-4 py-3 min-h-[48px] text-slate-600 hover:text-slate-900 text-base">Pricing</button>
-              <button onClick={() => scrollTo('faq')} className="block w-full text-left px-4 py-3 min-h-[48px] text-slate-600 hover:text-slate-900 text-base">FAQ</button>
-              <div className="flex gap-3 px-4 pt-2">
-                <Link href="/login" className="text-slate-600 hover:text-slate-900 border border-slate-200 px-5 py-2.5 rounded-lg text-base transition duration-150">Log In</Link>
-                <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg text-base font-medium transition duration-150">Start Free Trial</Link>
+              {/* Desktop nav */}
+              <div className="hidden md:flex items-center gap-8">
+                <button onClick={() => scrollTo('features')} className="text-slate-300 hover:text-white text-base transition duration-150">Features</button>
+                <button onClick={() => scrollTo('pricing')} className="text-slate-300 hover:text-white text-base transition duration-150">Pricing</button>
+                <button onClick={() => scrollTo('faq')} className="text-slate-300 hover:text-white text-base transition duration-150">FAQ</button>
+                <Link href="/login" className="text-slate-300 hover:text-white border border-white/20 px-5 py-2.5 rounded-lg text-base transition duration-150">Log In</Link>
+                <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-lg text-base font-medium transition duration-150">Start Free Trial</Link>
               </div>
-            </div>
-          )}
-        </div>
-      </nav>
 
-      {/* HERO */}
-      <section className="bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 sm:pt-24 pb-20">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div className="text-center lg:text-left flex flex-col items-center lg:items-start">
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-tight text-slate-900">
+              {/* Mobile hamburger */}
+              <button onClick={() => setMobileOpen(!mobileOpen)} className="md:hidden text-white hover:text-emerald-400 w-12 h-12 flex items-center justify-center -mr-2">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  {mobileOpen ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  )}
+                </svg>
+              </button>
+            </div>
+
+            {/* Mobile menu */}
+            {mobileOpen && (
+              <div className="md:hidden pb-4 space-y-2 bg-slate-900/95 backdrop-blur-md rounded-b-lg">
+                <button onClick={() => scrollTo('features')} className="block w-full text-left px-4 py-3 min-h-[48px] text-slate-300 hover:text-white text-base">Features</button>
+                <button onClick={() => scrollTo('pricing')} className="block w-full text-left px-4 py-3 min-h-[48px] text-slate-300 hover:text-white text-base">Pricing</button>
+                <button onClick={() => scrollTo('faq')} className="block w-full text-left px-4 py-3 min-h-[48px] text-slate-300 hover:text-white text-base">FAQ</button>
+                <div className="flex gap-3 px-4 pt-2">
+                  <Link href="/login" className="text-slate-300 hover:text-white border border-white/20 px-5 py-2.5 rounded-lg text-base transition duration-150">Log In</Link>
+                  <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-lg text-base font-medium transition duration-150">Start Free Trial</Link>
+                </div>
+              </div>
+            )}
+          </div>
+        </nav>
+
+        {/* HERO */}
+        <section className="pb-32 sm:pb-40">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 sm:pt-24">
+            <div className="text-center max-w-3xl mx-auto">
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-tight text-white">
                 Never Touch a Residual<br />
-                <span className="text-emerald-600">Spreadsheet</span> Again
+                <span className="text-emerald-400">Spreadsheet</span> Again
               </h1>
-              <p className="mt-6 text-xl text-slate-500 leading-relaxed lg:max-w-lg">
+              <p className="mt-6 text-lg sm:text-xl text-slate-400 leading-relaxed">
                 Upload your processor files. See your splits in seconds. Track your entire portfolio from one dashboard. Purpose-built for ISOs — starting at $99/mo.
               </p>
-              <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-                <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-4.5 rounded-lg font-semibold text-xl transition duration-150 shadow-lg shadow-emerald-600/20">
+              <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
+                <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-500 text-white px-10 py-4.5 rounded-lg font-semibold text-xl transition duration-150 shadow-lg shadow-emerald-600/30">
                   Start Free Trial
                 </Link>
-                <button onClick={() => scrollTo('how-it-works')} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-10 py-4.5 rounded-lg font-semibold text-xl transition duration-150">
+                <button onClick={() => scrollTo('how-it-works')} className="bg-white/10 border border-white/20 text-white hover:bg-white/20 px-10 py-4.5 rounded-lg font-semibold text-xl transition duration-150">
                   Watch Demo
                 </button>
               </div>
-              <p className="mt-4 text-sm text-slate-400">No credit card required · Set up in 5 minutes</p>
+              <p className="mt-4 text-sm text-slate-500">No credit card required · Set up in 5 minutes</p>
+            </div>
+          </div>
+        </section>
+
+        {/* Curved bottom edge */}
+        <div className="absolute bottom-0 left-0 right-0 overflow-hidden leading-[0]">
+          <svg viewBox="0 0 1440 60" preserveAspectRatio="none" className="relative block w-full h-[40px] sm:h-[60px]" fill="white">
+            <path d="M0,60 L0,20 Q720,0 1440,20 L1440,60 Z" />
+          </svg>
+        </div>
+      </div>
+
+      {/* DASHBOARD CAROUSEL — overlaps dark hero */}
+      <section className="relative -mt-24 sm:-mt-32 z-10 pb-16">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* Browser frame */}
+          <div
+            className="bg-slate-900 rounded-xl shadow-2xl shadow-slate-900/40 overflow-hidden"
+            onMouseEnter={() => setPaused(true)}
+            onMouseLeave={() => setPaused(false)}
+          >
+            {/* Title bar */}
+            <div className="flex items-center gap-2 px-4 py-3 bg-slate-800/80">
+              <div className="w-3 h-3 rounded-full bg-red-500/60"></div>
+              <div className="w-3 h-3 rounded-full bg-yellow-500/60"></div>
+              <div className="w-3 h-3 rounded-full bg-green-500/60"></div>
+              <span className="ml-3 text-xs text-slate-500">Splits — {carouselSlides[activeSlide].label}</span>
             </div>
 
-            {/* Dashboard mockup */}
-            <div className="hidden lg:block bg-slate-900 rounded-xl border border-slate-200 p-1 shadow-2xl" style={{ transform: 'perspective(1200px) rotateY(-3deg)' }}>
-              <div className="rounded-lg overflow-hidden">
-                {/* Top bar */}
-                <div className="bg-slate-900 flex items-center gap-2 px-4 py-3">
-                  <div className="w-3 h-3 rounded-full bg-red-500/60"></div>
-                  <div className="w-3 h-3 rounded-full bg-yellow-500/60"></div>
-                  <div className="w-3 h-3 rounded-full bg-green-500/60"></div>
-                  <span className="ml-3 text-xs text-slate-500">Splits — Dashboard</span>
-                </div>
-
-                <div className="flex">
-                  {/* Mini sidebar */}
-                  <div className="w-32 bg-[#0F172A] p-3 hidden sm:block">
-                    <div className="flex items-center gap-1.5 mb-4">
-                      <span className="inline-block w-1.5 h-1.5 rounded-sm bg-emerald-500"></span>
-                      <span className="text-[10px] font-bold text-white">Splits</span>
+            {/* Slides */}
+            <div className="relative aspect-video">
+              {carouselSlides.map((slide, i) => (
+                <div
+                  key={slide.label}
+                  className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br ${slide.color} transition-opacity duration-700 ease-in-out ${i === activeSlide ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                >
+                  <div className="text-center">
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-white/10 flex items-center justify-center">
+                      <svg className="w-8 h-8 text-white/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5a1.5 1.5 0 001.5-1.5V4.5a1.5 1.5 0 00-1.5-1.5H3.75a1.5 1.5 0 00-1.5 1.5v15a1.5 1.5 0 001.5 1.5z" />
+                      </svg>
                     </div>
-                    <div className="space-y-1">
-                      {['Dashboard', 'Leads', 'Merchants', 'Partners'].map((n, i) => (
-                        <div key={n} className={`text-[9px] px-2 py-1 rounded ${i === 0 ? 'bg-white/10 text-white' : 'text-slate-400'}`}>{n}</div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Content area */}
-                  <div className="flex-1 bg-[#F8FAFC] p-4">
-                    {/* Stat cards */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-                      {[
-                        { label: 'Active Merchants', val: '247' },
-                        { label: 'Pipeline Value', val: '$1.2M' },
-                        { label: 'Leads This Month', val: '38' },
-                        { label: 'Active Partners', val: '6' },
-                      ].map((s) => (
-                        <div key={s.label} className="bg-white rounded-lg p-2 border border-slate-200">
-                          <p className="text-[8px] text-slate-500 truncate">{s.label}</p>
-                          <p className="text-sm font-bold text-slate-900 mt-0.5">{s.val}</p>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Mini pipeline */}
-                    <div className="bg-white rounded-lg p-3 border border-slate-200 mb-3">
-                      <p className="text-[9px] text-slate-500 mb-2 font-medium">Sales Pipeline</p>
-                      <div className="space-y-1.5">
-                        {[
-                          { label: 'New Prospect', w: '85%', color: 'bg-emerald-500' },
-                          { label: 'Qualified', w: '60%', color: 'bg-amber-400' },
-                          { label: 'Submitted', w: '40%', color: 'bg-violet-500' },
-                          { label: 'Signed', w: '25%', color: 'bg-emerald-600' },
-                        ].map((r) => (
-                          <div key={r.label} className="flex items-center gap-2">
-                            <span className="text-[8px] text-slate-400 w-16 truncate">{r.label}</span>
-                            <div className="flex-1 bg-slate-100 rounded-full h-1.5">
-                              <div className={`h-full rounded-full ${r.color}`} style={{ width: r.w }}></div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Mini activity feed */}
-                    <div className="space-y-1">
-                      {[
-                        { dot: 'bg-emerald-500', text: 'New deal created — ABC Coffee' },
-                        { dot: 'bg-emerald-600', text: 'Lead converted to merchant' },
-                        { dot: 'bg-violet-500', text: 'Document uploaded — Bank stmt' },
-                      ].map((a, i) => (
-                        <div key={i} className="flex items-center gap-1.5">
-                          <div className={`w-1 h-1 rounded-full ${a.dot} shrink-0`}></div>
-                          <p className="text-[8px] text-slate-500 truncate">{a.text}</p>
-                          <span className="text-[7px] text-slate-400 shrink-0 ml-auto">2h ago</span>
-                        </div>
-                      ))}
-                    </div>
+                    <p className="text-white text-xl sm:text-2xl font-semibold">{slide.label}</p>
+                    <p className="text-white/40 text-sm mt-1">Screenshot placeholder</p>
                   </div>
                 </div>
-              </div>
+              ))}
             </div>
+          </div>
+
+          {/* Dot indicators */}
+          <div className="flex justify-center gap-2 mt-5">
+            {carouselSlides.map((slide, i) => (
+              <button
+                key={slide.label}
+                onClick={() => setActiveSlide(i)}
+                className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${i === activeSlide ? 'bg-emerald-600 w-6' : 'bg-slate-300 hover:bg-slate-400'}`}
+                aria-label={`Go to ${slide.label}`}
+              />
+            ))}
           </div>
         </div>
       </section>
