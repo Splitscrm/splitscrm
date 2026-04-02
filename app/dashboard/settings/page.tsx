@@ -1555,73 +1555,72 @@ export default function SettingsPage() {
                 {filteredRepCodes.length === 0 ? (
                   <p className="text-sm text-slate-400 py-4">No rep codes found. Add one to get started.</p>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-slate-500 border-b border-slate-200">
-                          <th className="px-4 py-2.5 font-medium">Agent</th>
-                          <th className="px-4 py-2.5 font-medium">Partner</th>
-                          <th className="px-4 py-2.5 font-medium">Rep Code</th>
-                          <th className="px-4 py-2.5 font-medium">Type</th>
-                          <th className="px-4 py-2.5 font-medium">Label</th>
-                          <th className="px-4 py-2.5 font-medium">Status</th>
-                          <th className="px-4 py-2.5 font-medium">Split %</th>
-                          <th className="px-4 py-2.5 font-medium">Bonus / Deal</th>
-                          <th className="px-4 py-2.5 font-medium">Effective</th>
-                          <th className="px-4 py-2.5 font-medium">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredRepCodes.map(rc => (
-                          <tr key={rc.id} className="border-b border-slate-100 hover:bg-slate-50">
-                            <td className="px-4 py-2.5 font-medium">{getAgentName(rc.user_id)}</td>
-                            <td className="px-4 py-2.5">{getPartnerName(rc.partner_id)}</td>
-                            <td className="px-4 py-2.5 font-mono text-emerald-700">{rc.rep_code}</td>
-                            <td className="px-4 py-2.5">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-slate-500 border-b border-slate-200">
+                        <th className="px-3 py-2 font-medium">Agent</th>
+                        <th className="px-3 py-2 font-medium">Partner</th>
+                        <th className="px-3 py-2 font-medium">Code</th>
+                        <th className="px-3 py-2 font-medium">Split</th>
+                        <th className="px-3 py-2 font-medium">Status</th>
+                        <th className="px-3 py-2 font-medium text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredRepCodes.map(rc => (
+                        <tr key={rc.id} className="border-b border-slate-100 hover:bg-slate-50">
+                          <td className="px-3 py-2">
+                            <div className="font-medium">{getAgentName(rc.user_id)}</div>
+                            <div className="flex items-center gap-1 mt-0.5">
                               <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${rc.code_type === 'override' ? 'bg-purple-50 text-purple-700' : rc.code_type === 'direct_sub' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
                                 {rc.code_type === 'override' ? 'Override' : rc.code_type === 'direct_sub' ? 'Direct' : 'Standard'}
                               </span>
-                              {rc.payout_type === 'partner_direct' && <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700">Partner-Direct</span>}
-                            </td>
-                            <td className="px-4 py-2.5 text-slate-500">{rc.label || '-'}</td>
-                            <td className="px-4 py-2.5">
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${rc.status === 'active' ? 'bg-emerald-50 text-emerald-700' : rc.status === 'transferred' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
-                                {rc.status}
-                              </span>
-                            </td>
-                            <td className="px-4 py-2.5">{rc.split_pct != null ? `${rc.split_pct}%` : '-'}</td>
-                            <td className="px-4 py-2.5">{rc.bonus_per_deal != null ? `$${Number(rc.bonus_per_deal).toFixed(2)}` : '\u2014'}</td>
-                            <td className="px-4 py-2.5 text-slate-500">{rc.effective_date || '-'}</td>
-                            <td className="px-4 py-2.5">
-                              <div className="flex gap-2">
-                                <button onClick={() => openRepModal(rc)} className="text-emerald-600 hover:text-emerald-700 text-xs font-medium">Edit</button>
-                                {rc.status === 'active' && (
-                                  <button onClick={() => handleDeactivateRepCode(rc)} className="text-red-500 hover:text-red-600 text-xs font-medium">Deactivate</button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                              {rc.payout_type === 'partner_direct' && <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700">PD</span>}
+                              {rc.label && <span className="text-[11px] text-slate-400 truncate max-w-[120px]">{rc.label}</span>}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">{getPartnerName(rc.partner_id)}</td>
+                          <td className="px-3 py-2 font-mono text-emerald-700 text-xs">{rc.rep_code}</td>
+                          <td className="px-3 py-2">
+                            {rc.split_pct != null ? `${rc.split_pct}%` : '-'}
+                            {rc.bonus_per_deal != null && <span className="text-[11px] text-slate-400 ml-1">+${Number(rc.bonus_per_deal).toFixed(0)}</span>}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${rc.status === 'active' ? 'bg-emerald-50 text-emerald-700' : rc.status === 'transferred' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                              {rc.status}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="flex justify-end gap-2">
+                              <button onClick={() => openRepModal(rc)} className="text-emerald-600 hover:text-emerald-700 text-xs font-medium">Edit</button>
+                              {rc.status === 'active' && (
+                                <button onClick={() => handleDeactivateRepCode(rc)} className="text-red-500 hover:text-red-600 text-xs font-medium">Deact.</button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 )}
               </div>
 
               {/* REP CODE MODAL */}
               {showRepModal && (
                 <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-                  <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-md mx-4">
-                    <div className="p-6">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold text-slate-900">{repEditing ? 'Edit Rep Code' : 'Add Rep Code'}</h3>
-                        <button onClick={() => setShowRepModal(false)} className="text-slate-400 hover:text-slate-600">
-                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                      <div className="space-y-4">
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-[600px] mx-4 flex flex-col" style={{ maxHeight: '80vh' }}>
+                    {/* Sticky header */}
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
+                      <h3 className="text-lg font-semibold text-slate-900">{repEditing ? 'Edit Rep Code' : 'Add Rep Code'}</h3>
+                      <button onClick={() => setShowRepModal(false)} className="text-slate-400 hover:text-slate-600">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    {/* Scrollable body */}
+                    <div className="overflow-y-auto px-6 py-4 space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className={labelClass}>Agent</label>
                           <select value={repForm.user_id} onChange={e => setRepForm({ ...repForm, user_id: e.target.value })} className={inputClass}>
@@ -1636,6 +1635,8 @@ export default function SettingsPage() {
                             {repPartnersCache.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                           </select>
                         </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className={labelClass}>Rep Code</label>
                           <input type="text" value={repForm.rep_code} onChange={e => setRepForm({ ...repForm, rep_code: e.target.value })} className={inputClass} placeholder="e.g. ABC123" />
@@ -1644,67 +1645,69 @@ export default function SettingsPage() {
                           <label className={labelClass}>Label (optional)</label>
                           <input type="text" value={repForm.label} onChange={e => setRepForm({ ...repForm, label: e.target.value })} className={inputClass} placeholder="e.g. John's Fiserv code" />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className={labelClass}>Payout Type</label>
-                            <select value={repForm.payout_type} onChange={e => setRepForm({ ...repForm, payout_type: e.target.value })} className={inputClass}>
-                              <option value="agent_paid">Paid through Agent</option>
-                              <option value="partner_direct">Paid Direct by Partner</option>
-                            </select>
-                            <p className="text-[11px] text-slate-400 mt-1">{repForm.payout_type === 'agent_paid' ? 'Agent receives full amount and pays sub-agents' : 'Partner pays agent directly, no waterfall needed'}</p>
-                          </div>
-                          <div>
-                            <label className={labelClass}>Code Type</label>
-                            <select value={repForm.code_type} onChange={e => setRepForm({ ...repForm, code_type: e.target.value })} className={inputClass}>
-                              <option value="standard">Standard (own merchants)</option>
-                              <option value="override">Override Earnings</option>
-                              <option value="direct_sub">Direct Sub-Agent</option>
-                            </select>
-                            <p className="text-[11px] text-slate-400 mt-1">{repForm.code_type === 'override' ? 'Master agent override on sub-agent production' : repForm.code_type === 'direct_sub' ? 'Sub-agent paid directly by partner' : 'Standard merchant revenue code'}</p>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-4">
-                          <div>
-                            <label className={labelClass}>Agent Split %</label>
-                            <input type="number" min="0" max="100" step="0.01" value={repForm.split_pct} onChange={e => setRepForm({ ...repForm, split_pct: e.target.value })} className={inputClass} placeholder="Agent's earning %" />
-                          </div>
-                          <div>
-                            <label className={labelClass}>Bonus / Deal ($)</label>
-                            <input type="number" min="0" step="0.01" value={repForm.bonus_per_deal} onChange={e => setRepForm({ ...repForm, bonus_per_deal: e.target.value })} className={inputClass} placeholder="e.g. 150.00" />
-                          </div>
-                          <div>
-                            <label className={labelClass}>Effective Date</label>
-                            <input type="date" value={repForm.effective_date} onChange={e => setRepForm({ ...repForm, effective_date: e.target.value })} className={inputClass} />
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className={labelClass}>ISO Cut Override %</label>
-                            <input type="number" min="0" max="100" step="0.01" value={repForm.house_split_override_pct} onChange={e => setRepForm({ ...repForm, house_split_override_pct: e.target.value })} className={inputClass} placeholder="Overrides org default" />
-                            <p className="text-[11px] text-slate-400 mt-1">(Leave blank to use org default of {teamOrgData?.default_house_split_pct ?? 0}%)</p>
-                          </div>
-                          <div>
-                            <label className={labelClass}>Restricted Split %</label>
-                            <input type="number" min="0" max="100" step="0.01" value={repForm.restricted_split_pct} onChange={e => setRepForm({ ...repForm, restricted_split_pct: e.target.value })} className={inputClass} placeholder="High-risk merchant split" />
-                          </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className={labelClass}>Agent Split %</label>
+                          <input type="number" min="0" max="100" step="0.01" value={repForm.split_pct} onChange={e => setRepForm({ ...repForm, split_pct: e.target.value })} className={inputClass} placeholder="Agent's earning %" />
                         </div>
                         <div>
-                          <label className={labelClass}>Notes (optional)</label>
-                          <textarea value={repForm.notes} onChange={e => setRepForm({ ...repForm, notes: e.target.value })} className={`${inputClass} resize-none`} rows={3} placeholder="Any notes..." />
-                        </div>
-                        {repWarning && (
-                          <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-2.5 rounded-lg text-sm">{repWarning}</div>
-                        )}
-                        {repError && (
-                          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-2.5 rounded-lg text-sm">{repError}</div>
-                        )}
-                        <div className="flex flex-col sm:flex-row sm:justify-end gap-3 pt-2">
-                          <button onClick={() => setShowRepModal(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150">Cancel</button>
-                          <button onClick={handleSaveRepCode} disabled={repSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150 disabled:opacity-50">
-                            {repSaving ? 'Saving...' : repEditing ? 'Update' : 'Add Rep Code'}
-                          </button>
+                          <label className={labelClass}>Bonus / Deal ($)</label>
+                          <input type="number" min="0" step="0.01" value={repForm.bonus_per_deal} onChange={e => setRepForm({ ...repForm, bonus_per_deal: e.target.value })} className={inputClass} placeholder="e.g. 150.00" />
                         </div>
                       </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className={labelClass}>Effective Date</label>
+                          <input type="date" value={repForm.effective_date} onChange={e => setRepForm({ ...repForm, effective_date: e.target.value })} className={inputClass} />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Code Type</label>
+                          <select value={repForm.code_type} onChange={e => setRepForm({ ...repForm, code_type: e.target.value })} className={inputClass}>
+                            <option value="standard">Standard (own merchants)</option>
+                            <option value="override">Override Earnings</option>
+                            <option value="direct_sub">Direct Sub-Agent</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className={labelClass}>Payout Type</label>
+                          <select value={repForm.payout_type} onChange={e => setRepForm({ ...repForm, payout_type: e.target.value })} className={inputClass}>
+                            <option value="agent_paid">Paid through Agent</option>
+                            <option value="partner_direct">Paid Direct by Partner</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className={labelClass}>ISO Cut Override %</label>
+                          <input type="number" min="0" max="100" step="0.01" value={repForm.house_split_override_pct} onChange={e => setRepForm({ ...repForm, house_split_override_pct: e.target.value })} className={inputClass} placeholder="Overrides org default" />
+                          <p className="text-[11px] text-slate-400 mt-1">Blank = org default ({teamOrgData?.default_house_split_pct ?? 0}%)</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className={labelClass}>Restricted Split %</label>
+                          <input type="number" min="0" max="100" step="0.01" value={repForm.restricted_split_pct} onChange={e => setRepForm({ ...repForm, restricted_split_pct: e.target.value })} className={inputClass} placeholder="High-risk merchant split" />
+                        </div>
+                        <div />
+                      </div>
+                      <div>
+                        <label className={labelClass}>Notes (optional)</label>
+                        <textarea value={repForm.notes} onChange={e => setRepForm({ ...repForm, notes: e.target.value })} className={`${inputClass} resize-none`} rows={2} placeholder="Any notes..." />
+                      </div>
+                      {repWarning && (
+                        <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-2.5 rounded-lg text-sm">{repWarning}</div>
+                      )}
+                      {repError && (
+                        <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-2.5 rounded-lg text-sm">{repError}</div>
+                      )}
+                    </div>
+                    {/* Sticky footer */}
+                    <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 shrink-0">
+                      <button onClick={() => setShowRepModal(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150">Cancel</button>
+                      <button onClick={handleSaveRepCode} disabled={repSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150 disabled:opacity-50">
+                        {repSaving ? 'Saving...' : repEditing ? 'Update' : 'Add Rep Code'}
+                      </button>
                     </div>
                   </div>
                 </div>
