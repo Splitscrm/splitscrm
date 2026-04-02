@@ -829,7 +829,7 @@ export default function LeadDetailPage() {
     if (!lead) return;
     const currentDeal = deals.find(d => d.id === dealId) || deal;
     setSigSending(true);
-    await supabase.from("signature_sessions").insert({
+    const { data: newSession } = await supabase.from("signature_sessions").insert({
       org_id: member?.org_id || null,
       deal_id: dealId,
       lead_id: lead.id,
@@ -846,11 +846,19 @@ export default function LeadDetailPage() {
       reused_from_session_id: originalSession.id,
       status: "signed",
       expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    });
+    }).select("id").single();
     await saveDeal();
     await logActivity("mpa_signature_reused", null, null, null,
       `Signature reused from ${new Date(originalSession.signed_at).toLocaleDateString()} for new partner submission`);
     await fetchSigSessions();
+    // Generate PDFs for the reused session in the background
+    if (newSession?.id) {
+      authFetch("/api/regenerate-pdfs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signature_session_id: newSession.id }),
+      }).catch(() => {});
+    }
     setSigSnapshotWarning(null);
     setSigSending(false);
   };
@@ -2004,20 +2012,21 @@ export default function LeadDetailPage() {
                           {sessions.map((s: any, sIdx: number) => (
                             <div key={s.id} className="flex items-start gap-3 text-xs">
                               <div className="flex flex-col items-center">
-                                <span className={`w-2 h-2 rounded-full mt-1.5 ${s.status === "signed" ? "bg-emerald-500" : s.status === "pending" ? "bg-blue-500" : s.status === "expired" ? "bg-slate-300" : "bg-red-400"}`} />
+                                <span className={`w-2 h-2 rounded-full mt-1.5 ${s.decline_note ? "bg-red-400" : s.status === "signed" ? "bg-emerald-500" : s.status === "pending" ? "bg-blue-500" : s.status === "expired" ? "bg-slate-300" : "bg-red-400"}`} />
                                 {sIdx < sessions.length - 1 && <div className="w-px h-6 bg-slate-200 mt-1" />}
                               </div>
                               <div className="flex-1 pb-2">
                                 <p className="font-medium text-slate-700">
-                                  {s.partner_id ? getPartnerNameById(s.partner_id) : "Unknown Partner"}:
-                                  <span className={`ml-1 ${s.status === "signed" ? "text-emerald-600" : s.status === "pending" ? "text-blue-600" : "text-slate-400"}`}>
-                                    {s.status === "signed" ? "Signed" : s.status === "pending" ? "Pending Signature" : s.status === "expired" ? "Expired" : "Revoked"}
+                                  {s.partner_id ? getPartnerNameById(s.partner_id) : "Unknown Partner"}
+                                  <span className="text-slate-400 mx-1">&mdash;</span>
+                                  <span className={s.decline_note ? "text-red-500" : s.status === "signed" ? "text-emerald-600" : s.status === "pending" ? "text-blue-600" : "text-slate-400"}>
+                                    {s.decline_note ? "Declined" : s.status === "signed" ? "Signed" : s.status === "pending" ? "Pending Signature" : s.status === "expired" ? "Expired" : "Revoked"}
                                   </span>
-                                  {s.reused_from_session_id && <span className="text-slate-400 ml-1">(reused)</span>}
+                                  {s.reused_from_session_id && <span className="text-slate-400 ml-1">(reused signature)</span>}
                                 </p>
                                 <p className="text-slate-400">
                                   {s.status === "signed" && s.signed_at ? `Signed ${new Date(s.signed_at).toLocaleDateString()}` : `Sent ${new Date(s.created_at).toLocaleDateString()}`}
-                                  {s.decline_note && <span className="text-amber-500 ml-1">— {s.decline_note}</span>}
+                                  {s.decline_note && <span className="text-red-400 ml-1">({s.decline_note})</span>}
                                 </p>
                               </div>
                             </div>
@@ -2789,10 +2798,11 @@ export default function LeadDetailPage() {
                 // Add decline note to existing signed sessions for this lead
                 const allSessions = Object.values(sigSessions).flat();
                 const previousPartnerName = deal?.partner_id ? getPartnerNameById(deal.partner_id) : "previous partner";
+                const reason = lead.declined_reason ? ` — ${lead.declined_reason}` : "";
                 for (const s of allSessions) {
                   if (s.status === "signed" && !s.decline_note) {
                     await supabase.from("signature_sessions").update({
-                      decline_note: `Original submission declined by ${previousPartnerName}`
+                      decline_note: `Declined by ${previousPartnerName}${reason}`
                     }).eq("id", s.id);
                   }
                 }
