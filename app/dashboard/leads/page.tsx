@@ -217,38 +217,57 @@ export default function LeadsPage() {
     fetchLeads()
   }
 
-  const cascadeDeleteLeads = async (ids: string[]) => {
-    // 1. Find related deals
+  const cascadeDeleteLeads = async (ids: string[]): Promise<string | null> => {
+    // Look up related IDs
     const { data: deals } = await supabase.from('deals').select('id').in('lead_id', ids)
     const dealIds = (deals || []).map((d: any) => d.id)
+    const { data: sessions } = await supabase.from('signature_sessions').select('id').in('lead_id', ids)
+    const sessionIds = (sessions || []).map((s: any) => s.id)
 
-    // 2. Delete deal children first
-    if (dealIds.length > 0) {
-      await supabase.from('deal_documents').delete().in('deal_id', dealIds)
-      await supabase.from('deal_owners').delete().in('deal_id', dealIds)
+    // Delete in FK-safe order — each step must succeed before the next
+    const del = async (table: string, col: string, vals: string[]) => {
+      const res = await supabase.from(table).delete().in(col, vals)
+      return { error: res.error }
     }
-    // deal_owners also has lead_id FK
-    await supabase.from('deal_owners').delete().in('lead_id', ids)
+    const steps: { label: string; fn: () => Promise<{ error: any }> }[] = [
+      // 1. signed_documents (refs deals + signature_sessions)
+      ...(dealIds.length > 0 ? [{ label: 'signed_documents (by deal)', fn: () => del('signed_documents', 'deal_id', dealIds) }] : []),
+      ...(sessionIds.length > 0 ? [{ label: 'signed_documents (by session)', fn: () => del('signed_documents', 'signature_session_id', sessionIds) }] : []),
+      // 2. signature_sessions
+      { label: 'signature_sessions', fn: () => del('signature_sessions', 'lead_id', ids) },
+      // 3. activity_log
+      { label: 'activity_log', fn: () => del('activity_log', 'lead_id', ids) },
+      // 4. communications
+      { label: 'communications', fn: () => del('communications', 'lead_id', ids) },
+      // 5. tasks
+      { label: 'tasks', fn: () => del('tasks', 'lead_id', ids) },
+      // 6. deal_documents
+      ...(dealIds.length > 0 ? [{ label: 'deal_documents', fn: () => del('deal_documents', 'deal_id', dealIds) }] : []),
+      // 7. deal_owners (by deal_id AND by lead_id)
+      ...(dealIds.length > 0 ? [{ label: 'deal_owners (by deal)', fn: () => del('deal_owners', 'deal_id', dealIds) }] : []),
+      { label: 'deal_owners (by lead)', fn: () => del('deal_owners', 'lead_id', ids) },
+      // 8. deals
+      ...(dealIds.length > 0 ? [{ label: 'deals', fn: () => del('deals', 'id', dealIds) }] : []),
+      // 9. merchants
+      { label: 'merchants', fn: () => del('merchants', 'lead_id', ids) },
+      // 10. leads
+      { label: 'leads', fn: () => del('leads', 'id', ids) },
+    ]
 
-    // 3. Delete other lead children
-    await supabase.from('activity_log').delete().in('lead_id', ids)
-    await supabase.from('communications').delete().in('lead_id', ids)
-    await supabase.from('tasks').delete().in('lead_id', ids)
-
-    // 4. Delete deals
-    if (dealIds.length > 0) {
-      await supabase.from('deals').delete().in('id', dealIds)
+    for (const step of steps) {
+      const { error } = await step.fn()
+      if (error) {
+        console.error(`Cascade delete failed at "${step.label}":`, error)
+        return `Failed to delete ${step.label}: ${error.message}`
+      }
     }
-
-    // 5. Delete leads
-    const { error } = await supabase.from('leads').delete().in('id', ids)
-    if (error) console.error('Lead delete error:', error)
-    return error
+    return null
   }
 
   const deleteLead = async (id: string) => {
     if (!confirm('Delete this lead?')) return
-    await cascadeDeleteLeads([id])
+    const err = await cascadeDeleteLeads([id])
+    if (err) { alert(err); return }
     if (selectedLeadId === id) closePreview()
     fetchLeads()
   }
@@ -270,10 +289,18 @@ export default function LeadsPage() {
     }
   }
 
+  const [bulkDeleteError, setBulkDeleteError] = useState('')
+
   const bulkDelete = async () => {
     setBulkDeleting(true)
+    setBulkDeleteError('')
     const ids = Array.from(selectedIds)
-    await cascadeDeleteLeads(ids)
+    const err = await cascadeDeleteLeads(ids)
+    if (err) {
+      setBulkDeleteError(err)
+      setBulkDeleting(false)
+      return
+    }
     if (selectedLeadId && ids.includes(selectedLeadId)) closePreview()
     setSelectedIds(new Set())
     setShowBulkDeleteModal(false)
@@ -890,9 +917,10 @@ export default function LeadsPage() {
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
             <h3 className="text-lg font-semibold text-slate-900 mb-2">Delete {selectedIds.size} lead{selectedIds.size !== 1 ? 's' : ''}?</h3>
             <p className="text-sm text-slate-500 mb-4">This will also delete associated deals, documents, and communications. This can&apos;t be undone.</p>
+            {bulkDeleteError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{bulkDeleteError}</p>}
             <div className="flex gap-3">
               <button onClick={bulkDelete} disabled={bulkDeleting} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-50">{bulkDeleting ? 'Deleting...' : 'Delete'}</button>
-              <button onClick={() => setShowBulkDeleteModal(false)} disabled={bulkDeleting} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">Cancel</button>
+              <button onClick={() => { setShowBulkDeleteModal(false); setBulkDeleteError(''); }} disabled={bulkDeleting} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">Cancel</button>
             </div>
           </div>
         </div>
