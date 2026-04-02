@@ -123,53 +123,52 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-white text-slate-900">
-      {/* DARK HERO (nav + hero + carousel) */}
-      <div className="relative bg-gradient-to-b from-slate-900 via-slate-900 to-emerald-950">
-        {/* NAV */}
-        <nav className={`sticky top-0 z-50 transition-all duration-150 ${scrolled ? 'bg-slate-900/90 backdrop-blur-md border-b border-white/10' : 'bg-transparent'}`}>
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center justify-between h-16">
-              <SplitsLogo size="md" variant="light" />
+      {/* NAV — fixed at top, transitions from transparent (dark hero) to white */}
+      <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-200 ${scrolled ? 'bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm' : 'bg-transparent'}`}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <SplitsLogo size="md" variant={scrolled ? 'dark' : 'light'} />
 
-              {/* Desktop nav */}
-              <div className="hidden md:flex items-center gap-8">
-                <button onClick={() => scrollTo('features')} className="text-slate-300 hover:text-white text-base transition duration-150">Features</button>
-                <button onClick={() => scrollTo('pricing')} className="text-slate-300 hover:text-white text-base transition duration-150">Pricing</button>
-                <button onClick={() => scrollTo('faq')} className="text-slate-300 hover:text-white text-base transition duration-150">FAQ</button>
-                <Link href="/login" className="text-slate-300 hover:text-white border border-white/20 px-5 py-2.5 rounded-lg text-base transition duration-150">Log In</Link>
-                <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-lg text-base font-medium transition duration-150">Start Free Trial</Link>
-              </div>
-
-              {/* Mobile hamburger */}
-              <button onClick={() => setMobileOpen(!mobileOpen)} className="md:hidden text-white hover:text-emerald-400 w-12 h-12 flex items-center justify-center -mr-2">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  {mobileOpen ? (
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  ) : (
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  )}
-                </svg>
-              </button>
+            {/* Desktop nav */}
+            <div className="hidden md:flex items-center gap-8">
+              <button onClick={() => scrollTo('features')} className={`text-base transition duration-150 ${scrolled ? 'text-slate-600 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}>Features</button>
+              <button onClick={() => scrollTo('pricing')} className={`text-base transition duration-150 ${scrolled ? 'text-slate-600 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}>Pricing</button>
+              <button onClick={() => scrollTo('faq')} className={`text-base transition duration-150 ${scrolled ? 'text-slate-600 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}>FAQ</button>
+              <Link href="/login" className={`px-5 py-2.5 rounded-lg text-base transition duration-150 border ${scrolled ? 'text-slate-600 hover:text-slate-900 border-slate-200' : 'text-slate-300 hover:text-white border-white/20'}`}>Log In</Link>
+              <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-lg text-base font-medium transition duration-150">Start Free Trial</Link>
             </div>
 
-            {/* Mobile menu */}
-            {mobileOpen && (
-              <div className="md:hidden pb-4 space-y-2 bg-slate-900/95 backdrop-blur-md rounded-b-lg">
-                <button onClick={() => scrollTo('features')} className="block w-full text-left px-4 py-3 min-h-[48px] text-slate-300 hover:text-white text-base">Features</button>
-                <button onClick={() => scrollTo('pricing')} className="block w-full text-left px-4 py-3 min-h-[48px] text-slate-300 hover:text-white text-base">Pricing</button>
-                <button onClick={() => scrollTo('faq')} className="block w-full text-left px-4 py-3 min-h-[48px] text-slate-300 hover:text-white text-base">FAQ</button>
-                <div className="flex gap-3 px-4 pt-2">
-                  <Link href="/login" className="text-slate-300 hover:text-white border border-white/20 px-5 py-2.5 rounded-lg text-base transition duration-150">Log In</Link>
-                  <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-lg text-base font-medium transition duration-150">Start Free Trial</Link>
-                </div>
-              </div>
-            )}
+            {/* Mobile hamburger */}
+            <button onClick={() => setMobileOpen(!mobileOpen)} className={`md:hidden w-12 h-12 flex items-center justify-center -mr-2 ${scrolled ? 'text-slate-600 hover:text-slate-900' : 'text-white hover:text-emerald-400'}`}>
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                {mobileOpen ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                )}
+              </svg>
+            </button>
           </div>
-        </nav>
 
-        {/* HERO */}
-        <section className="pb-32 sm:pb-40">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 sm:pt-24">
+          {/* Mobile menu */}
+          {mobileOpen && (
+            <div className={`md:hidden pb-4 space-y-2 rounded-b-lg ${scrolled ? 'bg-white' : 'bg-slate-900/95 backdrop-blur-md'}`}>
+              <button onClick={() => scrollTo('features')} className={`block w-full text-left px-4 py-3 min-h-[48px] text-base ${scrolled ? 'text-slate-600 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}>Features</button>
+              <button onClick={() => scrollTo('pricing')} className={`block w-full text-left px-4 py-3 min-h-[48px] text-base ${scrolled ? 'text-slate-600 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}>Pricing</button>
+              <button onClick={() => scrollTo('faq')} className={`block w-full text-left px-4 py-3 min-h-[48px] text-base ${scrolled ? 'text-slate-600 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}>FAQ</button>
+              <div className="flex gap-3 px-4 pt-2">
+                <Link href="/login" className={`px-5 py-2.5 rounded-lg text-base transition duration-150 border ${scrolled ? 'text-slate-600 hover:text-slate-900 border-slate-200' : 'text-slate-300 hover:text-white border-white/20'}`}>Log In</Link>
+                <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-lg text-base font-medium transition duration-150">Start Free Trial</Link>
+              </div>
+            </div>
+          )}
+        </div>
+      </nav>
+
+      {/* DARK HERO */}
+      <div className="relative bg-gradient-to-b from-slate-900 via-slate-900 to-emerald-950 pb-32 sm:pb-40">
+        <section className="pt-28 sm:pt-36">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-3xl mx-auto">
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-tight text-white">
                 Never Touch a Residual<br />
@@ -179,10 +178,10 @@ export default function LandingPage() {
                 Upload your processor files. See your splits in seconds. Track your entire portfolio from one dashboard. Purpose-built for ISOs — starting at $99/mo.
               </p>
               <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
-                <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-500 text-white px-10 py-4.5 rounded-lg font-semibold text-xl transition duration-150 shadow-lg shadow-emerald-600/30">
+                <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-500 text-white px-10 py-4 rounded-lg font-semibold text-xl transition duration-150 shadow-lg shadow-emerald-600/30">
                   Start Free Trial
                 </Link>
-                <button onClick={() => scrollTo('how-it-works')} className="bg-white/10 border border-white/20 text-white hover:bg-white/20 px-10 py-4.5 rounded-lg font-semibold text-xl transition duration-150">
+                <button onClick={() => scrollTo('how-it-works')} className="bg-white/10 border border-white/20 text-white hover:bg-white/20 px-10 py-4 rounded-lg font-semibold text-xl transition duration-150">
                   Watch Demo
                 </button>
               </div>
@@ -200,37 +199,83 @@ export default function LandingPage() {
       </div>
 
       {/* DASHBOARD CAROUSEL — overlaps dark hero */}
-      <section className="relative -mt-24 sm:-mt-32 z-10 pb-16">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Browser frame */}
+      <section className="relative -mt-20 sm:-mt-28 z-10 pb-16">
+        <div className="max-w-[900px] mx-auto px-4 sm:px-6 lg:px-8">
           <div
-            className="bg-slate-900 rounded-xl shadow-2xl shadow-slate-900/40 overflow-hidden"
+            className="rounded-xl shadow-xl overflow-hidden border border-slate-200"
             onMouseEnter={() => setPaused(true)}
             onMouseLeave={() => setPaused(false)}
           >
-            {/* Title bar */}
-            <div className="flex items-center gap-2 px-4 py-3 bg-slate-800/80">
-              <div className="w-3 h-3 rounded-full bg-red-500/60"></div>
-              <div className="w-3 h-3 rounded-full bg-yellow-500/60"></div>
-              <div className="w-3 h-3 rounded-full bg-green-500/60"></div>
-              <span className="ml-3 text-xs text-slate-500">Splits — {carouselSlides[activeSlide].label}</span>
+            {/* Browser chrome */}
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-200 border-b border-slate-300">
+              <div className="w-3 h-3 rounded-full bg-red-400"></div>
+              <div className="w-3 h-3 rounded-full bg-yellow-400"></div>
+              <div className="w-3 h-3 rounded-full bg-green-400"></div>
+              <div className="ml-3 flex-1 bg-white rounded-md px-3 py-1 text-xs text-slate-400 max-w-xs">app.splitscrm.com</div>
             </div>
 
             {/* Slides */}
-            <div className="relative aspect-video">
+            <div className="relative aspect-video bg-slate-100">
               {carouselSlides.map((slide, i) => (
                 <div
                   key={slide.label}
-                  className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br ${slide.color} transition-opacity duration-700 ease-in-out ${i === activeSlide ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                  className={`absolute inset-0 bg-slate-100 transition-opacity duration-700 ease-in-out ${i === activeSlide ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
                 >
-                  <div className="text-center">
-                    <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-white/10 flex items-center justify-center">
-                      <svg className="w-8 h-8 text-white/60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5a1.5 1.5 0 001.5-1.5V4.5a1.5 1.5 0 00-1.5-1.5H3.75a1.5 1.5 0 00-1.5 1.5v15a1.5 1.5 0 001.5 1.5z" />
-                      </svg>
+                  {/* Mock app UI */}
+                  <div className="flex h-full">
+                    {/* Sidebar mock */}
+                    <div className="hidden sm:flex flex-col w-40 bg-[#0F172A] p-3 shrink-0">
+                      <div className="flex items-center gap-1.5 mb-4">
+                        <span className="inline-block w-1.5 h-1.5 rounded-sm bg-emerald-500"></span>
+                        <span className="text-[10px] font-bold text-white">Splits</span>
+                      </div>
+                      <div className="space-y-1">
+                        {['Dashboard', 'Leads', 'Merchants', 'Partners', 'Residuals', 'Reports'].map((n, j) => (
+                          <div key={n} className={`text-[9px] px-2 py-1 rounded ${j === i % 6 ? 'bg-white/10 text-white' : 'text-slate-500'}`}>{n}</div>
+                        ))}
+                      </div>
                     </div>
-                    <p className="text-white text-xl sm:text-2xl font-semibold">{slide.label}</p>
-                    <p className="text-white/40 text-sm mt-1">Screenshot placeholder</p>
+
+                    {/* Main content area */}
+                    <div className="flex-1 p-4 sm:p-6 flex flex-col">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <div className="h-5 w-32 bg-slate-300 rounded mb-1"></div>
+                          <div className="h-3 w-48 bg-slate-200 rounded"></div>
+                        </div>
+                        <div className="h-8 w-24 bg-emerald-100 rounded-lg"></div>
+                      </div>
+
+                      {/* Stat cards row */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                        {[1, 2, 3, 4].map(n => (
+                          <div key={n} className="bg-white rounded-lg p-2.5 border border-slate-200">
+                            <div className="h-2 w-12 bg-slate-200 rounded mb-1.5"></div>
+                            <div className="h-4 w-10 bg-slate-300 rounded"></div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Content block */}
+                      <div className="flex-1 bg-white rounded-lg border border-slate-200 p-4">
+                        <div className="h-3 w-24 bg-slate-200 rounded mb-3"></div>
+                        <div className="space-y-2">
+                          {[1, 2, 3, 4, 5].map(n => (
+                            <div key={n} className="flex items-center gap-3">
+                              <div className="h-2.5 w-2.5 rounded-full bg-emerald-200"></div>
+                              <div className="h-2 flex-1 bg-slate-100 rounded"></div>
+                              <div className="h-2 w-12 bg-slate-200 rounded"></div>
+                              <div className="h-2 w-16 bg-slate-100 rounded"></div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Label overlay */}
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <span className="bg-slate-900/70 text-white text-lg sm:text-xl font-semibold px-5 py-2 rounded-lg backdrop-blur-sm">{slide.label}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -243,7 +288,7 @@ export default function LandingPage() {
               <button
                 key={slide.label}
                 onClick={() => setActiveSlide(i)}
-                className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${i === activeSlide ? 'bg-emerald-600 w-6' : 'bg-slate-300 hover:bg-slate-400'}`}
+                className={`h-2.5 rounded-full transition-all duration-300 ${i === activeSlide ? 'bg-emerald-600 w-6' : 'bg-slate-300 hover:bg-slate-400 w-2.5'}`}
                 aria-label={`Go to ${slide.label}`}
               />
             ))}
