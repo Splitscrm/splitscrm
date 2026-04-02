@@ -8,11 +8,11 @@ import SplitsLogo from '@/components/SplitsLogo'
 import { supabase } from '@/lib/supabase'
 
 const carouselSlides = [
-  { label: 'Dashboard Overview', src: '/screenshots/dashboard_screenshot.png' },
-  { label: 'Lead Management', src: '/screenshots/lead_management_screenshot.png' },
-  { label: 'AI Residual Reports', src: '/screenshots/AI_Residual_Reports_Screenshot.png' },
-  { label: 'Partner Profitability Reports', src: '/screenshots/Partner_Profitability_Report_Screenshot.png' },
-  { label: 'E-Signature Flow', src: '/screenshots/Signature_Flow_Screenshot.png' },
+  { label: 'Dashboard Overview', src: '/screenshots/dashboard screenshot.png' },
+  { label: 'Lead Management', src: '/screenshots/lead management screenshot.png' },
+  { label: 'AI Residual Reports', src: '/screenshots/AI Residual Reports Screenshot.png' },
+  { label: 'Partner Profitability Reports', src: '/screenshots/Partner Profitability Report Screenshot.png' },
+  { label: 'E-Signature Flow', src: '/screenshots/Signature Flow Screenshot.png' },
 ]
 
 const faqs = [
