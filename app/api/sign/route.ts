@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
   const { data: session, error: sessionErr } = await supabase
     .from("signature_sessions")
-    .select("id, status, expires_at, signed_at, signer_name, signer_email, deal_id, lead_id, partner_id")
+    .select("id, status, expires_at, signed_at, signer_name, signer_email, deal_id, lead_id, partner_id, partner_ids")
     .eq("token", token)
     .single();
 
@@ -47,6 +47,12 @@ export async function GET(req: NextRequest) {
       if (deal.partner_id) {
         const { data: partner } = await supabase.from("partners").select("id, name").eq("id", deal.partner_id).single();
         if (partner) result.partner = partner;
+      }
+      // Multi-partner: fetch all partner names
+      const pids: string[] = session.partner_ids || [];
+      if (pids.length > 1) {
+        const { data: allPartners } = await supabase.from("partners").select("id, name").in("id", pids);
+        if (allPartners) result.partners = allPartners;
       }
       if (deal.bank_routing) result.deal.bank_routing = "****" + deal.bank_routing.slice(-4);
       if (deal.bank_account) result.deal.bank_account = "****" + deal.bank_account.slice(-4);
@@ -100,7 +106,7 @@ export async function POST(req: NextRequest) {
     // Look up session
     const { data: session, error: sessionErr } = await supabase
       .from("signature_sessions")
-      .select("id, status, expires_at, lead_id, deal_id, org_id, signer_name, signer_email")
+      .select("id, status, expires_at, lead_id, deal_id, org_id, signer_name, signer_email, partner_id, partner_ids")
       .eq("token", token)
       .single();
 
@@ -158,18 +164,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Failed to save signature" }, { status: 500, headers });
     }
 
+    // Fetch full data for PDF generation and multi-partner cloning
+    const { data: fullDeal } = await supabase.from("deals").select("*").eq("id", session.deal_id).single();
+    const { data: fullOwners } = await supabase.from("deal_owners").select("*").eq("lead_id", session.lead_id).order("created_at");
+    const { data: fullLead } = await supabase.from("leads").select("id, business_name, contact_name, email, phone, monthly_volume").eq("id", session.lead_id).single();
+    const ts = Date.now();
+
     // ── Generate PDFs (non-blocking — errors are logged but don't fail the signing) ──
     try {
-      const { data: fullDeal } = await supabase.from("deals").select("*").eq("id", session.deal_id).single();
-      const { data: fullOwners } = await supabase.from("deal_owners").select("*").eq("lead_id", session.lead_id).order("created_at");
-      const { data: fullLead } = await supabase.from("leads").select("id, business_name, contact_name, email, phone, monthly_volume").eq("id", session.lead_id).single();
       let partnerName: string | null = null;
       if (fullDeal?.partner_id) {
         const { data: p } = await supabase.from("partners").select("name").eq("id", fullDeal.partner_id).single();
         partnerName = p?.name || null;
       }
 
-      const ts = Date.now();
       const storagePath = (name: string) => `${session.org_id}/${session.lead_id}/${name}-${ts}.pdf`;
 
       // 1. Signature Certificate
@@ -220,6 +228,73 @@ export async function POST(req: NextRequest) {
       }
     } catch (pdfErr: any) {
       console.error("PDF generation failed (signature still saved):", pdfErr?.message || pdfErr);
+    }
+
+    // ── Multi-partner: create per-partner sessions for additional partners ──
+    const partnerIds: string[] = session.partner_ids || [];
+    if (partnerIds.length > 1) {
+      try {
+        const additionalPartners = partnerIds.filter((pid: string) => pid !== session.partner_id);
+        for (const pid of additionalPartners) {
+          const { data: clonedSession } = await supabase.from("signature_sessions").insert({
+            org_id: session.org_id,
+            deal_id: session.deal_id,
+            lead_id: session.lead_id,
+            partner_id: pid,
+            token: crypto.randomUUID(),
+            signer_name: session.signer_name,
+            signer_email: session.signer_email,
+            signer_ip: signerIp,
+            signer_user_agent: signerUserAgent,
+            signature_data,
+            consent_given: true,
+            signed_at: now,
+            signed_data_snapshot: signedDataSnapshot,
+            reused_from_session_id: session.id,
+            status: "signed",
+            expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          }).select("id").single();
+
+          // Generate PDFs for this partner session
+          if (clonedSession?.id) {
+            try {
+              let clonePartnerName: string | null = null;
+              const { data: cp } = await supabase.from("partners").select("name").eq("id", pid).single();
+              clonePartnerName = cp?.name || null;
+
+              const cloneCertBytes = await generateSignatureCertificate({
+                businessLegalName: fullDeal?.business_legal_name || fullLead?.business_name || "",
+                dbaName: fullDeal?.dba_name || "",
+                signerName: session.signer_name,
+                signerEmail: session.signer_email,
+                signedAt: now,
+                signerIp,
+                signerUserAgent,
+                signatureDataBase64: signature_data,
+              });
+              const cloneCertPath = `${session.org_id}/${session.lead_id}/signature-certificate-${pid.slice(0, 8)}-${ts}.pdf`;
+              const { error: ccErr } = await supabase.storage.from("deal-documents").upload(cloneCertPath, cloneCertBytes, { contentType: "application/pdf" });
+              if (!ccErr) {
+                await supabase.from("signed_documents").insert({ signature_session_id: clonedSession.id, deal_id: session.deal_id, org_id: session.org_id, document_type: "signature_certificate", file_url: cloneCertPath });
+              }
+
+              const cloneMpaBytes = await generateMpaSummary({
+                deal: fullDeal, owners: fullOwners || [], lead: fullLead, partnerName: clonePartnerName,
+                signerName: session.signer_name, signedAt: now, signatureDataBase64: signature_data,
+              });
+              const cloneMpaPath = `${session.org_id}/${session.lead_id}/mpa-summary-${pid.slice(0, 8)}-${ts}.pdf`;
+              const { error: cmErr } = await supabase.storage.from("deal-documents").upload(cloneMpaPath, cloneMpaBytes, { contentType: "application/pdf" });
+              if (!cmErr) {
+                await supabase.from("signed_documents").insert({ signature_session_id: clonedSession.id, deal_id: session.deal_id, org_id: session.org_id, document_type: "mpa_summary", file_url: cloneMpaPath });
+              }
+            } catch (clonePdfErr: any) {
+              console.error("PDF generation for partner clone failed:", clonePdfErr?.message);
+            }
+          }
+        }
+      } catch (cloneErr: any) {
+        console.error("Multi-partner session cloning failed:", cloneErr?.message);
+      }
     }
 
     // Multi-location: only update lead to 'signed' if ALL deals have signed sessions

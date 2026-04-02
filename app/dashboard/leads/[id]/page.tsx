@@ -125,6 +125,7 @@ export default function LeadDetailPage() {
   // Signature flow state
   const [sigBanks, setSigBanks] = useState<any[]>([]);
   const [sigTemplate, setSigTemplate] = useState<any>(null);
+  const [sigPartnerSelections, setSigPartnerSelections] = useState<Record<string, { bank: string; banks: any[]; template: any }>>({});
   const [sigSessions, setSigSessions] = useState<Record<string, any[]>>({});
   const [sigSignerName, setSigSignerName] = useState("");
   const [sigSignerEmail, setSigSignerEmail] = useState("");
@@ -769,6 +770,120 @@ export default function LeadDetailPage() {
     setSigCopied(token);
     setTimeout(() => setSigCopied(null), 2000);
   };
+
+  // ── Multi-partner selection helpers ──
+  const togglePartnerSelection = async (partnerId: string) => {
+    setSigPartnerSelections(prev => {
+      if (prev[partnerId]) {
+        const { [partnerId]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [partnerId]: { bank: "", banks: [], template: null } };
+    });
+    // Fetch banks for newly checked partner
+    if (!sigPartnerSelections[partnerId]) {
+      const { data } = await supabase.from("partner_sponsor_banks").select("id, bank_name").eq("partner_id", partnerId).order("bank_name");
+      setSigPartnerSelections(prev => prev[partnerId] ? { ...prev, [partnerId]: { ...prev[partnerId], banks: data || [] } } : prev);
+    }
+  };
+
+  const setPartnerBank = async (partnerId: string, bankName: string) => {
+    let template: any = null;
+    if (bankName) {
+      const { data } = await supabase.from("mpa_templates").select("*").eq("partner_id", partnerId).eq("sponsor_bank", bankName).eq("is_active", true).limit(1).maybeSingle();
+      template = data || null;
+    }
+    setSigPartnerSelections(prev => ({
+      ...prev,
+      [partnerId]: { ...prev[partnerId], bank: bankName, template },
+    }));
+  };
+
+  const sendBatchForSignature = async (dealId: string) => {
+    if (!lead || !sigSignerEmail || !sigSignerName) return;
+    const selectedIds = Object.keys(sigPartnerSelections);
+    if (selectedIds.length === 0) return;
+    setSigSending(true);
+    const token = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + parseInt(sigExpiry) * 24 * 60 * 60 * 1000).toISOString();
+    const primaryPartnerId = selectedIds[0];
+    const primaryBank = sigPartnerSelections[primaryPartnerId]?.bank || null;
+    // Save the primary partner on the deal for the signing page display
+    updateDealField("partner_id", primaryPartnerId);
+    if (primaryBank) updateDealField("sponsor_bank", primaryBank);
+    await supabase.from("signature_sessions").insert({
+      org_id: member?.org_id || null,
+      deal_id: dealId,
+      lead_id: lead.id,
+      partner_id: primaryPartnerId,
+      partner_ids: selectedIds,
+      token,
+      signer_name: sigSignerName,
+      signer_email: sigSignerEmail,
+      status: "pending",
+      expires_at: expiresAt,
+    });
+    await saveDeal();
+    await fetchSigSessions();
+    setSigSending(false);
+  };
+
+  // Reuse signature for multiple new partners at once
+  const reuseBatchSignature = async (dealId: string, originalSession: any, partnerIds: string[]) => {
+    if (!lead) return;
+    setSigSending(true);
+    for (const pid of partnerIds) {
+      const sel = sigPartnerSelections[pid];
+      const { data: newSession } = await supabase.from("signature_sessions").insert({
+        org_id: member?.org_id || null,
+        deal_id: dealId,
+        lead_id: lead.id,
+        partner_id: pid,
+        token: crypto.randomUUID(),
+        signer_name: originalSession.signer_name,
+        signer_email: originalSession.signer_email,
+        signer_ip: originalSession.signer_ip,
+        signer_user_agent: originalSession.signer_user_agent,
+        signature_data: originalSession.signature_data,
+        consent_given: originalSession.consent_given,
+        signed_at: originalSession.signed_at,
+        signed_data_snapshot: buildDataSnapshot(deal, owners),
+        reused_from_session_id: originalSession.id,
+        status: "signed",
+        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      }).select("id").single();
+      if (newSession?.id) {
+        authFetch("/api/regenerate-pdfs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signature_session_id: newSession.id }),
+        }).catch(() => {});
+      }
+    }
+    await logActivity("mpa_signature_reused", null, null, null,
+      `Signature reused for ${partnerIds.length} partner${partnerIds.length > 1 ? "s" : ""}`);
+    await fetchSigSessions();
+    setSigSending(false);
+  };
+
+  // Get partner IDs that already have signed sessions for this deal
+  const getSignedPartnerIds = (dealId: string): Set<string> => {
+    const sessions = sigSessions[dealId] || [];
+    return new Set(sessions.filter((s: any) => s.status === "signed" && s.partner_id).map((s: any) => s.partner_id));
+  };
+
+  // Update per-partner submission status on the deal
+  const updatePartnerSubmissionStatus = async (partnerId: string, status: string) => {
+    if (!deal) return;
+    const current = deal.partner_submission_status || {};
+    const updated = { ...current, [partnerId]: { ...current[partnerId], status, updated_at: new Date().toISOString() } };
+    updateDealField("partner_submission_status", updated);
+    await supabase.from("deals").update({ partner_submission_status: updated }).eq("id", deal.id);
+    const pName = getPartnerNameById(partnerId);
+    await logActivity("partner_status_update", null, null, null, `${pName} submission status: ${status}`);
+  };
+
+  const partnerStatusOptions = ["signed", "submitted", "under_review", "approved", "declined", "withdrawn"];
 
   const regeneratePdfs = async (sessionId: string) => {
     setRegenerating(sessionId);
@@ -1877,36 +1992,58 @@ export default function LeadDetailPage() {
                     <div>
                       <div className="flex items-center gap-2 mb-3">
                         <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">1</span>
-                        <h4 className="text-sm font-semibold text-slate-900">Select Partner & Sponsor Bank</h4>
+                        <h4 className="text-sm font-semibold text-slate-900">Select Partners & Sponsor Banks</h4>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-slate-500 block mb-1">Partner</label>
-                          <select value={d.partner_id || ""} onChange={(e) => { if (isActiveDeal) handleSigPartnerChange(e.target.value); }} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
-                            <option value="">Select partner...</option>
-                            {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-xs text-slate-500 block mb-1">Sponsor Bank</label>
-                          <select value={d.sponsor_bank || ""} onChange={(e) => { if (isActiveDeal) handleSigBankChange(e.target.value); }} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" disabled={!d.partner_id}>
-                            <option value="">Select bank...</option>
-                            {(isActiveDeal ? sigBanks : []).map(b => <option key={b.id} value={b.bank_name}>{b.bank_name}</option>)}
-                          </select>
-                        </div>
-                      </div>
-                      {isActiveDeal && d.partner_id && d.sponsor_bank && (
-                        <p className={`text-xs mt-2 ${sigTemplate ? "text-emerald-600" : "text-amber-600"}`}>
-                          {sigTemplate ? `MPA Template: ${sigTemplate.template_name} \u2713 loaded` : "\u26A0 No MPA template found for this sponsor bank"}
-                        </p>
-                      )}
+                      {(() => {
+                        const signedPids = getSignedPartnerIds(d.id);
+                        return (
+                          <div className="space-y-2">
+                            {partners.map(p => {
+                              const alreadySigned = signedPids.has(p.id);
+                              const isChecked = !!sigPartnerSelections[p.id];
+                              const sel = sigPartnerSelections[p.id];
+                              return (
+                                <div key={p.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${alreadySigned ? "border-emerald-200 bg-emerald-50" : isChecked ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked || alreadySigned}
+                                    disabled={alreadySigned}
+                                    onChange={() => { if (isActiveDeal && !alreadySigned) togglePartnerSelection(p.id); }}
+                                    className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                  />
+                                  <span className="text-sm font-medium text-slate-900 min-w-[120px]">{p.name}</span>
+                                  {alreadySigned ? (
+                                    <span className="text-xs text-emerald-600 font-medium">{"\u2705"} Signed</span>
+                                  ) : isChecked ? (
+                                    <>
+                                      <select
+                                        value={sel?.bank || ""}
+                                        onChange={(e) => setPartnerBank(p.id, e.target.value)}
+                                        className="text-xs px-2 py-1 rounded border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500 flex-1 max-w-[200px]"
+                                      >
+                                        <option value="">Sponsor Bank...</option>
+                                        {(sel?.banks || []).map((b: any) => <option key={b.id} value={b.bank_name}>{b.bank_name}</option>)}
+                                      </select>
+                                      {sel?.bank && (
+                                        <span className={`text-[10px] font-medium ${sel.template ? "text-emerald-600" : "text-amber-500"}`}>
+                                          {sel.template ? `MPA \u2713` : "\u26A0 No template"}
+                                        </span>
+                                      )}
+                                    </>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
 
-                    {/* Reuse banner: show when partner differs from existing signed session */}
+                    {/* Reuse banner: show when there's a reusable signature and new unchecked partners */}
                     {(() => {
                       const signedSession = reusableSession;
-                      const partnerDiffers = signedSession && d.partner_id && d.partner_id !== signedSession.partner_id;
-                      if (!signedSession || !partnerDiffers) return null;
+                      const selectedNewIds = Object.keys(sigPartnerSelections).filter(pid => !getSignedPartnerIds(d.id).has(pid));
+                      if (!signedSession || selectedNewIds.length === 0) return null;
                       return (
                         <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
                           <div className="flex items-start gap-3">
@@ -1914,17 +2051,20 @@ export default function LeadDetailPage() {
                             <div className="flex-1">
                               <p className="text-sm font-medium text-emerald-800">Existing signature available</p>
                               <p className="text-xs text-emerald-600 mt-0.5">
-                                Signed by {signedSession.signer_name} on {new Date(signedSession.signed_at).toLocaleDateString()}
-                                {signedSession.partner_id ? ` (originally for ${getPartnerNameById(signedSession.partner_id)})` : ""}
-                                . Use for <strong>{getPartnerNameById(d.partner_id)}</strong>?
+                                Signed by {signedSession.signer_name} on {new Date(signedSession.signed_at).toLocaleDateString()}.
+                                Reuse for {selectedNewIds.map(pid => getPartnerNameById(pid)).join(", ")}?
                               </p>
                               <div className="flex items-center gap-3 mt-3">
                                 <button
-                                  onClick={() => handleReuseSignature(d.id, signedSession)}
-                                  disabled={sigSending || !d.sponsor_bank}
+                                  onClick={() => {
+                                    const allHaveBanks = selectedNewIds.every(pid => sigPartnerSelections[pid]?.bank);
+                                    if (!allHaveBanks) { setDealMsg("Select a sponsor bank for each partner first"); setTimeout(() => setDealMsg(""), 3000); return; }
+                                    reuseBatchSignature(d.id, signedSession, selectedNewIds);
+                                  }}
+                                  disabled={sigSending}
                                   className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:opacity-50"
                                 >
-                                  {sigSending ? "Processing..." : "Reuse Signature"}
+                                  {sigSending ? "Processing..." : `Reuse Signature for ${selectedNewIds.length} Partner${selectedNewIds.length > 1 ? "s" : ""}`}
                                 </button>
                                 <span className="text-xs text-slate-400">or request a new signature below</span>
                               </div>
@@ -1999,8 +2139,17 @@ export default function LeadDetailPage() {
                           {mpaResult.warningCount > 0 && <p className="text-xs text-amber-500 mb-2">{mpaResult.warningCount} warning{mpaResult.warningCount > 1 ? "s" : ""} — you can still send, but review recommended.</p>}
                           {mpaResult.blockingCount === 0 && mpaResult.warningCount === 0 && <p className="text-xs text-emerald-600 mb-2">All MPA fields complete — ready to send</p>}
                           <button
-                            onClick={() => sendForSignature(d.id)}
-                            disabled={sigSending || !sigSignerEmail || !sigSignerName || !d.partner_id || !d.sponsor_bank}
+                            onClick={() => {
+                              const selectedNew = Object.keys(sigPartnerSelections).filter(pid => !getSignedPartnerIds(d.id).has(pid));
+                              if (selectedNew.length > 0) {
+                                const allHaveBanks = selectedNew.every(pid => sigPartnerSelections[pid]?.bank);
+                                if (!allHaveBanks) { setDealMsg("Select a sponsor bank for each partner first"); setTimeout(() => setDealMsg(""), 3000); return; }
+                                sendBatchForSignature(d.id);
+                              } else {
+                                sendForSignature(d.id);
+                              }
+                            }}
+                            disabled={sigSending || !sigSignerEmail || !sigSignerName || Object.keys(sigPartnerSelections).filter(pid => !getSignedPartnerIds(d.id).has(pid)).length === 0}
                             className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
                           >
                             {sigSending ? "Sending..." : "Request New Signature"}
@@ -2019,28 +2168,43 @@ export default function LeadDetailPage() {
                       </button>
                       {sigHistoryOpen && (
                         <div className="mt-3 space-y-2">
-                          {sessions.map((s: any, sIdx: number) => (
+                          {sessions.map((s: any, sIdx: number) => {
+                            const pStatus = s.partner_id && d.partner_submission_status?.[s.partner_id]?.status;
+                            return (
                             <div key={s.id} className="flex items-start gap-3 text-xs">
                               <div className="flex flex-col items-center">
                                 <span className={`w-2 h-2 rounded-full mt-1.5 ${s.decline_note ? "bg-red-400" : s.status === "signed" ? "bg-emerald-500" : s.status === "pending" ? "bg-blue-500" : s.status === "expired" ? "bg-slate-300" : "bg-red-400"}`} />
                                 {sIdx < sessions.length - 1 && <div className="w-px h-6 bg-slate-200 mt-1" />}
                               </div>
                               <div className="flex-1 pb-2">
-                                <p className="font-medium text-slate-700">
-                                  {s.partner_id ? getPartnerNameById(s.partner_id) : "Unknown Partner"}
-                                  <span className="text-slate-400 mx-1">&mdash;</span>
-                                  <span className={s.decline_note ? "text-red-500" : s.status === "signed" ? "text-emerald-600" : s.status === "pending" ? "text-blue-600" : "text-slate-400"}>
-                                    {s.decline_note ? "Declined" : s.status === "signed" ? "Signed" : s.status === "pending" ? "Pending Signature" : s.status === "expired" ? "Expired" : "Revoked"}
-                                  </span>
-                                  {s.reused_from_session_id && <span className="text-slate-400 ml-1">(reused signature)</span>}
-                                </p>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-medium text-slate-700">
+                                    {s.partner_id ? getPartnerNameById(s.partner_id) : "Unknown Partner"}
+                                    <span className="text-slate-400 mx-1">&mdash;</span>
+                                    <span className={s.decline_note ? "text-red-500" : s.status === "signed" ? "text-emerald-600" : s.status === "pending" ? "text-blue-600" : "text-slate-400"}>
+                                      {s.decline_note ? "Declined" : s.status === "signed" ? "Signed" : s.status === "pending" ? "Pending Signature" : s.status === "expired" ? "Expired" : "Revoked"}
+                                    </span>
+                                    {s.reused_from_session_id && <span className="text-slate-400 ml-1">(reused)</span>}
+                                  </p>
+                                  {s.status === "signed" && s.partner_id && canEdit && (
+                                    <select
+                                      value={pStatus || "signed"}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onChange={(e) => updatePartnerSubmissionStatus(s.partner_id, e.target.value)}
+                                      className="text-[10px] px-1.5 py-0.5 rounded border border-slate-200 bg-white text-slate-600"
+                                    >
+                                      {partnerStatusOptions.map(opt => <option key={opt} value={opt}>{opt.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</option>)}
+                                    </select>
+                                  )}
+                                </div>
                                 <p className="text-slate-400">
                                   {s.status === "signed" && s.signed_at ? `Signed ${new Date(s.signed_at).toLocaleDateString()}` : `Sent ${new Date(s.created_at).toLocaleDateString()}`}
                                   {s.decline_note && <span className="text-red-400 ml-1">({s.decline_note})</span>}
                                 </p>
                               </div>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>

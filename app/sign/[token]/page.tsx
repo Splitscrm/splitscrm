@@ -15,6 +15,7 @@ export default function SignPage() {
   const [lead, setLead] = useState<any>(null);
   const [owners, setOwners] = useState<any[]>([]);
   const [partner, setPartner] = useState<any>(null);
+  const [allPartners, setAllPartners] = useState<any[]>([]);
 
   // Signature state
   const [consent, setConsent] = useState(false);
@@ -49,6 +50,7 @@ export default function SignPage() {
       if (data.lead) setLead(data.lead);
       if (data.owners) setOwners(data.owners);
       if (data.partner) setPartner(data.partner);
+      if (data.partners) setAllPartners(data.partners);
 
       setState("signing");
     } catch {
@@ -374,13 +376,17 @@ export default function SignPage() {
           )}
 
           {/* Partner & Bank */}
-          {(partner || deal?.sponsor_bank) && (
+          {(partner || deal?.sponsor_bank || allPartners.length > 0) && (
             <div>
-              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Processing Partner</h3>
-              <div className="grid grid-cols-2 gap-x-4">
-                {partner && <div><span className={labelClass}>Partner</span><p className={valueClass}>{partner.name}</p></div>}
-                {deal?.sponsor_bank && <div><span className={labelClass}>Sponsor Bank</span><p className={valueClass}>{deal.sponsor_bank}</p></div>}
-              </div>
+              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">{allPartners.length > 1 ? "Submitting To" : "Processing Partner"}</h3>
+              {allPartners.length > 1 ? (
+                <p className={valueClass}>{allPartners.map((p: any) => p.name).join(", ")}</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-x-4">
+                  {partner && <div><span className={labelClass}>Partner</span><p className={valueClass}>{partner.name}</p></div>}
+                  {deal?.sponsor_bank && <div><span className={labelClass}>Sponsor Bank</span><p className={valueClass}>{deal.sponsor_bank}</p></div>}
+                </div>
+              )}
             </div>
           )}
         </div>
