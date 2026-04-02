@@ -217,9 +217,38 @@ export default function LeadsPage() {
     fetchLeads()
   }
 
+  const cascadeDeleteLeads = async (ids: string[]) => {
+    // 1. Find related deals
+    const { data: deals } = await supabase.from('deals').select('id').in('lead_id', ids)
+    const dealIds = (deals || []).map((d: any) => d.id)
+
+    // 2. Delete deal children first
+    if (dealIds.length > 0) {
+      await supabase.from('deal_documents').delete().in('deal_id', dealIds)
+      await supabase.from('deal_owners').delete().in('deal_id', dealIds)
+    }
+    // deal_owners also has lead_id FK
+    await supabase.from('deal_owners').delete().in('lead_id', ids)
+
+    // 3. Delete other lead children
+    await supabase.from('activity_log').delete().in('lead_id', ids)
+    await supabase.from('communications').delete().in('lead_id', ids)
+    await supabase.from('tasks').delete().in('lead_id', ids)
+
+    // 4. Delete deals
+    if (dealIds.length > 0) {
+      await supabase.from('deals').delete().in('id', dealIds)
+    }
+
+    // 5. Delete leads
+    const { error } = await supabase.from('leads').delete().in('id', ids)
+    if (error) console.error('Lead delete error:', error)
+    return error
+  }
+
   const deleteLead = async (id: string) => {
     if (!confirm('Delete this lead?')) return
-    await supabase.from('leads').delete().eq('id', id)
+    await cascadeDeleteLeads([id])
     if (selectedLeadId === id) closePreview()
     fetchLeads()
   }
@@ -244,17 +273,7 @@ export default function LeadsPage() {
   const bulkDelete = async () => {
     setBulkDeleting(true)
     const ids = Array.from(selectedIds)
-    const { data: deals } = await supabase.from('deals').select('id').in('lead_id', ids)
-    const dealIds = (deals || []).map((d: any) => d.id)
-    if (dealIds.length > 0) {
-      await supabase.from('deal_owners').delete().in('deal_id', dealIds)
-      await supabase.from('deal_documents').delete().in('deal_id', dealIds)
-      await supabase.from('deals').delete().in('lead_id', ids)
-    }
-    await supabase.from('communications').delete().in('lead_id', ids)
-    await supabase.from('activity_log').delete().in('lead_id', ids)
-    await supabase.from('tasks').delete().in('lead_id', ids)
-    await supabase.from('leads').delete().in('id', ids)
+    await cascadeDeleteLeads(ids)
     if (selectedLeadId && ids.includes(selectedLeadId)) closePreview()
     setSelectedIds(new Set())
     setShowBulkDeleteModal(false)
