@@ -74,7 +74,7 @@ export function checkMpaCompleteness(
     }
     sections.push({
       name: "Ownership",
-      tab: "DealInfo",
+      tab: "Ownership",
       status: missing.length === 0 ? "complete" : owners.length === 0 ? "not_started" : "missing",
       missingFields: missing,
       isBlocking: true,
@@ -159,7 +159,7 @@ export function checkMpaCompleteness(
     if (warnings.length > 0) {
       sections.push({
         name: "Owner Warnings",
-        tab: "DealInfo",
+        tab: "Ownership",
         status: "warning",
         missingFields: warnings,
         isBlocking: false,

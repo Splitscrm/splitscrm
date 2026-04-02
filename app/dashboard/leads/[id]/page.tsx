@@ -990,6 +990,11 @@ export default function LeadDetailPage() {
   };
 
   // Get the partner name by id
+  // Get the rep code for the assigned agent at a specific partner
+  const getRepCodeForPartner = (partnerId: string) => {
+    return agentRepCodes.find(rc => rc.partner_id === partnerId && rc.status === "active");
+  };
+
   const getPartnerNameById = (pid: string | null) => {
     if (!pid) return "Unknown Partner";
     return partners.find(p => p.id === pid)?.name || "Unknown Partner";
@@ -1443,6 +1448,7 @@ export default function LeadDetailPage() {
             { key: "Pricing", label: "Pricing" },
             { key: "Equipment", label: "Equipment" },
             ...(["qualified_prospect", "send_for_signature", "signed", "submitted", "converted"].includes(lead.status) ? [{ key: "DealInfo", label: "Deal Info" }] : []),
+            ...(["qualified_prospect", "send_for_signature", "signed", "submitted", "converted"].includes(lead.status) ? [{ key: "Ownership", label: "Ownership", badge: owners.length }] : []),
             { key: "Documents", label: "Documents", badge: documents.length },
             ...(deals.length > 1 ? [{ key: "Locations", label: "Locations", badge: deals.length }] : []),
             { key: "Activity", label: "Activity", badge: activities.length },
@@ -1660,6 +1666,12 @@ export default function LeadDetailPage() {
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                   </select>
+                  {deal?.partner_id && (() => {
+                    const rc = getRepCodeForPartner(deal.partner_id);
+                    if (rc) return <p className="text-xs text-slate-500 mt-1">Rep Code: <span className="font-mono">{rc.rep_code}</span>{rc.split_pct != null ? ` \u2014 ${rc.split_pct}% split` : ""}</p>;
+                    if (lead.assigned_to) return <p className="text-xs text-amber-500 mt-1">{"\u26A0"} No rep code for this agent at {getPartnerNameById(deal.partner_id)}. <Link href="/dashboard/settings" className="text-emerald-600 hover:text-emerald-700 underline">Assign</Link></p>;
+                    return null;
+                  })()}
                 </div>
               </div>
             </div>
@@ -2002,35 +2014,47 @@ export default function LeadDetailPage() {
                               const alreadySigned = signedPids.has(p.id);
                               const isChecked = !!sigPartnerSelections[p.id];
                               const sel = sigPartnerSelections[p.id];
+                              const repCode = getRepCodeForPartner(p.id);
                               return (
-                                <div key={p.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${alreadySigned ? "border-emerald-200 bg-emerald-50" : isChecked ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}>
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked || alreadySigned}
-                                    disabled={alreadySigned}
-                                    onChange={() => { if (isActiveDeal && !alreadySigned) togglePartnerSelection(p.id); }}
-                                    className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                                  />
-                                  <span className="text-sm font-medium text-slate-900 min-w-[120px]">{p.name}</span>
-                                  {alreadySigned ? (
-                                    <span className="text-xs text-emerald-600 font-medium">{"\u2705"} Signed</span>
-                                  ) : isChecked ? (
-                                    <>
-                                      <select
-                                        value={sel?.bank || ""}
-                                        onChange={(e) => setPartnerBank(p.id, e.target.value)}
-                                        className="text-xs px-2 py-1 rounded border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500 flex-1 max-w-[200px]"
-                                      >
-                                        <option value="">Sponsor Bank...</option>
-                                        {(sel?.banks || []).map((b: any) => <option key={b.id} value={b.bank_name}>{b.bank_name}</option>)}
-                                      </select>
-                                      {sel?.bank && (
-                                        <span className={`text-[10px] font-medium ${sel.template ? "text-emerald-600" : "text-amber-500"}`}>
-                                          {sel.template ? `MPA \u2713` : "\u26A0 No template"}
-                                        </span>
-                                      )}
-                                    </>
-                                  ) : null}
+                                <div key={p.id} className={`px-3 py-2 rounded-lg border ${alreadySigned ? "border-emerald-200 bg-emerald-50" : isChecked ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}>
+                                  <div className="flex items-center gap-3">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked || alreadySigned}
+                                      disabled={alreadySigned}
+                                      onChange={() => { if (isActiveDeal && !alreadySigned) togglePartnerSelection(p.id); }}
+                                      className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                    />
+                                    <span className="text-sm font-medium text-slate-900 min-w-[120px]">{p.name}</span>
+                                    {alreadySigned ? (
+                                      <span className="text-xs text-emerald-600 font-medium">{"\u2705"} Signed</span>
+                                    ) : isChecked ? (
+                                      <>
+                                        <select
+                                          value={sel?.bank || ""}
+                                          onChange={(e) => setPartnerBank(p.id, e.target.value)}
+                                          className="text-xs px-2 py-1 rounded border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500 flex-1 max-w-[200px]"
+                                        >
+                                          <option value="">Sponsor Bank...</option>
+                                          {(sel?.banks || []).map((b: any) => <option key={b.id} value={b.bank_name}>{b.bank_name}</option>)}
+                                        </select>
+                                        {sel?.bank && (
+                                          <span className={`text-[10px] font-medium ${sel.template ? "text-emerald-600" : "text-amber-500"}`}>
+                                            {sel.template ? `MPA \u2713` : "\u26A0 No template"}
+                                          </span>
+                                        )}
+                                      </>
+                                    ) : null}
+                                  </div>
+                                  {(isChecked || alreadySigned) && (
+                                    <div className="ml-7 mt-1">
+                                      {repCode ? (
+                                        <span className="text-[10px] text-slate-500">Rep Code: <span className="font-mono text-slate-700">{repCode.rep_code}</span>{repCode.split_pct != null ? ` \u2014 ${repCode.split_pct}% split` : ""}</span>
+                                      ) : lead.assigned_to ? (
+                                        <span className="text-[10px] text-amber-500">{"\u26A0"} No rep code assigned for this agent at {p.name}. <Link href="/dashboard/settings" className="text-emerald-600 hover:text-emerald-700 underline">Assign</Link></span>
+                                      ) : null}
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}
@@ -2446,122 +2470,13 @@ export default function LeadDetailPage() {
               </div>
             </div>
 
-            {/* GROUP 2 - Ownership, Banking & Compliance */}
+            {/* GROUP 2 - Banking & Compliance */}
             <div onClick={() => toggleGroup("group2")} className={`flex justify-between items-center cursor-pointer bg-white rounded-xl p-4 border border-slate-200 shadow-sm mb-2 ${openGroups.group2 ? "border-l-4 border-l-emerald-500" : ""}`}>
-              <h3 className="text-lg font-semibold text-slate-700">Ownership, Banking & Compliance<span className="bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full ml-2">{owners.length}</span><span className="bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full ml-1">{documents.length} docs</span></h3>
+              <h3 className="text-lg font-semibold text-slate-700">Banking & Compliance</h3>
               <span className={`text-slate-400 transition-transform duration-200 ${openGroups.group2 ? "rotate-180" : ""}`}>▼</span>
             </div>
             <div className="overflow-hidden transition-all duration-300 ease-in-out" style={{ maxHeight: openGroups.group2 ? "5000px" : "0px", opacity: openGroups.group2 ? 1 : 0 }}>
               <div className="space-y-6 mb-6">
-                <div className={sectionClass}>
-                  <div className="flex justify-between items-center mb-4">
-                    <h4 className="font-semibold text-emerald-600">Ownership</h4>
-                    <button onClick={addOwner} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs transition">+ Add Owner</button>
-                  </div>
-                  {owners.length === 0 && <p className="text-slate-500 text-sm">No owners added yet.</p>}
-                  {(() => {
-                    const totalPct = owners.reduce((s, o) => s + (Number(o.ownership_pct) || 0), 0);
-                    const hasControlPerson = owners.some(o => !!o.is_control_prong);
-                    return (
-                      <>
-                        {owners.length > 0 && (
-                          <div className="flex items-center gap-4 mb-3 text-sm">
-                            <span className={`font-medium ${totalPct === 100 ? "text-emerald-600" : "text-red-500"}`}>
-                              {totalPct === 100 ? "✓" : "!"} Ownership: {totalPct}%
-                            </span>
-                            {owners.length > 0 && !hasControlPerson && <span className="text-amber-600 text-xs">No control person designated</span>}
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                  {owners.map((o, idx) => (
-                    <div key={o.id} className="border border-slate-200 rounded-lg p-4 mb-4">
-                      <div className="flex justify-between items-center mb-3">
-                        <span className="text-sm font-medium">Owner {idx + 1}</span>
-                        <button onClick={() => removeOwner(idx)} className="text-red-400 hover:text-red-300 text-xs">Remove</button>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-3">
-                        <div><label className={labelClass}>Full Name</label><input type="text" value={o.full_name || ""} onChange={(e) => updateOwner(idx, "full_name", e.target.value)} className={inputClass} /></div>
-                        <div><label className={labelClass}>Title</label><input type="text" value={o.title || ""} onChange={(e) => updateOwner(idx, "title", e.target.value)} className={inputClass} /></div>
-                        <div><label className={labelClass}>Ownership %</label><input type="number" value={o.ownership_pct || ""} onChange={(e) => updateOwner(idx, "ownership_pct", e.target.value)} className={inputClass} /></div>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-3">
-                        <div><label className={labelClass}>DOB</label><input type="date" value={o.dob || ""} onChange={(e) => updateOwner(idx, "dob", e.target.value)} className={inputClass} /></div>
-                        <div>
-                          <label className={labelClass}>SSN</label>
-                          <div className="relative">
-                            {revealedSsns[idx] !== undefined ? (
-                              <input
-                                type="text"
-                                value={revealedSsns[idx]}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  updateOwner(idx, "_ssn_plain", val);
-                                  setRevealedSsns(prev => ({ ...prev, [idx]: val }));
-                                }}
-                                className={inputClass + " pr-10"}
-                                placeholder="###-##-####"
-                              />
-                            ) : (
-                              <input
-                                type="password"
-                                value={o.ssn_encrypted ? "••••••••••" : o._ssn_plain || ""}
-                                onChange={(e) => {
-                                  updateOwner(idx, "_ssn_plain", e.target.value);
-                                }}
-                                className={inputClass + " pr-10"}
-                                placeholder="•••-••-####"
-                                readOnly={!!o.ssn_encrypted && !o._ssn_plain}
-                              />
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => toggleSsnVisibility(idx)}
-                              disabled={revealingIdx === idx}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm disabled:opacity-50"
-                              title={revealedSsns[idx] !== undefined ? "Hide SSN" : "Show SSN"}
-                            >
-                              {revealingIdx === idx ? "⏳" : revealedSsns[idx] !== undefined ? "🙈" : "👁"}
-                            </button>
-                          </div>
-                          <p className="text-xs text-slate-400 mt-0.5">🔒 Encrypted</p>
-                        </div>
-                        <div><label className={labelClass}>Phone</label><input type="tel" value={o.phone || ""} onChange={(e) => updateOwner(idx, "phone", e.target.value)} className={inputClass} /></div>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-3">
-                        <div><label className={labelClass}>Email</label><input type="email" value={o.email || ""} onChange={(e) => updateOwner(idx, "email", e.target.value)} className={inputClass} /></div>
-                        <div><label className={labelClass}>DL State</label><select value={o.dl_state || ""} onChange={(e) => updateOwner(idx, "dl_state", e.target.value)} className={inputClass}><option value="">Select...</option>{US_STATES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
-                        <div>
-                          <label className={labelClass}>DL Expiration Date</label>
-                          <input type="date" value={o.dl_expiration || ""} onChange={(e) => updateOwner(idx, "dl_expiration", e.target.value)} className={inputClass} />
-                          {o.dl_expiration && new Date(o.dl_expiration) < new Date() && <p className="text-xs text-red-500 mt-0.5">Expired</p>}
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-4 gap-4 mb-3">
-                        <div><label className={labelClass}>Address</label><input type="text" value={o.address || ""} onChange={(e) => updateOwner(idx, "address", e.target.value)} className={inputClass} /></div>
-                        <div><label className={labelClass}>City</label><input type="text" value={o.city || ""} onChange={(e) => updateOwner(idx, "city", e.target.value)} className={inputClass} /></div>
-                        <div><label className={labelClass}>State</label><select value={o.state || ""} onChange={(e) => updateOwner(idx, "state", e.target.value)} className={inputClass}><option value="">Select...</option>{US_STATES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
-                        <div><label className={labelClass}>Zip</label><input type="text" value={o.zip || ""} onChange={(e) => updateOwner(idx, "zip", e.target.value)} className={inputClass} /></div>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
-                        <div><label className={labelClass}>Citizenship</label><input type="text" value={o.citizenship ?? "US"} onChange={(e) => updateOwner(idx, "citizenship", e.target.value)} className={inputClass} /></div>
-                        <div className="flex items-center gap-3 pt-7">
-                          <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={o.is_us_resident !== false} onChange={(e) => updateOwner(idx, "is_us_resident", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-sm text-slate-700">US Resident</span></label>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-x-6 gap-y-2 mt-3 pt-3 border-t border-slate-100">
-                        <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.is_control_prong} onChange={(e) => updateOwner(idx, "is_control_prong", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Control Person (FinCEN CDD)</span></label>
-                        <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.personal_guarantee} onChange={(e) => updateOwner(idx, "personal_guarantee", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Personal Guarantee</span></label>
-                        <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.prior_bankruptcies} onChange={(e) => updateOwner(idx, "prior_bankruptcies", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Prior Bankruptcies</span></label>
-                        <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.criminal_history} onChange={(e) => updateOwner(idx, "criminal_history", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Criminal History</span></label>
-                        <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.match_tmf_listed} onChange={(e) => updateOwner(idx, "match_tmf_listed", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">MATCH/TMF Listed</span></label>
-                      </div>
-                      {o.match_tmf_listed && <p className="text-xs text-red-500 mt-2 bg-red-50 rounded p-2">Prior MATCH listing must be disclosed — undisclosed listings cause auto-decline</p>}
-                    </div>
-                  ))}
-                </div>
-
                 <div className={sectionClass}>
                   <h4 className="font-semibold mb-4 text-emerald-600">Banking Info</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -2680,6 +2595,106 @@ export default function LeadDetailPage() {
             )}
           </>
         )}
+        </>)}
+
+        {/* ═══════════ OWNERSHIP TAB ═══════════ */}
+        {leadTab === "Ownership" && (<>
+          {!["qualified_prospect", "send_for_signature", "signed", "submitted", "converted"].includes(lead.status) ? (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-center">
+              <p className="text-slate-500 text-sm">Move to Qualified Prospect to add ownership info.</p>
+            </div>
+          ) : (
+            <>
+              <div className={sectionClass}>
+                <div className="flex justify-between items-center mb-4">
+                  <h4 className="font-semibold text-emerald-600">Ownership</h4>
+                  {canEdit && <button onClick={addOwner} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs transition">+ Add Owner</button>}
+                </div>
+                {owners.length === 0 && <p className="text-slate-500 text-sm">No owners added yet.</p>}
+                {(() => {
+                  const totalPct = owners.reduce((s, o) => s + (Number(o.ownership_pct) || 0), 0);
+                  const hasControlPerson = owners.some(o => !!o.is_control_prong);
+                  return (
+                    <>
+                      {owners.length > 0 && (
+                        <div className="flex items-center gap-4 mb-3 text-sm">
+                          <span className={`font-medium ${totalPct === 100 ? "text-emerald-600" : "text-red-500"}`}>
+                            {totalPct === 100 ? "\u2713" : "!"} Ownership: {totalPct}%
+                          </span>
+                          {owners.length > 0 && !hasControlPerson && <span className="text-amber-600 text-xs">No control person designated</span>}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+                {owners.map((o, idx) => (
+                  <div key={o.id} className="border border-slate-200 rounded-lg p-4 mb-4">
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="text-sm font-medium">Owner {idx + 1}</span>
+                      {canEdit && <button onClick={() => removeOwner(idx)} className="text-red-400 hover:text-red-300 text-xs">Remove</button>}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-3">
+                      <div><label className={labelClass}>Full Name</label><input type="text" value={o.full_name || ""} onChange={(e) => updateOwner(idx, "full_name", e.target.value)} className={inputClass} /></div>
+                      <div><label className={labelClass}>Title</label><input type="text" value={o.title || ""} onChange={(e) => updateOwner(idx, "title", e.target.value)} className={inputClass} /></div>
+                      <div><label className={labelClass}>Ownership %</label><input type="number" value={o.ownership_pct || ""} onChange={(e) => updateOwner(idx, "ownership_pct", e.target.value)} className={inputClass} /></div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-3">
+                      <div><label className={labelClass}>DOB</label><input type="date" value={o.dob || ""} onChange={(e) => updateOwner(idx, "dob", e.target.value)} className={inputClass} /></div>
+                      <div>
+                        <label className={labelClass}>SSN</label>
+                        <div className="relative">
+                          {revealedSsns[idx] !== undefined ? (
+                            <input type="text" value={revealedSsns[idx]} onChange={(e) => { const val = e.target.value; updateOwner(idx, "_ssn_plain", val); setRevealedSsns(prev => ({ ...prev, [idx]: val })); }} className={inputClass + " pr-10"} placeholder="###-##-####" />
+                          ) : (
+                            <input type="password" value={o.ssn_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : o._ssn_plain || ""} onChange={(e) => { updateOwner(idx, "_ssn_plain", e.target.value); }} className={inputClass + " pr-10"} placeholder="\u2022\u2022\u2022-\u2022\u2022-####" readOnly={!!o.ssn_encrypted && !o._ssn_plain} />
+                          )}
+                          <button type="button" onClick={() => toggleSsnVisibility(idx)} disabled={revealingIdx === idx} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm disabled:opacity-50" title={revealedSsns[idx] !== undefined ? "Hide SSN" : "Show SSN"}>
+                            {revealingIdx === idx ? "\u23F3" : revealedSsns[idx] !== undefined ? "\uD83D\uDE48" : "\uD83D\uDC41"}
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-0.5">{"\uD83D\uDD12"} Encrypted</p>
+                      </div>
+                      <div><label className={labelClass}>Phone</label><input type="tel" value={o.phone || ""} onChange={(e) => updateOwner(idx, "phone", e.target.value)} className={inputClass} /></div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-3">
+                      <div><label className={labelClass}>Email</label><input type="email" value={o.email || ""} onChange={(e) => updateOwner(idx, "email", e.target.value)} className={inputClass} /></div>
+                      <div><label className={labelClass}>DL State</label><select value={o.dl_state || ""} onChange={(e) => updateOwner(idx, "dl_state", e.target.value)} className={inputClass}><option value="">Select...</option>{US_STATES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                      <div>
+                        <label className={labelClass}>DL Expiration Date</label>
+                        <input type="date" value={o.dl_expiration || ""} onChange={(e) => updateOwner(idx, "dl_expiration", e.target.value)} className={inputClass} />
+                        {o.dl_expiration && new Date(o.dl_expiration) < new Date() && <p className="text-xs text-red-500 mt-0.5">Expired</p>}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-4 mb-3">
+                      <div><label className={labelClass}>Address</label><input type="text" value={o.address || ""} onChange={(e) => updateOwner(idx, "address", e.target.value)} className={inputClass} /></div>
+                      <div><label className={labelClass}>City</label><input type="text" value={o.city || ""} onChange={(e) => updateOwner(idx, "city", e.target.value)} className={inputClass} /></div>
+                      <div><label className={labelClass}>State</label><select value={o.state || ""} onChange={(e) => updateOwner(idx, "state", e.target.value)} className={inputClass}><option value="">Select...</option>{US_STATES.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                      <div><label className={labelClass}>Zip</label><input type="text" value={o.zip || ""} onChange={(e) => updateOwner(idx, "zip", e.target.value)} className={inputClass} /></div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
+                      <div><label className={labelClass}>Citizenship</label><input type="text" value={o.citizenship ?? "US"} onChange={(e) => updateOwner(idx, "citizenship", e.target.value)} className={inputClass} /></div>
+                      <div className="flex items-center gap-3 pt-7">
+                        <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={o.is_us_resident !== false} onChange={(e) => updateOwner(idx, "is_us_resident", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-sm text-slate-700">US Resident</span></label>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-x-6 gap-y-2 mt-3 pt-3 border-t border-slate-100">
+                      <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.is_control_prong} onChange={(e) => updateOwner(idx, "is_control_prong", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Control Person (FinCEN CDD)</span></label>
+                      <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.personal_guarantee} onChange={(e) => updateOwner(idx, "personal_guarantee", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Personal Guarantee</span></label>
+                      <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.prior_bankruptcies} onChange={(e) => updateOwner(idx, "prior_bankruptcies", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Prior Bankruptcies</span></label>
+                      <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.criminal_history} onChange={(e) => updateOwner(idx, "criminal_history", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">Criminal History</span></label>
+                      <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={!!o.match_tmf_listed} onChange={(e) => updateOwner(idx, "match_tmf_listed", e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" /><span className="text-xs text-slate-700">MATCH/TMF Listed</span></label>
+                    </div>
+                    {o.match_tmf_listed && <p className="text-xs text-red-500 mt-2 bg-red-50 rounded p-2">Prior MATCH listing must be disclosed — undisclosed listings cause auto-decline</p>}
+                  </div>
+                ))}
+              </div>
+              {canEdit && (
+                <div className="flex justify-end mb-8">
+                  <button type="button" onClick={saveOwners} disabled={dealSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-medium transition disabled:opacity-50">{dealSaving ? "Saving..." : "Save Owners"}</button>
+                </div>
+              )}
+            </>
+          )}
         </>)}
 
         {/* ═══════════ DOCUMENTS TAB ═══════════ */}
@@ -2813,42 +2828,6 @@ export default function LeadDetailPage() {
 
       {/* ═══════════ ACTIVITY TAB ═══════════ */}
       {leadTab === "Activity" && (<>
-      {/* ═══════════ REP CODES SECTION ═══════════ */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
-        <h3 className="text-base font-semibold text-slate-900 mb-3">Agent Rep Codes</h3>
-        {!lead.assigned_to ? (
-          <p className="text-sm text-slate-400">Assign an agent to this lead to see their rep codes.</p>
-        ) : agentRepCodes.length === 0 ? (
-          <p className="text-sm text-slate-400">No rep codes assigned to this agent. <Link href="/dashboard/settings" className="text-emerald-600 hover:text-emerald-700">Manage rep codes in Settings &rarr; Team.</Link></p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 text-left text-slate-500">
-                  <th className="pb-2 pr-4 font-medium">Partner</th>
-                  <th className="pb-2 pr-4 font-medium">Rep Code</th>
-                  <th className="pb-2 pr-4 font-medium">Label</th>
-                  <th className="pb-2 pr-4 font-medium">Status</th>
-                  <th className="pb-2 pr-4 font-medium">Split %</th>
-                  <th className="pb-2 font-medium">Code Type</th>
-                </tr>
-              </thead>
-              <tbody>
-                {agentRepCodes.map((rc) => (
-                  <tr key={rc.id} className="border-b border-slate-50">
-                    <td className="py-2 pr-4 text-slate-700">{repCodePartners[rc.partner_id] || "—"}</td>
-                    <td className="py-2 pr-4 font-mono text-slate-600">{rc.rep_code || "—"}</td>
-                    <td className="py-2 pr-4 text-slate-600">{rc.label || "—"}</td>
-                    <td className="py-2 pr-4"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${rc.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{rc.status || "—"}</span></td>
-                    <td className="py-2 pr-4 text-slate-700">{rc.split_pct != null ? `${rc.split_pct}%` : "—"}</td>
-                    <td className="py-2 text-slate-600">{rc.code_type || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
         <div onClick={() => toggleGroup("activityLog")} className={`flex justify-between items-center cursor-pointer bg-white rounded-xl p-4 border border-slate-200 shadow-sm mb-2 ${openGroups.activityLog ? "border-l-4 border-l-emerald-500" : ""}`}>
           <h3 className="text-lg font-semibold text-slate-700">Activity Log<span className="bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full ml-2">{activities.length}</span></h3>
           <span className={`text-slate-400 transition-transform duration-200 ${openGroups.activityLog ? "rotate-180" : ""}`}>▼</span>
