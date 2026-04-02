@@ -1835,170 +1835,180 @@ export default function LeadDetailPage() {
                     </div>
                   )}
 
-                  {/* Existing signature reuse banner */}
-                  {showReuseBanner && (
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4">
-                      <div className="flex items-start gap-3">
-                        <span className="text-lg mt-0.5">{"\u2705"}</span>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-emerald-800">Existing signature available</p>
-                          <p className="text-xs text-emerald-600 mt-0.5">
-                            Signed by {reusableSession.signer_name} on {new Date(reusableSession.signed_at).toLocaleDateString()}
-                            {reusableSession.partner_id ? ` (submitted to ${getPartnerNameById(reusableSession.partner_id)})` : ""}
-                          </p>
-                          <div className="flex items-center gap-2 mt-3">
-                            <button
-                              onClick={() => handleReuseSignature(d.id, reusableSession)}
-                              disabled={sigSending || !d.partner_id || !d.sponsor_bank}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:opacity-50"
-                            >
-                              {sigSending ? "Processing..." : "Reuse Signature"}
-                            </button>
-                            <span className="text-xs text-slate-400">or</span>
-                            <span className="text-xs text-slate-500">use the form below to request a new signature</span>
+                  {/* Current signed/pending session status (compact) */}
+                  {latestSession && latestSession.status === "pending" && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <span>{"\u23F3"}</span>
+                          <div>
+                            <p className="text-sm font-medium text-blue-900">Awaiting signature{latestSession.partner_id ? ` — ${getPartnerNameById(latestSession.partner_id)}` : ""}</p>
+                            <p className="text-xs text-blue-600">Sent to {latestSession.signer_email} &middot; Expires {new Date(latestSession.expires_at).toLocaleDateString()}</p>
                           </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => copySigLink(latestSession.token)} className="bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg px-3 py-1.5 text-xs font-medium transition">{sigCopied === latestSession.token ? "Copied!" : "Copy Link"}</button>
+                          <button onClick={() => { sendForSignature(d.id); }} disabled={sigSending} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:opacity-50">Resend</button>
+                          <button onClick={() => revokeSigSession(latestSession.id)} className="text-red-500 hover:text-red-600 text-xs font-medium">Revoke</button>
                         </div>
                       </div>
                     </div>
                   )}
 
-                  {/* Show status if session exists */}
-                  {latestSession && latestSession.status !== "expired" && latestSession.status !== "revoked" ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3">
-                        <span className="text-lg">
-                          {latestSession.status === "pending" ? "\u23F3" : latestSession.status === "signed" ? "\u2705" : "\uD83D\uDEAB"}
-                        </span>
+                  {latestSession && latestSession.status === "signed" && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-4">
+                      <div className="flex items-center gap-2">
+                        <span>{"\u2705"}</span>
                         <div>
-                          <p className="text-sm font-medium text-slate-900">
-                            {latestSession.status === "pending" ? "Awaiting signature" : latestSession.status === "signed" ? "Signed" : "Revoked"}
-                            {latestSession.partner_id ? ` — ${getPartnerNameById(latestSession.partner_id)}` : ""}
+                          <p className="text-sm font-medium text-emerald-800">
+                            Signed{latestSession.partner_id ? ` — ${getPartnerNameById(latestSession.partner_id)}` : ""}
+                            {latestSession.reused_from_session_id ? " (reused)" : ""}
                           </p>
-                          <p className="text-xs text-slate-400">Sent to {latestSession.signer_email} &middot; Expires {new Date(latestSession.expires_at).toLocaleDateString()}</p>
-                        </div>
-                      </div>
-                      {latestSession.status === "signed" && latestSession.signed_at && (
-                        <p className="text-xs text-slate-500">Signed {new Date(latestSession.signed_at).toLocaleString()}{latestSession.signer_ip ? ` from ${latestSession.signer_ip}` : ""}{latestSession.reused_from_session_id ? " (reused)" : ""}</p>
-                      )}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <button onClick={() => copySigLink(latestSession.token)} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg px-3 py-1.5 text-xs font-medium transition">
-                          {sigCopied === latestSession.token ? "Copied!" : "Copy Link"}
-                        </button>
-                        {latestSession.status === "pending" && (
-                          <>
-                            <button onClick={() => { sendForSignature(d.id); }} disabled={sigSending} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:opacity-50">Resend Link</button>
-                            <button onClick={() => revokeSigSession(latestSession.id)} className="text-red-500 hover:text-red-600 text-xs font-medium">Revoke</button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-5">
-                      {/* Step 1: Select Partner & Sponsor Bank */}
-                      <div>
-                        <div className="flex items-center gap-2 mb-3">
-                          <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">1</span>
-                          <h4 className="text-sm font-semibold text-slate-900">Select Partner & Sponsor Bank</h4>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="text-xs text-slate-500 block mb-1">Partner</label>
-                            <select value={d.partner_id || ""} onChange={(e) => { if (isActiveDeal) handleSigPartnerChange(e.target.value); }} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
-                              <option value="">Select partner...</option>
-                              {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="text-xs text-slate-500 block mb-1">Sponsor Bank</label>
-                            <select value={d.sponsor_bank || ""} onChange={(e) => { if (isActiveDeal) handleSigBankChange(e.target.value); }} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" disabled={!d.partner_id}>
-                              <option value="">Select bank...</option>
-                              {(isActiveDeal ? sigBanks : []).map(b => <option key={b.id} value={b.bank_name}>{b.bank_name}</option>)}
-                            </select>
-                          </div>
-                        </div>
-                        {isActiveDeal && d.partner_id && d.sponsor_bank && (
-                          <p className={`text-xs mt-2 ${sigTemplate ? "text-emerald-600" : "text-amber-600"}`}>
-                            {sigTemplate ? `MPA Template: ${sigTemplate.template_name} \u2713 loaded` : "\u26A0 No MPA template found for this sponsor bank"}
+                          <p className="text-xs text-emerald-600">
+                            {latestSession.signer_name} on {new Date(latestSession.signed_at).toLocaleString()}
                           </p>
-                        )}
-                      </div>
-
-                      {/* Step 2: Review Pre-Filled MPA Fields */}
-                      <div>
-                        <div className="flex items-center gap-2 mb-3">
-                          <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">2</span>
-                          <h4 className="text-sm font-semibold text-slate-900">Review Pre-Filled MPA Fields</h4>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                          {mpaChecks.map(check => (
-                            <div key={check.label} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${check.ok ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                              <span>{check.ok ? "\u2713" : "\u26A0"}</span>
-                              <span className="font-medium">{check.label}</span>
-                              {!check.ok && check.missing.length > 0 && <span className="text-[10px] opacity-75">({check.missing.join(", ")})</span>}
-                            </div>
-                          ))}
-                        </div>
-                        {sigTemplate?.extra_fields && typeof sigTemplate.extra_fields === "object" && Object.keys(sigTemplate.extra_fields).length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-slate-100">
-                            <p className="text-xs text-slate-500 mb-2 font-medium">Additional MPA Fields</p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {Object.entries(sigTemplate.extra_fields).map(([key, def]) => (
-                                <div key={key}>
-                                  <label className="text-xs text-slate-500 block mb-1">{key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</label>
-                                  <input type="text" value={(d.mpa_extra_field_values || {})[key] || ""} onChange={(e) => { if (isActiveDeal) updateDealField("mpa_extra_field_values", { ...(d.mpa_extra_field_values || {}), [key]: e.target.value }); }} className="w-full text-sm px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" />
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Step 3: Send to Merchant */}
-                      <div>
-                        <div className="flex items-center gap-2 mb-3">
-                          <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">3</span>
-                          <h4 className="text-sm font-semibold text-slate-900">Send to Merchant</h4>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                          <div>
-                            <label className="text-xs text-slate-500 block mb-1">Signer Name</label>
-                            <input type="text" value={sigSignerName} onChange={(e) => setSigSignerName(e.target.value)} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" />
-                          </div>
-                          <div>
-                            <label className="text-xs text-slate-500 block mb-1">Signer Email</label>
-                            <input type="email" value={sigSignerEmail} onChange={(e) => setSigSignerEmail(e.target.value)} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" />
-                          </div>
-                          <div>
-                            <label className="text-xs text-slate-500 block mb-1">Link Expires</label>
-                            <select value={sigExpiry} onChange={(e) => setSigExpiry(e.target.value)} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
-                              <option value="3">3 days</option>
-                              <option value="7">7 days</option>
-                              <option value="14">14 days</option>
-                              <option value="30">30 days</option>
-                            </select>
-                          </div>
-                        </div>
-                        {mpaResult.blockingCount > 0 ? (
-                          <div className="mt-3">
-                            <button disabled className="bg-slate-300 text-slate-500 px-5 py-2.5 rounded-lg text-sm font-medium cursor-not-allowed">Send for Signature</button>
-                            <p className="text-xs text-red-500 mt-2">{mpaResult.blockingCount} blocking issue{mpaResult.blockingCount > 1 ? "s" : ""} must be resolved before sending. Review the MPA Readiness section on the Overview tab.</p>
-                          </div>
-                        ) : (
-                          <div className="mt-3">
-                            {mpaResult.warningCount > 0 && <p className="text-xs text-amber-500 mb-2">{mpaResult.warningCount} warning{mpaResult.warningCount > 1 ? "s" : ""} — you can still send, but review recommended.</p>}
-                            {mpaResult.blockingCount === 0 && mpaResult.warningCount === 0 && <p className="text-xs text-emerald-600 mb-2">All MPA fields complete — ready to send</p>}
-                            <button
-                              onClick={() => sendForSignature(d.id)}
-                              disabled={sigSending || !sigSignerEmail || !sigSignerName || !d.partner_id || !d.sponsor_bank}
-                              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
-                            >
-                              {sigSending ? "Sending..." : "Request New Signature"}
-                            </button>
-                          </div>
-                        )}
                       </div>
                     </div>
                   )}
+
+                  {/* Partner & Sponsor Bank — always shown */}
+                  <div className="space-y-5">
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">1</span>
+                        <h4 className="text-sm font-semibold text-slate-900">Select Partner & Sponsor Bank</h4>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-slate-500 block mb-1">Partner</label>
+                          <select value={d.partner_id || ""} onChange={(e) => { if (isActiveDeal) handleSigPartnerChange(e.target.value); }} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
+                            <option value="">Select partner...</option>
+                            {partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500 block mb-1">Sponsor Bank</label>
+                          <select value={d.sponsor_bank || ""} onChange={(e) => { if (isActiveDeal) handleSigBankChange(e.target.value); }} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" disabled={!d.partner_id}>
+                            <option value="">Select bank...</option>
+                            {(isActiveDeal ? sigBanks : []).map(b => <option key={b.id} value={b.bank_name}>{b.bank_name}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      {isActiveDeal && d.partner_id && d.sponsor_bank && (
+                        <p className={`text-xs mt-2 ${sigTemplate ? "text-emerald-600" : "text-amber-600"}`}>
+                          {sigTemplate ? `MPA Template: ${sigTemplate.template_name} \u2713 loaded` : "\u26A0 No MPA template found for this sponsor bank"}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Reuse banner: show when partner differs from existing signed session */}
+                    {(() => {
+                      const signedSession = reusableSession;
+                      const partnerDiffers = signedSession && d.partner_id && d.partner_id !== signedSession.partner_id;
+                      if (!signedSession || !partnerDiffers) return null;
+                      return (
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                          <div className="flex items-start gap-3">
+                            <span className="text-lg mt-0.5">{"\u2705"}</span>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-emerald-800">Existing signature available</p>
+                              <p className="text-xs text-emerald-600 mt-0.5">
+                                Signed by {signedSession.signer_name} on {new Date(signedSession.signed_at).toLocaleDateString()}
+                                {signedSession.partner_id ? ` (originally for ${getPartnerNameById(signedSession.partner_id)})` : ""}
+                                . Use for <strong>{getPartnerNameById(d.partner_id)}</strong>?
+                              </p>
+                              <div className="flex items-center gap-3 mt-3">
+                                <button
+                                  onClick={() => handleReuseSignature(d.id, signedSession)}
+                                  disabled={sigSending || !d.sponsor_bank}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:opacity-50"
+                                >
+                                  {sigSending ? "Processing..." : "Reuse Signature"}
+                                </button>
+                                <span className="text-xs text-slate-400">or request a new signature below</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Step 2: MPA Fields */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">2</span>
+                        <h4 className="text-sm font-semibold text-slate-900">Review Pre-Filled MPA Fields</h4>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        {mpaChecks.map(check => (
+                          <div key={check.label} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${check.ok ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                            <span>{check.ok ? "\u2713" : "\u26A0"}</span>
+                            <span className="font-medium">{check.label}</span>
+                            {!check.ok && check.missing.length > 0 && <span className="text-[10px] opacity-75">({check.missing.join(", ")})</span>}
+                          </div>
+                        ))}
+                      </div>
+                      {sigTemplate?.extra_fields && typeof sigTemplate.extra_fields === "object" && Object.keys(sigTemplate.extra_fields).length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-slate-100">
+                          <p className="text-xs text-slate-500 mb-2 font-medium">Additional MPA Fields</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {Object.entries(sigTemplate.extra_fields).map(([key, def]) => (
+                              <div key={key}>
+                                <label className="text-xs text-slate-500 block mb-1">{key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</label>
+                                <input type="text" value={(d.mpa_extra_field_values || {})[key] || ""} onChange={(e) => { if (isActiveDeal) updateDealField("mpa_extra_field_values", { ...(d.mpa_extra_field_values || {}), [key]: e.target.value }); }} className="w-full text-sm px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Step 3: Send new signature */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">3</span>
+                        <h4 className="text-sm font-semibold text-slate-900">Request New Signature</h4>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-xs text-slate-500 block mb-1">Signer Name</label>
+                          <input type="text" value={sigSignerName} onChange={(e) => setSigSignerName(e.target.value)} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500 block mb-1">Signer Email</label>
+                          <input type="email" value={sigSignerEmail} onChange={(e) => setSigSignerEmail(e.target.value)} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500 block mb-1">Link Expires</label>
+                          <select value={sigExpiry} onChange={(e) => setSigExpiry(e.target.value)} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
+                            <option value="3">3 days</option>
+                            <option value="7">7 days</option>
+                            <option value="14">14 days</option>
+                            <option value="30">30 days</option>
+                          </select>
+                        </div>
+                      </div>
+                      {mpaResult.blockingCount > 0 ? (
+                        <div className="mt-3">
+                          <button disabled className="bg-slate-300 text-slate-500 px-5 py-2.5 rounded-lg text-sm font-medium cursor-not-allowed">Send for Signature</button>
+                          <p className="text-xs text-red-500 mt-2">{mpaResult.blockingCount} blocking issue{mpaResult.blockingCount > 1 ? "s" : ""} must be resolved before sending. Review the MPA Readiness section on the Overview tab.</p>
+                        </div>
+                      ) : (
+                        <div className="mt-3">
+                          {mpaResult.warningCount > 0 && <p className="text-xs text-amber-500 mb-2">{mpaResult.warningCount} warning{mpaResult.warningCount > 1 ? "s" : ""} — you can still send, but review recommended.</p>}
+                          {mpaResult.blockingCount === 0 && mpaResult.warningCount === 0 && <p className="text-xs text-emerald-600 mb-2">All MPA fields complete — ready to send</p>}
+                          <button
+                            onClick={() => sendForSignature(d.id)}
+                            disabled={sigSending || !sigSignerEmail || !sigSignerName || !d.partner_id || !d.sponsor_bank}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                          >
+                            {sigSending ? "Sending..." : "Request New Signature"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
                   {/* Submission History Timeline */}
                   {sessions.length > 0 && (
