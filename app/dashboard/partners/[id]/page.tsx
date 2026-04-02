@@ -150,7 +150,7 @@ export default function PartnerDetailPage() {
       const updates = pick(b, ["bank_name", "cutoff_timezone", "next_day_funding", "batch_cutoff_time", "same_day_funding", "same_day_cutoff_time", "accepted_mcc_codes", "restricted_mcc_codes", "details"]);
       const { error } = await supabase.from("partner_sponsor_banks").update(updates).eq("id", b.id);
       if (error) { showMsg("Save failed: " + error.message); return; }
-      showMsg("Bank saved!");
+      showMsg("Saved!");
     } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); } finally { setSavingItem(null); }
   };
   const removeBank = async (idx: number) => { await supabase.from("partner_sponsor_banks").delete().eq("id", banks[idx].id); setBanks(banks.filter((_, i) => i !== idx)); };
@@ -305,7 +305,7 @@ export default function PartnerDetailPage() {
     }
 
     const bank = banks.find(b => b.id === bankId);
-    const templateName = `${partner.name} - ${bank?.bank_name || "Bank"} - ${file.name}`;
+    const templateName = `${partner.name} - ${bank?.bank_name || "Application"} - ${file.name}`;
 
     const { error: insertError } = await supabase.from("mpa_templates").insert({
       org_id: member?.org_id || null,
@@ -677,13 +677,13 @@ export default function PartnerDetailPage() {
           <div>
             <div className="flex justify-between items-center mb-4">
               <h4 className="font-semibold text-emerald-600">Merchant Applications</h4>
-              <button onClick={addBank} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs transition">+ Add Bank</button>
+              <button onClick={addBank} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs transition">+ Add Application</button>
             </div>
             {banks.length === 0 && <p className="text-slate-500 text-sm">No merchant applications added yet.</p>}
             {banks.map((b, idx) => (
               <div key={b.id} className={cardClass}>
                 <div className="flex justify-between items-center mb-3">
-                  <span className="text-sm font-medium">Bank {idx + 1}</span>
+                  <span className="text-sm font-medium">{idx + 1}</span>
                   <div className="flex gap-3">
                     <button type="button" onClick={() => saveBank(idx)} disabled={savingItem === "bank-" + idx} className="text-emerald-600 hover:text-emerald-700 text-xs disabled:opacity-50">{savingItem === "bank-" + idx ? "Saving..." : "Save"}</button>
                     <button onClick={() => removeBank(idx)} className="text-red-400 hover:text-red-300 text-xs">Remove</button>
