@@ -86,7 +86,7 @@ export default function PartnerDetailPage() {
         const { data: b } = await supabase.from("partner_sponsor_banks").select("id, created_at, partner_id, bank_name, cutoff_timezone, next_day_funding, batch_cutoff_time, same_day_funding, same_day_cutoff_time, accepted_mcc_codes, restricted_mcc_codes, details").eq("partner_id", p.id).order("created_at");
         if (b) {
           setBanks(b);
-          fetchMpasForBanks(b);
+          fetchMpasForBanks(b, p.id);
         }
         const { data: h } = await supabase.from("partner_hardware").select("id, created_at, partner_id, hardware_type, hardware_name, manufacturer, model, cost, msrp, partner_cost, free_placement_eligible, details, notes").eq("partner_id", p.id).order("created_at");
         if (h) setHardware(h);
@@ -234,12 +234,13 @@ export default function PartnerDetailPage() {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [mpaUploading, setMpaUploading] = useState<Record<string, boolean>>({});
 
-  const fetchMpasForBanks = async (bankList: any[]) => {
-    if (!bankList.length || !partner) return;
+  const fetchMpasForBanks = async (bankList: any[], partnerId?: string) => {
+    const pid = partnerId || partner?.id;
+    if (!bankList.length || !pid) return;
     const { data: tpls } = await supabase
       .from("mpa_templates")
       .select("*")
-      .eq("partner_id", partner.id)
+      .eq("partner_id", pid)
       .order("created_at", { ascending: false });
     if (tpls) {
       const grouped: Record<string, any[]> = {};
