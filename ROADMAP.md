@@ -241,6 +241,50 @@ Depends on: Group A (needs agent profiles + permissions + rep codes)
 
 ---
 
+### 🔗 Group F — Partner & Department Communications
+
+Dependencies: Email service integration (SendGrid or Resend), department contacts on partners (built)
+
+**F.1 — Email Sending from CRM**
+- Send emails to partner departments directly from the platform
+- Pre-fill recipient from partner department contacts
+- Tag emails to specific merchants when sent from a merchant context
+
+**F.2 — Inbound Email Routing**
+- Receive reply emails via webhook (SendGrid/Resend inbound parse)
+- Route replies to the correct partner + merchant thread based on thread ID or email headers
+
+**F.3 — Partner Communications Tab**
+- New tab on partner detail page showing all email threads grouped by department and merchant
+- Collapsible thread view to reduce visual clutter
+
+**F.4 — Merchant Partner Communications**
+- "Partner Communications" section on merchant detail page showing only emails related to that specific merchant
+- Slide-out panel or collapsible to save space
+
+**F.5 — Communication Templates**
+- Pre-built email templates for common partner interactions: "Request underwriting status", "Submit additional documents", "Chargeback dispute response", "Rate review request"
+- Templates use merge tags for merchant/partner data
+
+**F.6 — Internal Notes on Threads**
+- Ability to add internal notes to a partner email thread that the partner doesn't see (for ISO team coordination)
+
+**F.7 — Follow-Up Reminders**
+- Set reminders on email threads: "Follow up with underwriting in 3 days if no response"
+
+**F.8 — Call Logging to Departments**
+- Log calls to specific partner departments with notes, tagged to merchant
+- Shows in same communication timeline
+
+Priority order: F.1 → F.2 → F.3 → F.4 → F.5 (remaining items are fast-follows)
+
+Prerequisites:
+- Email service account (Resend recommended — simpler API, $20/mo for 50K emails)
+- Custom domain for sending (e.g. notifications@splitscrm.com) for deliverability
+- Inbound email domain for receiving replies (e.g. reply@mail.splitscrm.com)
+
+---
+
 ### 🔗 Group D — White-Label & Enterprise
 
 Depends on: Group A (needs multi-user/org support)
@@ -293,50 +337,6 @@ Depends on: Group B (MPA system should exist before adding API boarding)
 - React Native or PWA
 - Dashboard, merchant lookup, lead management
 - Push notifications
-
----
-
-### 🔗 Group F — Partner & Department Communications
-
-Dependencies: Email service integration (SendGrid or Resend), department contacts on partners (built)
-
-**F.1 — Email Sending from CRM**
-- Send emails to partner departments directly from the platform
-- Pre-fill recipient from partner department contacts
-- Tag emails to specific merchants when sent from a merchant context
-
-**F.2 — Inbound Email Routing**
-- Receive reply emails via webhook (SendGrid/Resend inbound parse)
-- Route replies to the correct partner + merchant thread based on thread ID or email headers
-
-**F.3 — Partner Communications Tab**
-- New tab on partner detail page showing all email threads grouped by department and merchant
-- Collapsible thread view to reduce visual clutter
-
-**F.4 — Merchant Partner Communications**
-- "Partner Communications" section on merchant detail page showing only emails related to that specific merchant
-- Slide-out panel or collapsible to save space
-
-**F.5 — Communication Templates**
-- Pre-built email templates for common partner interactions: "Request underwriting status", "Submit additional documents", "Chargeback dispute response", "Rate review request"
-- Templates use merge tags for merchant/partner data
-
-**F.6 — Internal Notes on Threads**
-- Ability to add internal notes to a partner email thread that the partner doesn't see (for ISO team coordination)
-
-**F.7 — Follow-Up Reminders**
-- Set reminders on email threads: "Follow up with underwriting in 3 days if no response"
-
-**F.8 — Call Logging to Departments**
-- Log calls to specific partner departments with notes, tagged to merchant
-- Shows in same communication timeline
-
-Priority order: F.1 → F.2 → F.3 → F.4 → F.5 (remaining items are fast-follows)
-
-Prerequisites:
-- Email service account (Resend recommended — simpler API, $20/mo for 50K emails)
-- Custom domain for sending (e.g. notifications@splitscrm.com) for deliverability
-- Inbound email domain for receiving replies (e.g. reply@mail.splitscrm.com)
 
 ---
 
