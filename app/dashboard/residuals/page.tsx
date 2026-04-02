@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth-context'
 import LoadingScreen from '@/components/LoadingScreen'
 import { authFetch } from '@/lib/api-client'
 import { detectDataType, formatColumnValue, toDisplayName } from '@/lib/residual-columns'
+import * as XLSX from 'xlsx'
 
 const RESIDUAL_EXPORT_COLUMNS = [
   { key: 'merchant_id_external', label: 'MID' },
@@ -156,6 +157,9 @@ export default function ResidualsPage() {
   const [sampleRows, setSampleRows] = useState<string[][]>([])
   const [allRows, setAllRows] = useState<string[][]>([])
   const [totalRowCount, setTotalRowCount] = useState(0)
+  const [xlsxWorkbook, setXlsxWorkbook] = useState<XLSX.WorkBook | null>(null)
+  const [xlsxSheetNames, setXlsxSheetNames] = useState<string[]>([])
+  const [xlsxSelectedSheet, setXlsxSelectedSheet] = useState('')
 
   // Mapping state
   const [mapping, setMapping] = useState<Record<string, string | null>>({})
@@ -231,26 +235,52 @@ export default function ResidualsPage() {
     setPartners(data || [])
   }
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    setFileName(file.name)
-    const text = await file.text()
-    const rows = parseCSV(text)
-
-    if (rows.length < 2) {
-      setMappingError('File must have at least a header row and one data row.')
-      return
-    }
-
-    const hdrs = rows[0]
-    const dataRows = rows.slice(1)
+  const parseXlsxSheet = (wb: XLSX.WorkBook, sheetName: string) => {
+    const sheet = wb.Sheets[sheetName]
+    if (!sheet) { setMappingError('Selected sheet has no data'); return }
+    const jsonRows: string[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' }) as string[][]
+    if (jsonRows.length < 2) { setMappingError('Selected sheet has no data rows.'); return }
+    const hdrs = jsonRows[0].map(h => String(h ?? '').trim())
+    if (hdrs.every(h => !h)) { setMappingError('No column headers found in the first row.'); return }
+    const dataRows = jsonRows.slice(1).filter(row => row.some(cell => String(cell ?? '').trim() !== ''))
     setHeaders(hdrs)
     setSampleRows(dataRows.slice(0, 5))
     setAllRows(dataRows)
     setTotalRowCount(dataRows.length)
     setMappingError('')
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setFileName(file.name)
+    setXlsxWorkbook(null)
+    setXlsxSheetNames([])
+    setXlsxSelectedSheet('')
+
+    const isExcel = /\.xlsx?$/i.test(file.name)
+
+    if (isExcel) {
+      const buf = await file.arrayBuffer()
+      const wb = XLSX.read(buf, { type: 'array', raw: false })
+      if (!wb.SheetNames.length) { setMappingError('Excel file has no sheets.'); e.target.value = ''; return }
+      setXlsxWorkbook(wb)
+      setXlsxSheetNames(wb.SheetNames)
+      setXlsxSelectedSheet(wb.SheetNames[0])
+      parseXlsxSheet(wb, wb.SheetNames[0])
+    } else {
+      const text = await file.text()
+      const rows = parseCSV(text)
+      if (rows.length < 2) { setMappingError('File must have at least a header row and one data row.'); e.target.value = ''; return }
+      const hdrs = rows[0]
+      const dataRows = rows.slice(1)
+      setHeaders(hdrs)
+      setSampleRows(dataRows.slice(0, 5))
+      setAllRows(dataRows)
+      setTotalRowCount(dataRows.length)
+      setMappingError('')
+    }
     e.target.value = ''
   }
 
@@ -288,6 +318,9 @@ export default function ResidualsPage() {
     setProcessorName('')
     setReportMonth('')
     setFileName('')
+    setXlsxWorkbook(null)
+    setXlsxSheetNames([])
+    setXlsxSelectedSheet('')
     setHeaders([])
     setSampleRows([])
     setAllRows([])
@@ -921,7 +954,7 @@ export default function ResidualsPage() {
           <label className="block w-full border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-emerald-500 bg-slate-50 transition">
             <input
               type="file"
-              accept=".csv,.xlsx"
+              accept=".csv,.xlsx,.xls"
               onChange={handleFileUpload}
               className="hidden"
             />
@@ -938,11 +971,27 @@ export default function ResidualsPage() {
               <div>
                 <p className="text-4xl mb-2">📊</p>
                 <p className="text-slate-600">Click to upload a residual report</p>
-                <p className="text-slate-400 text-sm mt-1">Supports CSV files</p>
+                <p className="text-slate-400 text-sm mt-1">Supports CSV and Excel (.xlsx, .xls) files</p>
               </div>
             )}
           </label>
         </div>
+
+        {xlsxSheetNames.length > 1 && (
+          <div className="mt-3">
+            <label className="text-sm text-slate-600 block mb-1">Select sheet to import</label>
+            <select
+              value={xlsxSelectedSheet}
+              onChange={(e) => {
+                setXlsxSelectedSheet(e.target.value)
+                if (xlsxWorkbook) parseXlsxSheet(xlsxWorkbook, e.target.value)
+              }}
+              className="w-full sm:w-auto text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500"
+            >
+              {xlsxSheetNames.map(name => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </div>
+        )}
 
         {mappingError && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
