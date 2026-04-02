@@ -9,6 +9,7 @@ import ExportCSV from '@/components/ExportCSV'
 import { useAuth } from '@/lib/auth-context'
 import LoadingScreen from '@/components/LoadingScreen'
 import { authFetch } from '@/lib/api-client'
+import { detectDataType, formatColumnValue, toDisplayName } from '@/lib/residual-columns'
 
 const RESIDUAL_EXPORT_COLUMNS = [
   { key: 'merchant_id_external', label: 'MID' },
@@ -57,6 +58,7 @@ interface ImportRecord {
   row_count: number | null
   total_net: number | null
   created_at: string
+  partner_id?: string | null
 }
 
 interface Partner {
@@ -191,6 +193,13 @@ export default function ResidualsPage() {
   const [applyingMatches, setApplyingMatches] = useState(false)
   const [matchMsg, setMatchMsg] = useState('')
 
+  // Adaptive column learning state
+  const [savedMappingBanner, setSavedMappingBanner] = useState('')
+  const [detailColumnMappings, setDetailColumnMappings] = useState<any[]>([])
+  const [showAllColumns, setShowAllColumns] = useState(false)
+  const [columnConfigTarget, setColumnConfigTarget] = useState<any>(null)
+  const [columnConfigForm, setColumnConfigForm] = useState({ display_name: '', data_type: 'text', category: 'other', is_visible: true })
+
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -206,7 +215,7 @@ export default function ResidualsPage() {
     setLoadingImports(true)
     const { data } = await supabase
       .from('residual_imports')
-      .select('id, file_name, processor_name, report_month, status, row_count, total_net, created_at')
+      .select('id, file_name, processor_name, report_month, status, row_count, total_net, created_at, partner_id')
       .eq('user_id', uid)
       .order('created_at', { ascending: false })
     setImports(data || [])
@@ -250,12 +259,25 @@ export default function ResidualsPage() {
     setViewMode('detail')
     setDetailLoading(true)
     setDetailSearch('')
-    const { data, error } = await supabase
+    setShowAllColumns(false)
+    const { data } = await supabase
       .from('residual_records')
-      .select('id, merchant_id, merchant_id_external, dba_name, fee_category, sales_amount, credit_amount, interchange_cost, total_expenses, gross_income, agent_id_external')
+      .select('id, merchant_id, merchant_id_external, dba_name, fee_category, sales_amount, credit_amount, interchange_cost, total_expenses, gross_income, agent_id_external, raw_data')
       .eq('import_id', imp.id)
       .order('created_at')
     setDetailRecords(data || [])
+    // Fetch learned column mappings for this partner
+    if (imp.partner_id && member?.org_id) {
+      const { data: colMaps } = await supabase
+        .from('partner_column_mappings')
+        .select('*')
+        .eq('org_id', member.org_id)
+        .eq('partner_id', imp.partner_id)
+        .order('csv_column_name')
+      setDetailColumnMappings(colMaps || [])
+    } else {
+      setDetailColumnMappings([])
+    }
     setDetailLoading(false)
   }
 
@@ -286,29 +308,65 @@ export default function ResidualsPage() {
     setWizardStep(2)
     setMappingLoading(true)
     setMappingError('')
+    setSavedMappingBanner('')
 
     try {
       const partnerObj = partners.find(p => p.id === selectedPartnerId)
       const pName = processorName || partnerObj?.name || undefined
 
-      const res = await authFetch('/api/map-residual-columns', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ headers, sampleRows, processorName: pName }),
-      })
-
-      const data = await res.json()
-      if (data.error) {
-        setMappingError(data.error)
-        setMappingLoading(false)
-        return
+      // Check for saved partner column mappings
+      let savedMapping: Record<string, string | null> = {}
+      let newHeaders = headers
+      if (selectedPartnerId && member?.org_id) {
+        const { data: saved } = await supabase
+          .from('partner_column_mappings')
+          .select('csv_column_name, mapped_to')
+          .eq('org_id', member.org_id)
+          .eq('partner_id', selectedPartnerId)
+        if (saved && saved.length > 0) {
+          for (const s of saved) savedMapping[s.csv_column_name] = s.mapped_to
+          const knownHeaders = headers.filter(h => h in savedMapping)
+          newHeaders = headers.filter(h => !(h in savedMapping))
+          if (knownHeaders.length > 0) {
+            setSavedMappingBanner(`Applied ${knownHeaders.length} saved column mappings for ${partnerObj?.name || "this partner"}. ${newHeaders.length > 0 ? `${newHeaders.length} new column${newHeaders.length > 1 ? "s" : ""} sent to AI.` : "All columns recognized."}`)
+          }
+        }
       }
 
-      setMapping(data.mapping || {})
-      setAiConfidence(data.confidence || 'medium')
-      setAiNotes(data.notes || '')
-      setHasTotalsRow(data.has_totals_row || false)
-      setMultiRowPerMerchant(data.multi_row_per_merchant || false)
+      // Only AI-map columns not in saved mapping
+      let aiMapping: Record<string, string | null> = {}
+      if (newHeaders.length > 0) {
+        const aiSampleRows = sampleRows.map(row => {
+          const indices = newHeaders.map(h => headers.indexOf(h))
+          return indices.map(i => row[i])
+        })
+        const res = await authFetch('/api/map-residual-columns', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ headers: newHeaders, sampleRows: aiSampleRows, processorName: pName }),
+        })
+        const data = await res.json()
+        if (!data.error) {
+          aiMapping = data.mapping || {}
+          setAiConfidence(data.confidence || 'medium')
+          setAiNotes(data.notes || '')
+          setHasTotalsRow(data.has_totals_row || false)
+          setMultiRowPerMerchant(data.multi_row_per_merchant || false)
+        } else if (Object.keys(savedMapping).length === 0) {
+          setMappingError(data.error)
+          setMappingLoading(false)
+          return
+        }
+      }
+
+      // Merge: saved mapping takes priority, AI fills new columns
+      const merged: Record<string, string | null> = {}
+      for (const h of headers) {
+        if (h in savedMapping) merged[h] = savedMapping[h]
+        else if (h in aiMapping) merged[h] = aiMapping[h]
+        else merged[h] = null
+      }
+      setMapping(merged)
     } catch {
       setMappingError('Failed to reach AI mapping service. You can map columns manually below.')
     }
@@ -514,6 +572,51 @@ export default function ResidualsPage() {
           await supabase.from('processor_mappings').update(mappingData).eq('id', existingMapping.id)
         } else {
           await supabase.from('processor_mappings').insert(mappingData)
+        }
+      }
+
+      // ── Save learned column mappings per partner ────────────────
+      if (selectedPartnerId && member?.org_id) {
+        try {
+          for (let hIdx = 0; hIdx < headers.length; hIdx++) {
+            const csvCol = headers[hIdx]
+            const mappedTo = mapping[csvCol] || null
+            const sampleVals = allRows.slice(0, 50).map(row => row[hIdx] || '')
+            const dataType = mappedTo && ['sales_amount', 'credit_amount', 'net_volume', 'interchange_cost', 'dues_assessments', 'processing_fees', 'gross_income', 'total_expenses', 'net_revenue', 'agent_payout', 'iso_net', 'agent_split_pct'].includes(mappedTo)
+              ? 'currency' : detectDataType(sampleVals)
+            const isMappedToCore = mappedTo && mappedTo !== 'null'
+            // Upsert: increment seen_count, update mapped_to
+            const { data: existing } = await supabase
+              .from('partner_column_mappings')
+              .select('id, seen_count')
+              .eq('org_id', member.org_id)
+              .eq('partner_id', selectedPartnerId)
+              .eq('csv_column_name', csvCol)
+              .maybeSingle()
+            if (existing) {
+              const newCount = (existing.seen_count || 0) + 1
+              await supabase.from('partner_column_mappings').update({
+                mapped_to: mappedTo === 'null' ? null : mappedTo,
+                seen_count: newCount,
+                is_visible: isMappedToCore || newCount >= 2,
+                data_type: dataType,
+              }).eq('id', existing.id)
+            } else {
+              await supabase.from('partner_column_mappings').insert({
+                org_id: member.org_id,
+                partner_id: selectedPartnerId,
+                csv_column_name: csvCol,
+                mapped_to: mappedTo === 'null' ? null : mappedTo,
+                display_name: toDisplayName(csvCol),
+                data_type: dataType,
+                category: isMappedToCore ? 'financial' : 'other',
+                is_visible: !!isMappedToCore,
+                seen_count: 1,
+              })
+            }
+          }
+        } catch (colErr) {
+          console.error('Column mapping save error:', colErr)
         }
       }
 
@@ -868,6 +971,9 @@ export default function ResidualsPage() {
 
   const renderMappingStep = () => (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 max-w-4xl mx-auto">
+      {savedMappingBanner && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm mb-4">{"\u2705"} {savedMappingBanner}</div>
+      )}
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="font-semibold text-slate-900">Column Mapping</h3>
@@ -1379,6 +1485,75 @@ export default function ResidualsPage() {
                 <p className="text-base text-slate-500 mt-3">
                   Matched: {matchedMids.size} of {uniqueMidExternal.size} merchants
                 </p>
+
+                {/* Additional/Learned Columns from raw_data */}
+                {detailColumnMappings.length > 0 && (
+                  <div className="mt-4">
+                    <button
+                      onClick={() => setShowAllColumns(!showAllColumns)}
+                      className="flex items-center gap-2 text-sm text-slate-600 hover:text-emerald-600 font-medium transition"
+                    >
+                      <svg className={`w-3 h-3 transition-transform ${showAllColumns ? "rotate-90" : ""}`} fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
+                      Additional Fields ({detailColumnMappings.filter(c => !c.mapped_to).length} learned columns)
+                    </button>
+                    {showAllColumns && (
+                      <div className="mt-2 overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50">
+                              <th className="text-left px-3 py-2 text-xs text-slate-500 uppercase font-medium">MID</th>
+                              <th className="text-left px-3 py-2 text-xs text-slate-500 uppercase font-medium">DBA</th>
+                              {detailColumnMappings.filter(c => !c.mapped_to && c.is_visible).map(col => (
+                                <th key={col.id} className="text-left px-3 py-2 text-xs text-slate-500 uppercase font-medium cursor-pointer hover:text-emerald-600" onClick={() => { setColumnConfigTarget(col); setColumnConfigForm({ display_name: col.display_name, data_type: col.data_type, category: col.category, is_visible: col.is_visible }); }}>
+                                  {col.display_name}
+                                  <span className="text-[8px] text-slate-300 ml-1">{col.data_type === 'currency' ? '$' : col.data_type === 'boolean' ? 'Y/N' : ''}</span>
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filtered.slice(0, 50).map((r: any) => (
+                              <tr key={r.id} className="border-b border-slate-50">
+                                <td className="px-3 py-1.5 text-xs text-slate-600 font-mono">{r.merchant_id_external || '\u2014'}</td>
+                                <td className="px-3 py-1.5 text-xs text-slate-700">{r.dba_name || '\u2014'}</td>
+                                {detailColumnMappings.filter(c => !c.mapped_to && c.is_visible).map(col => (
+                                  <td key={col.id} className="px-3 py-1.5 text-xs text-slate-600">
+                                    {r.raw_data ? formatColumnValue(r.raw_data[col.csv_column_name], col.data_type) : '\u2014'}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {filtered.length > 50 && <p className="text-xs text-slate-400 mt-1">Showing first 50 of {filtered.length} records</p>}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Column Config Popover */}
+                {columnConfigTarget && (
+                  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setColumnConfigTarget(null)}>
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+                      <h3 className="font-semibold text-slate-900 mb-3">Configure Column</h3>
+                      <p className="text-xs text-slate-400 mb-3 font-mono">{columnConfigTarget.csv_column_name}</p>
+                      <div className="space-y-3">
+                        <div><label className="text-xs text-slate-500 block mb-1">Display Name</label><input type="text" value={columnConfigForm.display_name} onChange={e => setColumnConfigForm(prev => ({ ...prev, display_name: e.target.value }))} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white" /></div>
+                        <div><label className="text-xs text-slate-500 block mb-1">Data Type</label><select value={columnConfigForm.data_type} onChange={e => setColumnConfigForm(prev => ({ ...prev, data_type: e.target.value }))} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white"><option value="text">Text</option><option value="currency">Currency</option><option value="boolean">Boolean</option><option value="date">Date</option></select></div>
+                        <div><label className="text-xs text-slate-500 block mb-1">Category</label><select value={columnConfigForm.category} onChange={e => setColumnConfigForm(prev => ({ ...prev, category: e.target.value }))} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white"><option value="financial">Financial</option><option value="agent">Agent</option><option value="merchant">Merchant</option><option value="fee">Fee</option><option value="meta">Meta</option><option value="other">Other</option></select></div>
+                        <div><label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={columnConfigForm.is_visible} onChange={e => setColumnConfigForm(prev => ({ ...prev, is_visible: e.target.checked }))} className="w-4 h-4 rounded border-slate-300 text-emerald-600" /><span className="text-sm text-slate-700">Visible in table</span></label></div>
+                      </div>
+                      <div className="flex gap-3 mt-4">
+                        <button onClick={async () => {
+                          await supabase.from('partner_column_mappings').update(columnConfigForm).eq('id', columnConfigTarget.id)
+                          setDetailColumnMappings(prev => prev.map(c => c.id === columnConfigTarget.id ? { ...c, ...columnConfigForm } : c))
+                          setColumnConfigTarget(null)
+                        }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">Save</button>
+                        <button onClick={() => setColumnConfigTarget(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm transition">Cancel</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </>
