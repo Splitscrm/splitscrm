@@ -1518,6 +1518,7 @@ export default function ReportsPage() {
               </div>
             )}
           </div>
+          </FeatureGate>
         ) : tab === 'pipeline' ? (
           /* ═══════════ TAB 3: PIPELINE ═══════════ */
           <div className="space-y-6">
@@ -1641,7 +1642,6 @@ export default function ReportsPage() {
               </>
             )}
           </div>
-          </FeatureGate>
         ) : tab === 'agents' ? (
           /* ═══════════ TAB 4: AGENT PERFORMANCE ═══════════ */
           <div className="space-y-6">
