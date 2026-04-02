@@ -104,6 +104,7 @@ export default function LeadDetailPage() {
   // Partner switch modal removed — simplified pricing
   const dealCreationGuard = useRef(false);
   const commLogRef = useRef<CommunicationLogHandle>(null);
+  const sigSectionRef = useRef<HTMLDivElement>(null);
   const [showCommPanel, setShowCommPanel] = useState(false);
   const [commCount, setCommCount] = useState(0);
   const [deleteLocationTarget, setDeleteLocationTarget] = useState<any>(null);
@@ -185,9 +186,9 @@ export default function LeadDetailPage() {
           return;
         }
         setLead(leadData);
-        // Auto-switch to DealInfo tab for stages that have deal-specific UI
+        // Stay on Overview — signature section is now on Overview tab
         if (["send_for_signature", "signed", "submitted"].includes(leadData.status)) {
-          setLeadTab("DealInfo");
+          setLeadTab("Overview");
         }
         const { data: allDeals } = await supabase.from("deals").select("*").eq("lead_id", leadData.id).order("created_at");
         if (allDeals && allDeals.length > 0) {
@@ -353,9 +354,10 @@ export default function LeadDetailPage() {
       await logActivity("stage_change", "status", statusLabel(oldStatus), statusLabel(newStatus), "Stage changed from " + statusLabel(oldStatus) + " to " + statusLabel(newStatus));
       setLead((prev: any) => ({ ...prev, status: newStatus, updated_at: new Date().toISOString(), ...extraFields }));
       setShowModal("");
-      // Auto-switch to DealInfo tab when entering stages that have deal-specific UI
+      // Auto-switch to Overview and scroll to signature section
       if (["send_for_signature", "signed", "submitted"].includes(newStatus)) {
-        setLeadTab("DealInfo");
+        setLeadTab("Overview");
+        setTimeout(() => sigSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
       }
     }
     setSaving(false);
@@ -1621,6 +1623,309 @@ export default function LeadDetailPage() {
           </div>
         )}
 
+
+        {/* ═══════════ SEND FOR SIGNATURE SECTION ═══════════ */}
+        <div ref={sigSectionRef}>
+        {lead.status === "send_for_signature" && deals.length > 0 && (
+          <div className="space-y-4 mb-6">
+            <h3 className="text-xl font-bold">Send for Signature</h3>
+            {deals.map((d, dIdx) => {
+              const sessions = sigSessions[d.id] || [];
+              const latestSession = sessions[0];
+              const isActiveDeal = dIdx === activeDealIdx;
+              const mpaChecks = checkMpaFields(d);
+              const reusableSession = findReusableSession();
+              // Only show reuse banner when there's no active/pending session for this deal
+              // and the reusable session is from a different partner than currently selected
+              const showReuseBanner = reusableSession && (!latestSession || latestSession.status === "expired" || latestSession.status === "revoked") && d.partner_id;
+
+              return (
+                <div key={d.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                  {deals.length > 1 && (
+                    <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
+                      {d.is_primary_location && <svg className="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>}
+                      <h4 className="text-base font-semibold text-slate-900">{d.location_name || d.dba_name || `Location ${dIdx + 1}`}</h4>
+                    </div>
+                  )}
+
+                  {/* Current signed/pending session status (compact) */}
+                  {latestSession && latestSession.status === "pending" && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <span>{"\u23F3"}</span>
+                          <div>
+                            <p className="text-sm font-medium text-blue-900">Awaiting signature{latestSession.partner_id ? ` — ${getPartnerNameById(latestSession.partner_id)}` : ""}</p>
+                            <p className="text-xs text-blue-600">Sent to {latestSession.signer_email} &middot; Expires {new Date(latestSession.expires_at).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => copySigLink(latestSession.token)} className="bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg px-3 py-1.5 text-xs font-medium transition">{sigCopied === latestSession.token ? "Copied!" : "Copy Link"}</button>
+                          <button onClick={() => { sendForSignature(d.id); }} disabled={sigSending} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:opacity-50">Resend</button>
+                          <button onClick={() => revokeSigSession(latestSession.id)} className="text-red-500 hover:text-red-600 text-xs font-medium">Revoke</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {latestSession && latestSession.status === "signed" && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-4">
+                      <div className="flex items-center gap-2">
+                        <span>{"\u2705"}</span>
+                        <div>
+                          <p className="text-sm font-medium text-emerald-800">
+                            Signed{latestSession.partner_id ? ` — ${getPartnerNameById(latestSession.partner_id)}` : ""}
+                            {latestSession.reused_from_session_id ? " (reused)" : ""}
+                          </p>
+                          <p className="text-xs text-emerald-600">
+                            {latestSession.signer_name} on {new Date(latestSession.signed_at).toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Partner & Merchant Application — always shown */}
+                  <div className="space-y-5">
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">1</span>
+                        <h4 className="text-sm font-semibold text-slate-900">Select Partners & Merchant Applications</h4>
+                      </div>
+                      {(() => {
+                        const signedPids = getSignedPartnerIds(d.id);
+                        return (
+                          <div className="space-y-2">
+                            {partners.map(p => {
+                              const alreadySigned = signedPids.has(p.id);
+                              const isChecked = !!sigPartnerSelections[p.id];
+                              const sel = sigPartnerSelections[p.id];
+                              const repCode = getRepCodeForPartner(p.id);
+                              return (
+                                <div key={p.id} className={`px-3 py-2 rounded-lg border ${alreadySigned ? "border-emerald-200 bg-emerald-50" : isChecked ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}>
+                                  <div className="flex items-center gap-3">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked || alreadySigned}
+                                      disabled={alreadySigned}
+                                      onChange={() => { if (isActiveDeal && !alreadySigned) togglePartnerSelection(p.id); }}
+                                      className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                    />
+                                    <span className="text-sm font-medium text-slate-900 min-w-[120px]">{p.name}</span>
+                                    {alreadySigned ? (
+                                      <span className="text-xs text-emerald-600 font-medium">{"\u2705"} Signed</span>
+                                    ) : isChecked ? (
+                                      <>
+                                        <select
+                                          value={sel?.bank || ""}
+                                          onChange={(e) => setPartnerBank(p.id, e.target.value)}
+                                          className="text-xs px-2 py-1 rounded border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500 flex-1 max-w-[200px]"
+                                        >
+                                          <option value="">Merchant Application...</option>
+                                          {(sel?.banks || []).map((b: any) => <option key={b.id} value={b.bank_name}>{b.bank_name}</option>)}
+                                        </select>
+                                        {sel?.bank && (
+                                          <span className={`text-[10px] font-medium ${sel.template ? "text-emerald-600" : "text-amber-500"}`}>
+                                            {sel.template ? `MPA \u2713` : "\u26A0 No template"}
+                                          </span>
+                                        )}
+                                      </>
+                                    ) : null}
+                                  </div>
+                                  {(isChecked || alreadySigned) && (
+                                    <div className="ml-7 mt-1">
+                                      {repCode ? (
+                                        <span className="text-[10px] text-slate-500">Rep Code: <span className="font-mono text-slate-700">{repCode.rep_code}</span>{repCode.split_pct != null ? ` \u2014 ${repCode.split_pct}% split` : ""}</span>
+                                      ) : lead.assigned_to ? (
+                                        <span className="text-[10px] text-amber-500">{"\u26A0"} No rep code assigned for this agent at {p.name}. <Link href="/dashboard/settings" className="text-emerald-600 hover:text-emerald-700 underline">Assign</Link></span>
+                                      ) : null}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Reuse banner: show when there's a reusable signature and new unchecked partners */}
+                    {(() => {
+                      const signedSession = reusableSession;
+                      const selectedNewIds = Object.keys(sigPartnerSelections).filter(pid => !getSignedPartnerIds(d.id).has(pid));
+                      if (!signedSession || selectedNewIds.length === 0) return null;
+                      return (
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                          <div className="flex items-start gap-3">
+                            <span className="text-lg mt-0.5">{"\u2705"}</span>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-emerald-800">Existing signature available</p>
+                              <p className="text-xs text-emerald-600 mt-0.5">
+                                Signed by {signedSession.signer_name} on {new Date(signedSession.signed_at).toLocaleDateString()}.
+                                Reuse for {selectedNewIds.map(pid => getPartnerNameById(pid)).join(", ")}?
+                              </p>
+                              <div className="flex items-center gap-3 mt-3">
+                                <button
+                                  onClick={() => {
+                                    const allHaveBanks = selectedNewIds.every(pid => sigPartnerSelections[pid]?.bank);
+                                    if (!allHaveBanks) { setDealMsg("Select a merchant application for each partner first"); setTimeout(() => setDealMsg(""), 3000); return; }
+                                    reuseBatchSignature(d.id, signedSession, selectedNewIds);
+                                  }}
+                                  disabled={sigSending}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:opacity-50"
+                                >
+                                  {sigSending ? "Processing..." : `Reuse Signature for ${selectedNewIds.length} Partner${selectedNewIds.length > 1 ? "s" : ""}`}
+                                </button>
+                                <span className="text-xs text-slate-400">or request a new signature below</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Step 2: MPA Fields */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">2</span>
+                        <h4 className="text-sm font-semibold text-slate-900">Review Pre-Filled MPA Fields</h4>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        {mpaChecks.map(check => (
+                          <div key={check.label} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${check.ok ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                            <span>{check.ok ? "\u2713" : "\u26A0"}</span>
+                            <span className="font-medium">{check.label}</span>
+                            {!check.ok && check.missing.length > 0 && <span className="text-[10px] opacity-75">({check.missing.join(", ")})</span>}
+                          </div>
+                        ))}
+                      </div>
+                      {sigTemplate?.extra_fields && typeof sigTemplate.extra_fields === "object" && Object.keys(sigTemplate.extra_fields).length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-slate-100">
+                          <p className="text-xs text-slate-500 mb-2 font-medium">Additional MPA Fields</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {Object.entries(sigTemplate.extra_fields).map(([key, def]) => (
+                              <div key={key}>
+                                <label className="text-xs text-slate-500 block mb-1">{key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</label>
+                                <input type="text" value={(d.mpa_extra_field_values || {})[key] || ""} onChange={(e) => { if (isActiveDeal) updateDealField("mpa_extra_field_values", { ...(d.mpa_extra_field_values || {}), [key]: e.target.value }); }} className="w-full text-sm px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Step 3: Send new signature */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">3</span>
+                        <h4 className="text-sm font-semibold text-slate-900">Request New Signature</h4>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="text-xs text-slate-500 block mb-1">Signer Name</label>
+                          <input type="text" value={sigSignerName} onChange={(e) => setSigSignerName(e.target.value)} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500 block mb-1">Signer Email</label>
+                          <input type="email" value={sigSignerEmail} onChange={(e) => setSigSignerEmail(e.target.value)} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500 block mb-1">Link Expires</label>
+                          <select value={sigExpiry} onChange={(e) => setSigExpiry(e.target.value)} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
+                            <option value="3">3 days</option>
+                            <option value="7">7 days</option>
+                            <option value="14">14 days</option>
+                            <option value="30">30 days</option>
+                          </select>
+                        </div>
+                      </div>
+                      {mpaResult.blockingCount > 0 ? (
+                        <div className="mt-3">
+                          <button disabled className="bg-slate-300 text-slate-500 px-5 py-2.5 rounded-lg text-sm font-medium cursor-not-allowed">Send for Signature</button>
+                          <p className="text-xs text-red-500 mt-2">{mpaResult.blockingCount} blocking issue{mpaResult.blockingCount > 1 ? "s" : ""} must be resolved before sending. Review the MPA Readiness section on the Overview tab.</p>
+                        </div>
+                      ) : (
+                        <div className="mt-3">
+                          {mpaResult.warningCount > 0 && <p className="text-xs text-amber-500 mb-2">{mpaResult.warningCount} warning{mpaResult.warningCount > 1 ? "s" : ""} — you can still send, but review recommended.</p>}
+                          {mpaResult.blockingCount === 0 && mpaResult.warningCount === 0 && <p className="text-xs text-emerald-600 mb-2">All MPA fields complete — ready to send</p>}
+                          <button
+                            onClick={() => {
+                              const selectedNew = Object.keys(sigPartnerSelections).filter(pid => !getSignedPartnerIds(d.id).has(pid));
+                              if (selectedNew.length > 0) {
+                                const allHaveBanks = selectedNew.every(pid => sigPartnerSelections[pid]?.bank);
+                                if (!allHaveBanks) { setDealMsg("Select a merchant application for each partner first"); setTimeout(() => setDealMsg(""), 3000); return; }
+                                sendBatchForSignature(d.id);
+                              } else {
+                                sendForSignature(d.id);
+                              }
+                            }}
+                            disabled={sigSending || !sigSignerEmail || !sigSignerName || Object.keys(sigPartnerSelections).filter(pid => !getSignedPartnerIds(d.id).has(pid)).length === 0}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                          >
+                            {sigSending ? "Sending..." : "Request New Signature"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Submission History Timeline */}
+                  {sessions.length > 0 && (
+                    <div className="mt-4 pt-4 border-t border-slate-100">
+                      <button onClick={() => setSigHistoryOpen(!sigHistoryOpen)} className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-700 font-medium transition">
+                        <svg className={`w-3 h-3 transition-transform ${sigHistoryOpen ? "rotate-90" : ""}`} fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
+                        Submission History ({sessions.length})
+                      </button>
+                      {sigHistoryOpen && (
+                        <div className="mt-3 space-y-2">
+                          {sessions.map((s: any, sIdx: number) => {
+                            const pStatus = s.partner_id && d.partner_submission_status?.[s.partner_id]?.status;
+                            return (
+                            <div key={s.id} className="flex items-start gap-3 text-xs">
+                              <div className="flex flex-col items-center">
+                                <span className={`w-2 h-2 rounded-full mt-1.5 ${s.decline_note ? "bg-red-400" : s.status === "signed" ? "bg-emerald-500" : s.status === "pending" ? "bg-blue-500" : s.status === "expired" ? "bg-slate-300" : "bg-red-400"}`} />
+                                {sIdx < sessions.length - 1 && <div className="w-px h-6 bg-slate-200 mt-1" />}
+                              </div>
+                              <div className="flex-1 pb-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-medium text-slate-700">
+                                    {s.partner_id ? getPartnerNameById(s.partner_id) : "Unknown Partner"}
+                                    <span className="text-slate-400 mx-1">&mdash;</span>
+                                    <span className={s.decline_note ? "text-red-500" : s.status === "signed" ? "text-emerald-600" : s.status === "pending" ? "text-blue-600" : "text-slate-400"}>
+                                      {s.decline_note ? "Declined" : s.status === "signed" ? "Signed" : s.status === "pending" ? "Pending Signature" : s.status === "expired" ? "Expired" : "Revoked"}
+                                    </span>
+                                    {s.reused_from_session_id && <span className="text-slate-400 ml-1">(reused)</span>}
+                                  </p>
+                                  {s.status === "signed" && s.partner_id && canEdit && (
+                                    <select
+                                      value={pStatus || "signed"}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onChange={(e) => updatePartnerSubmissionStatus(s.partner_id, e.target.value)}
+                                      className="text-[10px] px-1.5 py-0.5 rounded border border-slate-200 bg-white text-slate-600"
+                                    >
+                                      {partnerStatusOptions.map(opt => <option key={opt} value={opt}>{opt.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</option>)}
+                                    </select>
+                                  )}
+                                </div>
+                                <p className="text-slate-400">
+                                  {s.status === "signed" && s.signed_at ? `Signed ${new Date(s.signed_at).toLocaleDateString()}` : `Sent ${new Date(s.created_at).toLocaleDateString()}`}
+                                  {s.decline_note && <span className="text-red-400 ml-1">({s.decline_note})</span>}
+                                </p>
+                              </div>
+                            </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        </div>
+
         </>)}
         {/* ═══════════ PRICING TAB ═══════════ */}
         {leadTab === "Pricing" && (<>
@@ -1939,305 +2244,6 @@ export default function LeadDetailPage() {
 
         {/* ═══════════ DEAL INFO TAB ═══════════ */}
         {leadTab === "DealInfo" && (<>
-        {/* ═══════════ SEND FOR SIGNATURE SECTION ═══════════ */}
-        {lead.status === "send_for_signature" && deals.length > 0 && (
-          <div className="space-y-4 mb-6">
-            <h3 className="text-xl font-bold">Send for Signature</h3>
-            {deals.map((d, dIdx) => {
-              const sessions = sigSessions[d.id] || [];
-              const latestSession = sessions[0];
-              const isActiveDeal = dIdx === activeDealIdx;
-              const mpaChecks = checkMpaFields(d);
-              const reusableSession = findReusableSession();
-              // Only show reuse banner when there's no active/pending session for this deal
-              // and the reusable session is from a different partner than currently selected
-              const showReuseBanner = reusableSession && (!latestSession || latestSession.status === "expired" || latestSession.status === "revoked") && d.partner_id;
-
-              return (
-                <div key={d.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                  {deals.length > 1 && (
-                    <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
-                      {d.is_primary_location && <svg className="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>}
-                      <h4 className="text-base font-semibold text-slate-900">{d.location_name || d.dba_name || `Location ${dIdx + 1}`}</h4>
-                    </div>
-                  )}
-
-                  {/* Current signed/pending session status (compact) */}
-                  {latestSession && latestSession.status === "pending" && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <div className="flex items-center gap-2">
-                          <span>{"\u23F3"}</span>
-                          <div>
-                            <p className="text-sm font-medium text-blue-900">Awaiting signature{latestSession.partner_id ? ` — ${getPartnerNameById(latestSession.partner_id)}` : ""}</p>
-                            <p className="text-xs text-blue-600">Sent to {latestSession.signer_email} &middot; Expires {new Date(latestSession.expires_at).toLocaleDateString()}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => copySigLink(latestSession.token)} className="bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg px-3 py-1.5 text-xs font-medium transition">{sigCopied === latestSession.token ? "Copied!" : "Copy Link"}</button>
-                          <button onClick={() => { sendForSignature(d.id); }} disabled={sigSending} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:opacity-50">Resend</button>
-                          <button onClick={() => revokeSigSession(latestSession.id)} className="text-red-500 hover:text-red-600 text-xs font-medium">Revoke</button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {latestSession && latestSession.status === "signed" && (
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-4">
-                      <div className="flex items-center gap-2">
-                        <span>{"\u2705"}</span>
-                        <div>
-                          <p className="text-sm font-medium text-emerald-800">
-                            Signed{latestSession.partner_id ? ` — ${getPartnerNameById(latestSession.partner_id)}` : ""}
-                            {latestSession.reused_from_session_id ? " (reused)" : ""}
-                          </p>
-                          <p className="text-xs text-emerald-600">
-                            {latestSession.signer_name} on {new Date(latestSession.signed_at).toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Partner & Merchant Application — always shown */}
-                  <div className="space-y-5">
-                    <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">1</span>
-                        <h4 className="text-sm font-semibold text-slate-900">Select Partners & Merchant Applications</h4>
-                      </div>
-                      {(() => {
-                        const signedPids = getSignedPartnerIds(d.id);
-                        return (
-                          <div className="space-y-2">
-                            {partners.map(p => {
-                              const alreadySigned = signedPids.has(p.id);
-                              const isChecked = !!sigPartnerSelections[p.id];
-                              const sel = sigPartnerSelections[p.id];
-                              const repCode = getRepCodeForPartner(p.id);
-                              return (
-                                <div key={p.id} className={`px-3 py-2 rounded-lg border ${alreadySigned ? "border-emerald-200 bg-emerald-50" : isChecked ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}>
-                                  <div className="flex items-center gap-3">
-                                    <input
-                                      type="checkbox"
-                                      checked={isChecked || alreadySigned}
-                                      disabled={alreadySigned}
-                                      onChange={() => { if (isActiveDeal && !alreadySigned) togglePartnerSelection(p.id); }}
-                                      className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                                    />
-                                    <span className="text-sm font-medium text-slate-900 min-w-[120px]">{p.name}</span>
-                                    {alreadySigned ? (
-                                      <span className="text-xs text-emerald-600 font-medium">{"\u2705"} Signed</span>
-                                    ) : isChecked ? (
-                                      <>
-                                        <select
-                                          value={sel?.bank || ""}
-                                          onChange={(e) => setPartnerBank(p.id, e.target.value)}
-                                          className="text-xs px-2 py-1 rounded border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500 flex-1 max-w-[200px]"
-                                        >
-                                          <option value="">Merchant Application...</option>
-                                          {(sel?.banks || []).map((b: any) => <option key={b.id} value={b.bank_name}>{b.bank_name}</option>)}
-                                        </select>
-                                        {sel?.bank && (
-                                          <span className={`text-[10px] font-medium ${sel.template ? "text-emerald-600" : "text-amber-500"}`}>
-                                            {sel.template ? `MPA \u2713` : "\u26A0 No template"}
-                                          </span>
-                                        )}
-                                      </>
-                                    ) : null}
-                                  </div>
-                                  {(isChecked || alreadySigned) && (
-                                    <div className="ml-7 mt-1">
-                                      {repCode ? (
-                                        <span className="text-[10px] text-slate-500">Rep Code: <span className="font-mono text-slate-700">{repCode.rep_code}</span>{repCode.split_pct != null ? ` \u2014 ${repCode.split_pct}% split` : ""}</span>
-                                      ) : lead.assigned_to ? (
-                                        <span className="text-[10px] text-amber-500">{"\u26A0"} No rep code assigned for this agent at {p.name}. <Link href="/dashboard/settings" className="text-emerald-600 hover:text-emerald-700 underline">Assign</Link></span>
-                                      ) : null}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
-                    </div>
-
-                    {/* Reuse banner: show when there's a reusable signature and new unchecked partners */}
-                    {(() => {
-                      const signedSession = reusableSession;
-                      const selectedNewIds = Object.keys(sigPartnerSelections).filter(pid => !getSignedPartnerIds(d.id).has(pid));
-                      if (!signedSession || selectedNewIds.length === 0) return null;
-                      return (
-                        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
-                          <div className="flex items-start gap-3">
-                            <span className="text-lg mt-0.5">{"\u2705"}</span>
-                            <div className="flex-1">
-                              <p className="text-sm font-medium text-emerald-800">Existing signature available</p>
-                              <p className="text-xs text-emerald-600 mt-0.5">
-                                Signed by {signedSession.signer_name} on {new Date(signedSession.signed_at).toLocaleDateString()}.
-                                Reuse for {selectedNewIds.map(pid => getPartnerNameById(pid)).join(", ")}?
-                              </p>
-                              <div className="flex items-center gap-3 mt-3">
-                                <button
-                                  onClick={() => {
-                                    const allHaveBanks = selectedNewIds.every(pid => sigPartnerSelections[pid]?.bank);
-                                    if (!allHaveBanks) { setDealMsg("Select a merchant application for each partner first"); setTimeout(() => setDealMsg(""), 3000); return; }
-                                    reuseBatchSignature(d.id, signedSession, selectedNewIds);
-                                  }}
-                                  disabled={sigSending}
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3 py-1.5 text-xs font-medium transition disabled:opacity-50"
-                                >
-                                  {sigSending ? "Processing..." : `Reuse Signature for ${selectedNewIds.length} Partner${selectedNewIds.length > 1 ? "s" : ""}`}
-                                </button>
-                                <span className="text-xs text-slate-400">or request a new signature below</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Step 2: MPA Fields */}
-                    <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">2</span>
-                        <h4 className="text-sm font-semibold text-slate-900">Review Pre-Filled MPA Fields</h4>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                        {mpaChecks.map(check => (
-                          <div key={check.label} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${check.ok ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                            <span>{check.ok ? "\u2713" : "\u26A0"}</span>
-                            <span className="font-medium">{check.label}</span>
-                            {!check.ok && check.missing.length > 0 && <span className="text-[10px] opacity-75">({check.missing.join(", ")})</span>}
-                          </div>
-                        ))}
-                      </div>
-                      {sigTemplate?.extra_fields && typeof sigTemplate.extra_fields === "object" && Object.keys(sigTemplate.extra_fields).length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-slate-100">
-                          <p className="text-xs text-slate-500 mb-2 font-medium">Additional MPA Fields</p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {Object.entries(sigTemplate.extra_fields).map(([key, def]) => (
-                              <div key={key}>
-                                <label className="text-xs text-slate-500 block mb-1">{key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</label>
-                                <input type="text" value={(d.mpa_extra_field_values || {})[key] || ""} onChange={(e) => { if (isActiveDeal) updateDealField("mpa_extra_field_values", { ...(d.mpa_extra_field_values || {}), [key]: e.target.value }); }} className="w-full text-sm px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Step 3: Send new signature */}
-                    <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">3</span>
-                        <h4 className="text-sm font-semibold text-slate-900">Request New Signature</h4>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div>
-                          <label className="text-xs text-slate-500 block mb-1">Signer Name</label>
-                          <input type="text" value={sigSignerName} onChange={(e) => setSigSignerName(e.target.value)} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" />
-                        </div>
-                        <div>
-                          <label className="text-xs text-slate-500 block mb-1">Signer Email</label>
-                          <input type="email" value={sigSignerEmail} onChange={(e) => setSigSignerEmail(e.target.value)} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500" />
-                        </div>
-                        <div>
-                          <label className="text-xs text-slate-500 block mb-1">Link Expires</label>
-                          <select value={sigExpiry} onChange={(e) => setSigExpiry(e.target.value)} className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-emerald-500">
-                            <option value="3">3 days</option>
-                            <option value="7">7 days</option>
-                            <option value="14">14 days</option>
-                            <option value="30">30 days</option>
-                          </select>
-                        </div>
-                      </div>
-                      {mpaResult.blockingCount > 0 ? (
-                        <div className="mt-3">
-                          <button disabled className="bg-slate-300 text-slate-500 px-5 py-2.5 rounded-lg text-sm font-medium cursor-not-allowed">Send for Signature</button>
-                          <p className="text-xs text-red-500 mt-2">{mpaResult.blockingCount} blocking issue{mpaResult.blockingCount > 1 ? "s" : ""} must be resolved before sending. Review the MPA Readiness section on the Overview tab.</p>
-                        </div>
-                      ) : (
-                        <div className="mt-3">
-                          {mpaResult.warningCount > 0 && <p className="text-xs text-amber-500 mb-2">{mpaResult.warningCount} warning{mpaResult.warningCount > 1 ? "s" : ""} — you can still send, but review recommended.</p>}
-                          {mpaResult.blockingCount === 0 && mpaResult.warningCount === 0 && <p className="text-xs text-emerald-600 mb-2">All MPA fields complete — ready to send</p>}
-                          <button
-                            onClick={() => {
-                              const selectedNew = Object.keys(sigPartnerSelections).filter(pid => !getSignedPartnerIds(d.id).has(pid));
-                              if (selectedNew.length > 0) {
-                                const allHaveBanks = selectedNew.every(pid => sigPartnerSelections[pid]?.bank);
-                                if (!allHaveBanks) { setDealMsg("Select a merchant application for each partner first"); setTimeout(() => setDealMsg(""), 3000); return; }
-                                sendBatchForSignature(d.id);
-                              } else {
-                                sendForSignature(d.id);
-                              }
-                            }}
-                            disabled={sigSending || !sigSignerEmail || !sigSignerName || Object.keys(sigPartnerSelections).filter(pid => !getSignedPartnerIds(d.id).has(pid)).length === 0}
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
-                          >
-                            {sigSending ? "Sending..." : "Request New Signature"}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Submission History Timeline */}
-                  {sessions.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-slate-100">
-                      <button onClick={() => setSigHistoryOpen(!sigHistoryOpen)} className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-700 font-medium transition">
-                        <svg className={`w-3 h-3 transition-transform ${sigHistoryOpen ? "rotate-90" : ""}`} fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
-                        Submission History ({sessions.length})
-                      </button>
-                      {sigHistoryOpen && (
-                        <div className="mt-3 space-y-2">
-                          {sessions.map((s: any, sIdx: number) => {
-                            const pStatus = s.partner_id && d.partner_submission_status?.[s.partner_id]?.status;
-                            return (
-                            <div key={s.id} className="flex items-start gap-3 text-xs">
-                              <div className="flex flex-col items-center">
-                                <span className={`w-2 h-2 rounded-full mt-1.5 ${s.decline_note ? "bg-red-400" : s.status === "signed" ? "bg-emerald-500" : s.status === "pending" ? "bg-blue-500" : s.status === "expired" ? "bg-slate-300" : "bg-red-400"}`} />
-                                {sIdx < sessions.length - 1 && <div className="w-px h-6 bg-slate-200 mt-1" />}
-                              </div>
-                              <div className="flex-1 pb-2">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <p className="font-medium text-slate-700">
-                                    {s.partner_id ? getPartnerNameById(s.partner_id) : "Unknown Partner"}
-                                    <span className="text-slate-400 mx-1">&mdash;</span>
-                                    <span className={s.decline_note ? "text-red-500" : s.status === "signed" ? "text-emerald-600" : s.status === "pending" ? "text-blue-600" : "text-slate-400"}>
-                                      {s.decline_note ? "Declined" : s.status === "signed" ? "Signed" : s.status === "pending" ? "Pending Signature" : s.status === "expired" ? "Expired" : "Revoked"}
-                                    </span>
-                                    {s.reused_from_session_id && <span className="text-slate-400 ml-1">(reused)</span>}
-                                  </p>
-                                  {s.status === "signed" && s.partner_id && canEdit && (
-                                    <select
-                                      value={pStatus || "signed"}
-                                      onClick={(e) => e.stopPropagation()}
-                                      onChange={(e) => updatePartnerSubmissionStatus(s.partner_id, e.target.value)}
-                                      className="text-[10px] px-1.5 py-0.5 rounded border border-slate-200 bg-white text-slate-600"
-                                    >
-                                      {partnerStatusOptions.map(opt => <option key={opt} value={opt}>{opt.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</option>)}
-                                    </select>
-                                  )}
-                                </div>
-                                <p className="text-slate-400">
-                                  {s.status === "signed" && s.signed_at ? `Signed ${new Date(s.signed_at).toLocaleDateString()}` : `Sent ${new Date(s.created_at).toLocaleDateString()}`}
-                                  {s.decline_note && <span className="text-red-400 ml-1">({s.decline_note})</span>}
-                                </p>
-                              </div>
-                            </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
 
         {deals.length > 0 && ["qualified_prospect", "send_for_signature", "signed", "submitted", "converted"].includes(lead.status) && (
           <>
