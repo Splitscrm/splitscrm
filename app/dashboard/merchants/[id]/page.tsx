@@ -8,6 +8,8 @@ import Sidebar from '@/components/Sidebar'
 import TaskModal from '@/components/TaskModal'
 import { useAuth } from '@/lib/auth-context'
 import LoadingScreen from '@/components/LoadingScreen'
+import { useAutoSave } from '@/lib/use-auto-save'
+import SaveIndicator from '@/components/SaveIndicator'
 
 export default function MerchantDetailPage() {
   const router = useRouter()
@@ -303,6 +305,20 @@ export default function MerchantDetailPage() {
     setMerchant({ ...merchant, [field]: value })
   }
 
+  // ── Auto-save merchant fields ──
+  const merchantAutoSave = useAutoSave({
+    data: merchant,
+    saveFn: async () => {
+      if (!merchant?.id) return { error: 'No merchant' }
+      if (!merchant.business_name?.trim()) return { error: 'Business name required' }
+      const { id, created_at, user_id, lead_id, ...updates } = merchant
+      const { error } = await supabase.from('merchants').update(updates).eq('id', merchant.id)
+      if (error) return { error: error.message }
+      return { error: null }
+    },
+    enabled: !!merchant?.id && !loading,
+  })
+
   // Auto-sync summary pricing fields when detail fields change
   useEffect(() => {
     if (!merchant) return
@@ -344,6 +360,7 @@ export default function MerchantDetailPage() {
     if (updateError) {
       setError(updateError.message)
     } else {
+      merchantAutoSave.resetSnapshot()
       setMsg('Merchant saved!')
       setTimeout(() => setMsg(''), 2000)
     }
@@ -505,6 +522,7 @@ export default function MerchantDetailPage() {
               )}
             </div>
             <div className="flex flex-wrap items-center gap-3">
+              <SaveIndicator status={merchantAutoSave.status} />
               {msg && <span className="text-emerald-600 text-sm">{msg}</span>}
               <span className={`text-xs font-medium px-3 py-1 rounded-full border ${statusColors[merchant.status] || statusColors.active}`}>
                 {(merchant.status || 'active').charAt(0).toUpperCase() + (merchant.status || 'active').slice(1)}

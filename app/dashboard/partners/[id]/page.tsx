@@ -12,6 +12,8 @@ import { authFetch } from "@/lib/api-client";
 import { getSignedUrl } from "@/lib/storage";
 import ExportCSV from "@/components/ExportCSV";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { useAutoSave, useCollectionAutoSave, combineSaveStatuses } from "@/lib/use-auto-save";
+import SaveIndicator from "@/components/SaveIndicator";
 
 export default function PartnerDetailPage() {
   const router = useRouter();
@@ -113,6 +115,106 @@ export default function PartnerDetailPage() {
     return out;
   };
 
+  // ── Auto-save: partner info ──
+  const partnerAutoSave = useAutoSave({
+    data: partner,
+    saveFn: async () => {
+      if (!partner?.id) return { error: "No partner" };
+      const updates = {
+        name: partner.name, relationship_manager: partner.relationship_manager,
+        status: partner.status, support_phone: partner.support_phone,
+        rm_phone: partner.rm_phone, email: partner.email, website: partner.website,
+        residual_split: num(partner.residual_split),
+        restricted_split_pct: num(partner.restricted_split_pct),
+        notes: partner.notes, pricing_data: partner.pricing_data,
+        department_contacts: partner.department_contacts,
+      };
+      const { error } = await supabase.from("partners").update(updates).eq("id", partner.id);
+      if (error) return { error: error.message };
+      return { error: null };
+    },
+    enabled: !!partner?.id && !loading,
+  });
+
+  // ── Auto-save: banks ──
+  const bankAutoSave = useCollectionAutoSave({
+    items: banks,
+    getKey: (b: any) => b.id || "",
+    saveFn: async (b: any) => {
+      const updates = pick(b, ["bank_name", "cutoff_timezone", "next_day_funding", "batch_cutoff_time", "same_day_funding", "same_day_cutoff_time", "accepted_mcc_codes", "restricted_mcc_codes", "details"]);
+      const { error } = await supabase.from("partner_sponsor_banks").update(updates).eq("id", b.id);
+      if (error) return { error: error.message };
+      return { error: null };
+    },
+    enabled: banks.length > 0 && !loading,
+  });
+
+  // ── Auto-save: hardware ──
+  const hwAutoSave = useCollectionAutoSave({
+    items: hardware,
+    getKey: (h: any) => h.id || "",
+    saveFn: async (h: any) => {
+      const updates = pick(h, ["hardware_type", "hardware_name", "manufacturer", "model", "details", "notes"]);
+      updates.cost = num(h.cost); updates.msrp = num(h.msrp);
+      updates.partner_cost = num(h.partner_cost); updates.free_placement_eligible = h.free_placement_eligible;
+      const { error } = await supabase.from("partner_hardware").update(updates).eq("id", h.id);
+      if (error) return { error: error.message };
+      return { error: null };
+    },
+    enabled: hardware.length > 0 && !loading,
+  });
+
+  // ── Auto-save: software ──
+  const swAutoSave = useCollectionAutoSave({
+    items: software,
+    getKey: (s: any) => s.id || "",
+    saveFn: async (s: any) => {
+      const updates = pick(s, ["software_name", "software_type", "manufacturer", "details", "notes"]);
+      updates.monthly_cost = num(s.monthly_cost); updates.per_transaction_cost = num(s.per_transaction_cost);
+      updates.per_txn_cost = num(s.per_txn_cost); updates.msrp = num(s.msrp);
+      updates.partner_cost = num(s.partner_cost);
+      const { error } = await supabase.from("partner_software").update(updates).eq("id", s.id);
+      if (error) return { error: error.message };
+      return { error: null };
+    },
+    enabled: software.length > 0 && !loading,
+  });
+
+  // ── Auto-save: underwriting ──
+  const uwAutoSave = useCollectionAutoSave({
+    items: underwriting,
+    getKey: (u: any) => u.id || "",
+    saveFn: async (uw: any) => {
+      const updates = pick(uw, ["guideline_name", "description", "restricted_industries", "details"]);
+      updates.max_volume = num(uw.max_volume); updates.max_ticket = num(uw.max_ticket);
+      const { error } = await supabase.from("partner_underwriting").update(updates).eq("id", uw.id);
+      if (error) return { error: error.message };
+      return { error: null };
+    },
+    enabled: underwriting.length > 0 && !loading,
+  });
+
+  // ── Auto-save: pricing ──
+  const prAutoSave = useCollectionAutoSave({
+    items: pricing,
+    getKey: (p: any) => p.id || "",
+    saveFn: async (pr: any) => {
+      const updates = pick(pr, ["schedule_name", "pricing_model"]);
+      updates.discount_rate = num(pr.discount_rate);
+      updates.per_transaction_fee = num(pr.per_transaction_fee);
+      updates.monthly_fee = num(pr.monthly_fee);
+      const { error } = await supabase.from("partner_pricing").update(updates).eq("id", pr.id);
+      if (error) return { error: error.message };
+      return { error: null };
+    },
+    enabled: pricing.length > 0 && !loading,
+  });
+
+  const combinedPartnerStatus = combineSaveStatuses(
+    partnerAutoSave.status, bankAutoSave.overallStatus, hwAutoSave.overallStatus,
+    swAutoSave.overallStatus, uwAutoSave.overallStatus, prAutoSave.overallStatus,
+  );
+
   const savePartner = async () => {
     setSaving(true);
     try {
@@ -132,6 +234,7 @@ export default function PartnerDetailPage() {
       };
       const { error } = await supabase.from("partners").update(updates).eq("id", partner.id);
       if (error) { showMsg("Save failed: " + error.message); return; }
+      partnerAutoSave.resetSnapshot();
       showMsg("Partner saved!");
     } catch (e: any) {
       showMsg("Save failed: " + (e.message || "unknown error"));
@@ -150,6 +253,7 @@ export default function PartnerDetailPage() {
       const updates = pick(b, ["bank_name", "cutoff_timezone", "next_day_funding", "batch_cutoff_time", "same_day_funding", "same_day_cutoff_time", "accepted_mcc_codes", "restricted_mcc_codes", "details"]);
       const { error } = await supabase.from("partner_sponsor_banks").update(updates).eq("id", b.id);
       if (error) { showMsg("Save failed: " + error.message); return; }
+      bankAutoSave.resetSnapshots();
       showMsg("Saved!");
     } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); } finally { setSavingItem(null); }
   };
@@ -169,6 +273,7 @@ export default function PartnerDetailPage() {
       updates.free_placement_eligible = h.free_placement_eligible;
       const { error } = await supabase.from("partner_hardware").update(updates).eq("id", h.id);
       if (error) { showMsg("Save failed: " + error.message); return; }
+      hwAutoSave.resetSnapshots();
       showMsg("Hardware saved!");
     } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); } finally { setSavingItem(null); }
   };
@@ -189,6 +294,7 @@ export default function PartnerDetailPage() {
       updates.partner_cost = num(s.partner_cost);
       const { error } = await supabase.from("partner_software").update(updates).eq("id", s.id);
       if (error) { showMsg("Save failed: " + error.message); return; }
+      swAutoSave.resetSnapshots();
       showMsg("Software saved!");
     } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); } finally { setSavingItem(null); }
   };
@@ -206,6 +312,7 @@ export default function PartnerDetailPage() {
       updates.max_ticket = num(uw.max_ticket);
       const { error } = await supabase.from("partner_underwriting").update(updates).eq("id", uw.id);
       if (error) { showMsg("Save failed: " + error.message); return; }
+      uwAutoSave.resetSnapshots();
       showMsg("Guideline saved!");
     } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); } finally { setSavingItem(null); }
   };
@@ -224,6 +331,7 @@ export default function PartnerDetailPage() {
       updates.monthly_fee = num(pr.monthly_fee);
       const { error } = await supabase.from("partner_pricing").update(updates).eq("id", pr.id);
       if (error) { showMsg("Save failed: " + error.message); return; }
+      prAutoSave.resetSnapshots();
       showMsg("Pricing saved!");
     } catch (e: any) { showMsg("Save failed: " + (e.message || "unknown error")); } finally { setSavingItem(null); }
   };
@@ -583,6 +691,7 @@ export default function PartnerDetailPage() {
             <p className="text-slate-500 mt-1">{partner.relationship_manager || "No relationship manager set"}</p>
           </div>
           <div className="flex items-center gap-3">
+            <SaveIndicator status={combinedPartnerStatus} />
             <select value={partner.status || "active"} onChange={(e) => updatePartnerField("status", e.target.value)} className="px-4 py-2 rounded-full text-sm font-medium bg-white border border-slate-200 focus:outline-none focus:border-emerald-500 cursor-pointer text-slate-900">
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>

@@ -13,6 +13,8 @@ import { authFetch } from "@/lib/api-client";
 import { getSignedUrl, extractStoragePath } from "@/lib/storage";
 import { checkMpaCompleteness, getTabStatus, type MpaCompletenessResult } from "@/lib/mpa-completeness";
 import MCCCodeSelect from "@/components/MCCCodeSelect";
+import { useAutoSave, useCollectionAutoSave, combineSaveStatuses } from "@/lib/use-auto-save";
+import SaveIndicator from "@/components/SaveIndicator";
 
 const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC"];
 
@@ -140,6 +142,61 @@ export default function LeadDetailPage() {
   const [signedDocUrls, setSignedDocUrls] = useState<Record<string, string>>({});
   const [regenerating, setRegenerating] = useState<string | null>(null);
   const toggleGroup = (key: string) => setOpenGroups(prev => ({ ...prev, [key]: !prev[key] }));
+
+  // ── Auto-save: deal fields ──
+  const dealAutoSave = useAutoSave({
+    data: deal,
+    saveFn: async () => {
+      if (!deal?.id) return { error: "No deal" };
+      const { id, created_at, lead_id, user_id, ...raw } = deal;
+      const updates: Record<string, any> = {};
+      for (const key of Object.keys(raw)) {
+        if (VALID_DEAL_COLUMNS.has(key)) updates[key] = raw[key] === "" ? null : raw[key];
+      }
+      updates.updated_at = new Date().toISOString();
+      const { error } = await supabase.from("deals").update(updates).eq("id", deal.id);
+      if (error) return { error: error.message };
+      await supabase.from("leads").update({ updated_at: new Date().toISOString() }).eq("id", params.id);
+      setLead((prev: any) => prev ? { ...prev, updated_at: new Date().toISOString() } : prev);
+      return { error: null };
+    },
+    enabled: !!deal?.id && !loading,
+  });
+
+  // ── Auto-save: owners (independently per owner) ──
+  const ownerAutoSave = useCollectionAutoSave({
+    items: owners,
+    getKey: (o: any) => o.id || "",
+    saveFn: async (owner: any) => {
+      const { id, created_at, _ssn_plain, ...raw } = owner;
+      const updates: Record<string, any> = {};
+      for (const key of Object.keys(raw)) {
+        if (VALID_OWNER_COLUMNS.has(key)) updates[key] = raw[key];
+      }
+      if (_ssn_plain) {
+        try {
+          const res = await authFetch("/api/encrypt-ssn", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ssn: _ssn_plain }),
+          });
+          if (!res.ok) return { error: "SSN encryption failed" };
+          const data = await res.json();
+          if (data.encrypted) { updates.ssn_encrypted = data.encrypted; updates.ssn = null; }
+        } catch { return { error: "SSN encryption failed" }; }
+      }
+      const { error } = await supabase.from("deal_owners").update(updates).eq("id", id);
+      if (error) return { error: error.message };
+      if (_ssn_plain) {
+        const { _ssn_plain: _, ...clean } = owner;
+        return { error: null, snapshot: { ...clean, ssn_encrypted: updates.ssn_encrypted || clean.ssn_encrypted } as any };
+      }
+      return { error: null };
+    },
+    enabled: owners.length > 0 && !loading,
+  });
+
+  const combinedDealStatus = combineSaveStatuses(dealAutoSave.status, ownerAutoSave.overallStatus);
 
   const docTypes = [
     { value: "processing_statement", label: "Processing Statement" },
@@ -1072,7 +1129,6 @@ export default function LeadDetailPage() {
   const saveDeal = async () => {
     setDealSaving(true);
     const { id, created_at, lead_id, user_id, ...raw } = deal;
-    // Filter to only valid DB columns to prevent 400 errors
     const updates: Record<string, any> = {};
     for (const key of Object.keys(raw)) {
       if (VALID_DEAL_COLUMNS.has(key)) {
@@ -1088,6 +1144,7 @@ export default function LeadDetailPage() {
       await supabase.from("leads").update({ updated_at: new Date().toISOString() }).eq("id", params.id);
       setLead((prev: any) => ({ ...prev, updated_at: new Date().toISOString() }));
       await logActivity("deal_updated", null, null, null, "Deal details updated");
+      dealAutoSave.resetSnapshot();
       setDealMsg("Deal saved!");
     }
     setDealSaving(false);
@@ -1158,6 +1215,7 @@ export default function LeadDetailPage() {
         return rest;
       }));
       setRevealedSsns({});
+      ownerAutoSave.resetSnapshots();
     }
   };
 
@@ -2255,6 +2313,7 @@ export default function LeadDetailPage() {
                 {deal?.updated_at && <p className="text-slate-400 text-xs mt-1">Deal last modified: {new Date(deal.updated_at).toLocaleString()}</p>}
               </div>
               <div className="flex items-center gap-3">
+                <SaveIndicator status={combinedDealStatus} />
                 {dealMsg && <span className="text-emerald-600 text-sm">{dealMsg}</span>}
                 {canEdit && <button onClick={async () => { await saveDeal(); await saveOwners(); }} disabled={dealSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm transition disabled:opacity-50">{dealSaving ? "Saving..." : "Save Deal"}</button>}
               </div>
