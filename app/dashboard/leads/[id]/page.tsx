@@ -2712,13 +2712,13 @@ export default function LeadDetailPage() {
                           {revealedSsns[idx] !== undefined ? (
                             <input type="text" value={revealedSsns[idx]} onChange={(e) => { const val = e.target.value; updateOwner(idx, "_ssn_plain", val); setRevealedSsns(prev => ({ ...prev, [idx]: val })); }} className={inputClass + " pr-10"} placeholder="###-##-####" />
                           ) : (
-                            <input type="password" value={o.ssn_encrypted ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : o._ssn_plain || ""} onChange={(e) => { updateOwner(idx, "_ssn_plain", e.target.value); }} className={inputClass + " pr-10"} placeholder="\u2022\u2022\u2022-\u2022\u2022-####" readOnly={!!o.ssn_encrypted && !o._ssn_plain} />
+                            <input type="password" value={o.ssn_encrypted ? "••••••••••" : o._ssn_plain || ""} onChange={(e) => { updateOwner(idx, "_ssn_plain", e.target.value); }} className={inputClass + " pr-10"} placeholder="•••-••-####" readOnly={!!o.ssn_encrypted && !o._ssn_plain} />
                           )}
                           <button type="button" onClick={() => toggleSsnVisibility(idx)} disabled={revealingIdx === idx} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm disabled:opacity-50" title={revealedSsns[idx] !== undefined ? "Hide SSN" : "Show SSN"}>
-                            {revealingIdx === idx ? "\u23F3" : revealedSsns[idx] !== undefined ? "\uD83D\uDE48" : "\uD83D\uDC41"}
+                            {revealingIdx === idx ? "⏳" : revealedSsns[idx] !== undefined ? "🙈" : "👁"}
                           </button>
                         </div>
-                        <p className="text-xs text-slate-400 mt-0.5">{"\uD83D\uDD12"} Encrypted</p>
+                        <p className="text-xs text-slate-400 mt-0.5">🔒 Encrypted</p>
                       </div>
                       <div><label className={labelClass}>Phone</label><input type="tel" value={o.phone || ""} onChange={(e) => updateOwner(idx, "phone", e.target.value)} className={inputClass} /></div>
                     </div>
