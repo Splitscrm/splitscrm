@@ -647,7 +647,7 @@ export default function MerchantDetailPage() {
         )}
 
         {/* STEP 2 — 2-COLUMN LAYOUT */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
 
           {/* LEFT COLUMN (60%) — Collapsible form groups */}
           <div className="lg:col-span-3 space-y-2">
