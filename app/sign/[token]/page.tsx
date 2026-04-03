@@ -375,20 +375,7 @@ export default function SignPage() {
             </div>
           )}
 
-          {/* Partner & Bank */}
-          {(partner || deal?.sponsor_bank || allPartners.length > 0) && (
-            <div>
-              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">{allPartners.length > 1 ? "Submitting To" : "Processing Partner"}</h3>
-              {allPartners.length > 1 ? (
-                <p className={valueClass}>{allPartners.map((p: any) => p.name).join(", ")}</p>
-              ) : (
-                <div className="grid grid-cols-2 gap-x-4">
-                  {partner && <div><span className={labelClass}>Partner</span><p className={valueClass}>{partner.name}</p></div>}
-                  {deal?.sponsor_bank && <div><span className={labelClass}>Merchant Application</span><p className={valueClass}>{deal.sponsor_bank}</p></div>}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Partner & Bank — hidden from merchant (internal ISO info) */}
         </div>
 
         {/* Section 2: Terms & Consent */}
