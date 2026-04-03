@@ -18,7 +18,7 @@ const STATUS_LABELS: Record<string, string> = {
   send_for_signature: 'Send for Signature',
   signed: 'Signed',
   submitted: 'Submitted',
-  converted: 'Converted',
+  merchant: 'Merchant',
   declined: 'Declined',
   unqualified: 'Unqualified',
   unresponsive: 'Unresponsive',
@@ -33,7 +33,7 @@ const STATUS_COLORS: Record<string, string> = {
   send_for_signature: 'bg-blue-600',
   signed: 'bg-emerald-600',
   submitted: 'bg-indigo-500',
-  converted: 'bg-emerald-700',
+  merchant: 'bg-emerald-700',
   declined: 'bg-red-500',
   unqualified: 'bg-red-400',
   unresponsive: 'bg-slate-400',
@@ -267,7 +267,7 @@ export default function Dashboard() {
           : supabase.from('deals').select('monthly_volume, lead_id, leads!inner(status)').eq('user_id', user.id),
         addRoleFilter(supabase.from('leads').select('*', { count: 'exact', head: true }).gte('created_at', monthStart)),
         addRoleFilter(supabase.from('leads').select('*', { count: 'exact', head: true })),
-        addRoleFilter(supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'converted')),
+        addRoleFilter(supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'merchant')),
         isOwnerOrManager ? supabase.from('partners').select('*', { count: 'exact', head: true }).eq('status', 'active') : Promise.resolve({ count: 0 }),
         isOwnerOrManager ? supabase.from('partners').select('*', { count: 'exact', head: true }) : Promise.resolve({ count: 0 }),
         addRoleFilter(supabase.from('leads').select('status')),
@@ -291,7 +291,7 @@ export default function Dashboard() {
       ])
 
       // Pipeline value: sum monthly_volume from deals where lead status is not converted/unqualified/unresponsive
-      const excludeStatuses = ['converted', 'unqualified', 'unresponsive']
+      const excludeStatuses = ['merchant', 'unqualified', 'unresponsive']
       let pipelineValue = 0
       let activeDeals = 0
       if (allDealsWithLeads) {

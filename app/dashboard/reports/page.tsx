@@ -133,7 +133,7 @@ const COLORS = [
 
 const PIPELINE_STAGES = [
   'new_prospect', 'contact_pending', 'pending_qualification', 'qualified_prospect',
-  'send_for_signature', 'signed', 'submitted', 'converted',
+  'send_for_signature', 'signed', 'submitted', 'merchant',
 ] as const
 
 const EXIT_STAGES = ['declined', 'unqualified', 'unresponsive', 'recycled'] as const
@@ -146,7 +146,7 @@ const STATUS_LABELS: Record<string, string> = {
   send_for_signature: 'Send for Signature',
   signed: 'Signed',
   submitted: 'Submitted',
-  converted: 'Converted',
+  merchant: 'Merchant',
   declined: 'Declined',
   unqualified: 'Unqualified',
   unresponsive: 'Unresponsive',
@@ -161,7 +161,7 @@ const STAGE_COLORS: Record<string, string> = {
   send_for_signature: 'bg-blue-600',
   signed: 'bg-emerald-600',
   submitted: 'bg-indigo-500',
-  converted: 'bg-emerald-700',
+  merchant: 'bg-emerald-700',
   declined: 'bg-red-500',
   unqualified: 'bg-red-400',
   unresponsive: 'bg-slate-400',
@@ -733,7 +733,7 @@ export default function ReportsPage() {
 
   const pipelineValue = useMemo(() => {
     return leads
-      .filter(l => !['converted', 'unqualified', 'unresponsive', 'recycled'].includes(l.status))
+      .filter(l => !['merchant', 'unqualified', 'unresponsive', 'recycled'].includes(l.status))
       .reduce((s, l) => s + (l.monthly_volume || 0), 0)
   }, [leads])
 
@@ -757,7 +757,7 @@ export default function ReportsPage() {
 
   // Pipeline velocity
   const pipelineVelocity = useMemo(() => {
-    const converted = leads.filter(l => l.status === 'converted')
+    const converted = leads.filter(l => l.status === 'merchant')
     const avgDaysToClose = converted.length > 0
       ? converted.reduce((s, l) => {
           const created = new Date(l.created_at).getTime()
@@ -799,7 +799,7 @@ export default function ReportsPage() {
       // Leads
       const assignedLeads = leads.filter(l => l.assigned_to === uid || l.user_id === uid)
       const createdLeads = leads.filter(l => l.user_id === uid)
-      const closedDeals = assignedLeads.filter(l => l.status === 'converted' && new Date(l.updated_at) >= thisMonthStart)
+      const closedDeals = assignedLeads.filter(l => l.status === 'merchant' && new Date(l.updated_at) >= thisMonthStart)
 
       // Merchants
       const agentMerchants = merchants.filter(m => m.assigned_to === uid || m.user_id === uid)
@@ -813,14 +813,14 @@ export default function ReportsPage() {
 
       // Conversion rate
       const conversionRate = assignedLeads.length > 0
-        ? (assignedLeads.filter(l => l.status === 'converted').length / assignedLeads.length) * 100
+        ? (assignedLeads.filter(l => l.status === 'merchant').length / assignedLeads.length) * 100
         : 0
 
       // Calls logged
       const callCount = comms.filter(c => c.user_id === uid && c.type === 'call').length
 
       // Avg days to close
-      const convertedLeads = assignedLeads.filter(l => l.status === 'converted')
+      const convertedLeads = assignedLeads.filter(l => l.status === 'merchant')
       const avgDaysToClose = convertedLeads.length > 0
         ? convertedLeads.reduce((s, l) => {
             return s + (new Date(l.updated_at).getTime() - new Date(l.created_at).getTime()) / (1000 * 60 * 60 * 24)
@@ -1560,7 +1560,7 @@ export default function ReportsPage() {
                   <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
                     <p className="text-sm text-slate-500 mb-1">Avg Days to Close</p>
                     <p className="text-2xl font-semibold">{pipelineVelocity.avgDaysToClose > 0 ? pipelineVelocity.avgDaysToClose.toFixed(0) : '-'}</p>
-                    <p className="text-xs text-slate-400 mt-1">new prospect to converted</p>
+                    <p className="text-xs text-slate-400 mt-1">new prospect to merchant</p>
                   </div>
                   <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
                     <p className="text-sm text-slate-500 mb-1">Conversion Rate</p>

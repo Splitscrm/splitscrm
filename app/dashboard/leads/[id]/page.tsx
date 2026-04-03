@@ -217,7 +217,7 @@ export default function LeadDetailPage() {
     { value: "send_for_signature", label: "Send for Signature" },
     { value: "signed", label: "Signed" },
     { value: "submitted", label: "Submitted" },
-    { value: "converted", label: "Converted" },
+    { value: "merchant", label: "Merchant" },
     { value: "declined", label: "Declined" },
     { value: "unqualified", label: "Unqualified" },
     { value: "unresponsive", label: "Unresponsive" },
@@ -326,7 +326,7 @@ export default function LeadDetailPage() {
   };
 
   const handleStatusChange = (newStatus: string) => {
-    const fromSignedOrConverted = lead.status === "signed" || lead.status === "submitted" || lead.status === "converted";
+    const fromSignedOrConverted = lead.status === "signed" || lead.status === "submitted" || lead.status === "merchant";
     // Pre-signature validation: check for below-cost pricing
     if (newStatus === "send_for_signature" && partnerSchedule) {
       const issues = getBelowCostFields();
@@ -340,12 +340,12 @@ export default function LeadDetailPage() {
     if (newStatus === "unqualified") { setShowModal("unqualified"); setModalData({ reason: "", reason_other: "" }); }
     else if (newStatus === "declined") { setShowModal("declined"); setModalData({ reason: "" }); }
     else if (newStatus === "recycled") { setShowModal("recycled"); setModalData({ reason: "", follow_up_date: "" }); }
-    else if (newStatus === "signed") { setShowModal("signed"); setModalData({}); }
+    else if (newStatus === "signed" || newStatus === "merchant") { setShowModal("signed"); setModalData({}); }
     else if (newStatus === "qualified_prospect") { createDealAndUpdateStatus(); }
     else if (lead.status === "declined" && newStatus === "send_for_signature") {
       setShowModal("resubmit_from_declined"); setModalData({});
     }
-    else if (fromSignedOrConverted && !["signed", "submitted", "converted"].includes(newStatus)) {
+    else if (fromSignedOrConverted && !["signed", "submitted", "merchant"].includes(newStatus)) {
       setShowModal("backward_from_signed"); setModalData({ targetStatus: newStatus });
     }
     else { updateStatus(newStatus, {}); }
@@ -483,9 +483,9 @@ export default function LeadDetailPage() {
     const { data: allDeals } = await supabase.from("deals").select("id").eq("lead_id", lead.id);
     const allConverted = allDeals && allMerchants && allMerchants.length >= allDeals.length;
     if (allConverted) {
-      await supabase.from("leads").update({ status: "converted", updated_at: new Date().toISOString() }).eq("id", params.id);
-      await logActivity("stage_change", "status", statusLabel(lead.status), "Converted", "All locations converted to merchants");
-      setLead((prev: any) => ({ ...prev, status: "converted", updated_at: new Date().toISOString() }));
+      await supabase.from("leads").update({ status: "merchant", updated_at: new Date().toISOString() }).eq("id", params.id);
+      await logActivity("stage_change", "status", statusLabel(lead.status), "Merchant", "All locations converted to merchants");
+      setLead((prev: any) => ({ ...prev, status: "merchant", updated_at: new Date().toISOString() }));
     } else {
       await logActivity("deal_updated", null, null, null, `Location "${deal.location_name || deal.dba_name || 'Primary'}" converted to merchant`);
     }
@@ -767,7 +767,7 @@ export default function LeadDetailPage() {
 
   useEffect(() => {
     // Fetch sessions for send_for_signature AND signed/submitted/converted (for signed docs display)
-    if (["send_for_signature", "signed", "submitted", "converted", "declined"].includes(lead?.status) && deals.length > 0) {
+    if (["send_for_signature", "signed", "submitted", "merchant", "declined"].includes(lead?.status) && deals.length > 0) {
       fetchSigSessions();
       // Pre-fill signer info from primary deal owner (control person, or first owner)
       if (!sigSignerName || !sigSignerEmail) {
@@ -1471,7 +1471,7 @@ export default function LeadDetailPage() {
           </div>
         </div>
 
-        {lead.status === "converted" && (
+        {lead.status === "merchant" && (
           <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm mb-6">This lead has been converted to a merchant account.</div>
         )}
 
@@ -1508,8 +1508,8 @@ export default function LeadDetailPage() {
             { key: "Overview", label: "Overview" },
             { key: "Pricing", label: "Pricing" },
             { key: "Equipment", label: "Equipment" },
-            ...(["qualified_prospect", "send_for_signature", "signed", "submitted", "converted"].includes(lead.status) ? [{ key: "DealInfo", label: "Deal Info" }] : []),
-            ...(["qualified_prospect", "send_for_signature", "signed", "submitted", "converted"].includes(lead.status) ? [{ key: "Ownership", label: "Ownership", badge: owners.length }] : []),
+            ...(["qualified_prospect", "send_for_signature", "signed", "submitted", "merchant"].includes(lead.status) ? [{ key: "DealInfo", label: "Deal Info" }] : []),
+            ...(["qualified_prospect", "send_for_signature", "signed", "submitted", "merchant"].includes(lead.status) ? [{ key: "Ownership", label: "Ownership", badge: owners.length }] : []),
             { key: "Documents", label: "Documents", badge: documents.length },
             ...(deals.length > 1 ? [{ key: "Locations", label: "Locations", badge: deals.length }] : []),
             { key: "Activity", label: "Activity", badge: activities.length },
@@ -2304,7 +2304,7 @@ export default function LeadDetailPage() {
         {/* ═══════════ DEAL INFO TAB ═══════════ */}
         {leadTab === "DealInfo" && (<>
 
-        {deals.length > 0 && ["qualified_prospect", "send_for_signature", "signed", "submitted", "converted"].includes(lead.status) && (
+        {deals.length > 0 && ["qualified_prospect", "send_for_signature", "signed", "submitted", "merchant"].includes(lead.status) && (
           <>
             {/* Location / Deal header */}
             <div className="flex justify-between items-center mb-4">
@@ -2665,7 +2665,7 @@ export default function LeadDetailPage() {
 
         {/* ═══════════ OWNERSHIP TAB ═══════════ */}
         {leadTab === "Ownership" && (<>
-          {!["qualified_prospect", "send_for_signature", "signed", "submitted", "converted"].includes(lead.status) ? (
+          {!["qualified_prospect", "send_for_signature", "signed", "submitted", "merchant"].includes(lead.status) ? (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 text-center">
               <p className="text-slate-500 text-sm">Move to Qualified Prospect to add ownership info.</p>
             </div>
@@ -2824,7 +2824,7 @@ export default function LeadDetailPage() {
         </div>
 
         {/* ═══════════ SIGNED DOCUMENTS ═══════════ */}
-        {["signed", "submitted", "converted", "send_for_signature"].includes(lead.status) && (() => {
+        {["signed", "submitted", "merchant", "send_for_signature"].includes(lead.status) && (() => {
           const allSessions = Object.values(sigSessions).flat().filter((s: any) => s.status === "signed");
           if (allSessions.length === 0) return null;
           return (
