@@ -235,7 +235,7 @@ export default function LeadDetailPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
       setUserId(user.id);
-      const { data: leadData } = await supabase.from("leads").select("id, assigned_to, user_id, status, business_name, contact_name, email, phone, website, monthly_volume, notes, created_at, updated_at, follow_up_date, unqualified_reason, unqualified_reason_other, recycled_reason, declined_reason").eq("id", params.id).single();
+      const { data: leadData } = await supabase.from("leads").select("id, assigned_to, user_id, status, business_name, contact_name, email, phone, website, monthly_volume, notes, created_at, updated_at, follow_up_date, unqualified_reason, unqualified_reason_other, recycled_reason, declined_reason, converted_at").eq("id", params.id).single();
       if (leadData) {
         // Permission check: non-owner/manager can only see their own leads
         if (!isOwnerOrManager && leadData.assigned_to !== user.id && leadData.user_id !== user.id) {
@@ -517,9 +517,10 @@ export default function LeadDetailPage() {
     const { data: allDeals } = await supabase.from("deals").select("id").eq("lead_id", lead.id);
     const allDone = allDeals && allMerchants && allMerchants.length >= allDeals.length;
     if (allDone) {
-      await supabase.from("leads").update({ status: "merchant", updated_at: new Date().toISOString() }).eq("id", params.id);
+      const now = new Date().toISOString();
+      await supabase.from("leads").update({ status: "merchant", updated_at: now, converted_at: now }).eq("id", params.id);
       await logActivity("stage_change", "status", statusLabel(lead.status), "Merchant", "All locations converted to merchants");
-      setLead((prev: any) => ({ ...prev, status: "merchant", updated_at: new Date().toISOString() }));
+      setLead((prev: any) => ({ ...prev, status: "merchant", updated_at: now, converted_at: now }));
     } else {
       await logActivity("deal_updated", null, null, null, `Location "${deal.location_name || deal.dba_name || 'Primary'}" converted to merchant`);
     }
@@ -1507,7 +1508,9 @@ export default function LeadDetailPage() {
         </div>
 
         {lead.status === "merchant" && (
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm mb-6">This lead has been converted to a merchant account.</div>
+          <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg text-sm mb-6">
+            Converted to Merchant{lead.converted_at ? `: ${new Date(lead.converted_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : ""}
+          </div>
         )}
 
         {lead.status === "declined" && (

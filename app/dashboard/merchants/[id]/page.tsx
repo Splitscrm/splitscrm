@@ -515,11 +515,14 @@ export default function MerchantDetailPage() {
               {merchant.dba_name && merchant.dba_name !== merchant.business_name && (
                 <p className="text-sm text-slate-500">DBA: {merchant.dba_name}</p>
               )}
-              {merchant.lead_id && (
-                <Link href={`/dashboard/leads/${merchant.lead_id}`} className="text-emerald-600 hover:text-emerald-700 text-sm transition">
-                  View Original Lead →
-                </Link>
-              )}
+              <div className="flex items-center gap-3 mt-0.5">
+                <span className="text-sm text-slate-500">Boarded: {merchant.boarding_date ? new Date(merchant.boarding_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span>
+                {merchant.lead_id && (
+                  <Link href={`/dashboard/leads/${merchant.lead_id}`} className="text-emerald-600 hover:text-emerald-700 text-sm transition">
+                    View Original Lead →
+                  </Link>
+                )}
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <SaveIndicator status={merchantAutoSave.status} />
