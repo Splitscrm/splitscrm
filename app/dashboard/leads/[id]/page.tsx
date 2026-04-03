@@ -1726,6 +1726,13 @@ export default function LeadDetailPage() {
         {lead.status === "send_for_signature" && deals.length > 0 && (
           <div className="space-y-4 mb-6">
             <h3 className="text-xl font-bold">Send for Signature</h3>
+            {/* Multi-location summary */}
+            {deals.length > 1 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm">
+                <p className="font-medium text-blue-900">{deals.length} Locations — one signing link covers all</p>
+                <p className="text-xs text-blue-600 mt-1">{deals.map((d: any, i: number) => d.location_name || d.dba_name || `Location ${i + 1}`).join(", ")}</p>
+              </div>
+            )}
             {deals.map((d, dIdx) => {
               const sessions = sigSessions[d.id] || [];
               const latestSession = sessions[0];

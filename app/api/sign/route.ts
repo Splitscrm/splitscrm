@@ -64,6 +64,18 @@ export async function GET(req: NextRequest) {
     if (leadErr) console.error("[SIGN API] Lead fetch error:", leadErr.message);
     if (lead) result.lead = lead;
 
+    // Fetch ALL deals for the lead (multi-location support)
+    const { data: allDeals } = await supabase.from("deals").select("*").eq("lead_id", session.lead_id).order("created_at");
+    if (allDeals && allDeals.length > 1) {
+      result.deals = allDeals.map((d: any) => {
+        const masked = { ...d };
+        delete masked.user_id;
+        if (masked.bank_routing) masked.bank_routing = "****" + masked.bank_routing.slice(-4);
+        if (masked.bank_account) masked.bank_account = "****" + masked.bank_account.slice(-4);
+        return masked;
+      });
+    }
+
     const { data: owners, error: ownerErr } = await supabase
       .from("deal_owners")
       .select("id, full_name, title, ownership_pct, dob, email, phone, address, city, state, zip, dl_state, dl_expiration, citizenship, is_us_resident, is_control_prong, ssn_encrypted")
@@ -79,7 +91,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  console.log("[SIGN API] Response:", { hasSession: !!session, hasDeal: !!result.deal, hasLead: !!result.lead, ownerCount: result.owners?.length || 0, hasPartner: !!result.partner });
+  console.log("[SIGN API] Response:", { hasSession: !!session, hasDeal: !!result.deal, hasLead: !!result.lead, dealCount: result.deals?.length || 1, ownerCount: result.owners?.length || 0 });
   return NextResponse.json(result, { headers });
 }
 
@@ -168,19 +180,16 @@ export async function POST(req: NextRequest) {
     const { data: fullDeal } = await supabase.from("deals").select("*").eq("id", session.deal_id).single();
     const { data: fullOwners } = await supabase.from("deal_owners").select("*").eq("lead_id", session.lead_id).order("created_at");
     const { data: fullLead } = await supabase.from("leads").select("id, business_name, contact_name, email, phone, monthly_volume").eq("id", session.lead_id).single();
+    // Fetch ALL deals for multi-location PDF generation
+    const { data: allLeadDeals } = await supabase.from("deals").select("*").eq("lead_id", session.lead_id).order("created_at");
+    const dealsForPdf = (allLeadDeals && allLeadDeals.length > 1) ? allLeadDeals : [fullDeal].filter(Boolean);
     const ts = Date.now();
 
     // ── Generate PDFs (non-blocking — errors are logged but don't fail the signing) ──
     try {
-      let partnerName: string | null = null;
-      if (fullDeal?.partner_id) {
-        const { data: p } = await supabase.from("partners").select("name").eq("id", fullDeal.partner_id).single();
-        partnerName = p?.name || null;
-      }
-
       const storagePath = (name: string) => `${session.org_id}/${session.lead_id}/${name}-${ts}.pdf`;
 
-      // 1. Signature Certificate
+      // 1. Shared Signature Certificate (one for all locations)
       const certBytes = await generateSignatureCertificate({
         businessLegalName: fullDeal?.business_legal_name || fullLead?.business_name || "",
         dbaName: fullDeal?.dba_name || "",
@@ -204,27 +213,38 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // 2. MPA Summary
-      const mpaBytes = await generateMpaSummary({
-        deal: fullDeal,
-        owners: fullOwners || [],
-        lead: fullLead,
-        partnerName,
-        signerName: session.signer_name,
-        signedAt: now,
-        signatureDataBase64: signature_data,
-      });
-      const mpaPath = storagePath("mpa-summary");
-      const { error: mpaUpErr } = await supabase.storage.from("deal-documents").upload(mpaPath, mpaBytes, { contentType: "application/pdf" });
-      if (mpaUpErr) console.error("MPA upload error:", mpaUpErr.message);
-      else {
-        await supabase.from("signed_documents").insert({
-          signature_session_id: session.id,
-          deal_id: session.deal_id,
-          org_id: session.org_id,
-          document_type: "mpa_summary",
-          file_url: mpaPath,
+      // 2. Per-deal MPA Summaries (one per location)
+      for (const dealForPdf of dealsForPdf) {
+        if (!dealForPdf) continue;
+        let partnerName: string | null = null;
+        if (dealForPdf.partner_id) {
+          const { data: p } = await supabase.from("partners").select("name").eq("id", dealForPdf.partner_id).single();
+          partnerName = p?.name || null;
+        }
+        const locationSlug = dealsForPdf.length > 1
+          ? `-${(dealForPdf.location_name || dealForPdf.dba_name || dealForPdf.id.slice(0, 8)).replace(/[^a-zA-Z0-9]/g, "-").toLowerCase()}`
+          : "";
+        const mpaBytes = await generateMpaSummary({
+          deal: dealForPdf,
+          owners: fullOwners || [],
+          lead: fullLead,
+          partnerName,
+          signerName: session.signer_name,
+          signedAt: now,
+          signatureDataBase64: signature_data,
         });
+        const mpaPath = storagePath(`mpa-summary${locationSlug}`);
+        const { error: mpaUpErr } = await supabase.storage.from("deal-documents").upload(mpaPath, mpaBytes, { contentType: "application/pdf" });
+        if (mpaUpErr) console.error("MPA upload error:", mpaUpErr.message);
+        else {
+          await supabase.from("signed_documents").insert({
+            signature_session_id: session.id,
+            deal_id: dealForPdf.id,
+            org_id: session.org_id,
+            document_type: "mpa_summary",
+            file_url: mpaPath,
+          });
+        }
       }
     } catch (pdfErr: any) {
       console.error("PDF generation failed (signature still saved):", pdfErr?.message || pdfErr);

@@ -12,6 +12,7 @@ export default function SignPage() {
   const [state, setState] = useState<PageState>("loading");
   const [session, setSession] = useState<any>(null);
   const [deal, setDeal] = useState<any>(null);
+  const [deals, setDeals] = useState<any[]>([]); // multi-location: all deals
   const [lead, setLead] = useState<any>(null);
   const [owners, setOwners] = useState<any[]>([]);
   const [partner, setPartner] = useState<any>(null);
@@ -47,6 +48,7 @@ export default function SignPage() {
       if (new Date(data.session.expires_at) < new Date()) { setState("expired"); return; }
 
       if (data.deal) setDeal(data.deal);
+      if (data.deals) setDeals(data.deals); // multi-location
       if (data.lead) setLead(data.lead);
       if (data.owners) setOwners(data.owners);
       if (data.partner) setPartner(data.partner);
@@ -262,8 +264,14 @@ export default function SignPage() {
         {/* Section 1: Application Summary */}
         <div className={sectionClass}>
           <h2 className="text-base font-semibold text-slate-900 mb-4">Application Summary</h2>
+          {deals.length > 1 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mb-4">
+              <p className="text-sm font-medium text-blue-900">{deals.length} Locations</p>
+              <p className="text-xs text-blue-600">This application covers all locations listed below.</p>
+            </div>
+          )}
 
-          {/* Business Info */}
+          {/* Business Info (shared — from primary deal) */}
           <div className="mb-4 pb-4 border-b border-slate-100">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Business Information</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
@@ -277,7 +285,8 @@ export default function SignPage() {
               <div><span className={labelClass}>MCC Code</span><p className={valueClass}>{val(deal?.mcc_code)}</p></div>
               <div><span className={labelClass}>Business Start Date</span><p className={valueClass}>{deal?.business_start_date ? new Date(deal.business_start_date + "T00:00:00").toLocaleDateString() : "\u2014"}</p></div>
             </div>
-            {deal?.location_street && (
+            {/* Single-location: show location address inline */}
+            {deals.length <= 1 && deal?.location_street && (
               <div className="mt-2">
                 <span className={labelClass}>Location Address</span>
                 <p className={valueClass}>{[deal.location_name, deal.location_street, deal.location_city, deal.location_state, deal.location_zip].filter(Boolean).join(", ")}</p>
@@ -285,7 +294,7 @@ export default function SignPage() {
             )}
           </div>
 
-          {/* Owner Info */}
+          {/* Owner Info (shared across all locations) */}
           {owners.length > 0 && (
             <div className="mb-4 pb-4 border-b border-slate-100">
               <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Ownership</h3>
@@ -300,82 +309,135 @@ export default function SignPage() {
             </div>
           )}
 
-          {/* Processing Info */}
-          <div className="mb-4 pb-4 border-b border-slate-100">
-            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Processing</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1">
-              <div><span className={labelClass}>Monthly Volume</span><p className={valueClass}>{fmt(deal?.monthly_volume || lead?.monthly_volume)}</p></div>
-              <div><span className={labelClass}>Avg Ticket</span><p className={valueClass}>{fmt(deal?.average_ticket)}</p></div>
-              <div><span className={labelClass}>Card Present</span><p className={valueClass}>{pct(deal?.cp_pct)}</p></div>
-              <div><span className={labelClass}>Card Not Present</span><p className={valueClass}>{pct(deal?.cnp_pct)}</p></div>
-            </div>
-          </div>
-
-          {/* Pricing */}
-          <div className="mb-4 pb-4 border-b border-slate-100">
-            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Pricing</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1">
-              <div><span className={labelClass}>Type</span><p className={valueClass}>{titleCase(deal?.pricing_type)}</p></div>
-              {deal?.pricing_type === "interchange_plus" && (
-                <>
-                  <div><span className={labelClass}>Visa Rate</span><p className={valueClass}>{deal.ic_plus_visa_pct ? `${deal.ic_plus_visa_pct}% + $${deal.ic_plus_visa_txn || "0"}` : "\u2014"}</p></div>
-                  <div><span className={labelClass}>MC Rate</span><p className={valueClass}>{deal.ic_plus_mc_pct ? `${deal.ic_plus_mc_pct}% + $${deal.ic_plus_mc_txn || "0"}` : "\u2014"}</p></div>
-                  <div><span className={labelClass}>AMEX Rate</span><p className={valueClass}>{deal.ic_plus_amex_pct ? `${deal.ic_plus_amex_pct}% + $${deal.ic_plus_amex_txn || "0"}` : "\u2014"}</p></div>
-                  <div><span className={labelClass}>Disc Rate</span><p className={valueClass}>{deal.ic_plus_disc_pct ? `${deal.ic_plus_disc_pct}% + $${deal.ic_plus_disc_txn || "0"}` : "\u2014"}</p></div>
-                </>
-              )}
-              {deal?.pricing_type === "dual_pricing" && (
-                <>
-                  <div><span className={labelClass}>Rate</span><p className={valueClass}>{pct(deal.dual_pricing_rate)}</p></div>
-                  <div><span className={labelClass}>Per Txn</span><p className={valueClass}>{deal.dual_pricing_txn_fee ? `$${deal.dual_pricing_txn_fee}` : "\u2014"}</p></div>
-                </>
-              )}
-              {deal?.pricing_type === "flat_rate" && (
-                <>
-                  <div><span className={labelClass}>Rate</span><p className={valueClass}>{pct(deal.flat_rate_pct)}</p></div>
-                  <div><span className={labelClass}>Per Txn</span><p className={valueClass}>{deal.flat_rate_txn_cost ? `$${deal.flat_rate_txn_cost}` : "\u2014"}</p></div>
-                </>
-              )}
-            </div>
-            {/* Fees */}
-            {(deal?.fee_chargeback || deal?.monthly_fee_statement || deal?.pci_compliance_monthly) && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 mt-2 pt-2 border-t border-slate-50">
-                {deal.fee_chargeback && <div><span className={labelClass}>Chargeback Fee</span><p className={valueClass}>${deal.fee_chargeback}</p></div>}
-                {deal.fee_retrieval && <div><span className={labelClass}>Retrieval Fee</span><p className={valueClass}>${deal.fee_retrieval}</p></div>}
-                {deal.monthly_fee_statement && <div><span className={labelClass}>Statement Fee</span><p className={valueClass}>${deal.monthly_fee_statement}/mo</p></div>}
-                {deal.pci_compliance_monthly && <div><span className={labelClass}>PCI Monthly</span><p className={valueClass}>${deal.pci_compliance_monthly}/mo</p></div>}
-                {deal.pci_compliance_annual && <div><span className={labelClass}>PCI Annual</span><p className={valueClass}>${deal.pci_compliance_annual}/yr</p></div>}
+          {/* Banking (shared across all locations — from first deal with banking) */}
+          {(() => {
+            const bankDeal = deals.length > 1 ? deals.find((d: any) => d.bank_routing || d.bank_account) || deal : deal;
+            if (!bankDeal?.bank_routing && !bankDeal?.bank_account) return null;
+            return (
+              <div className="mb-4 pb-4 border-b border-slate-100">
+                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Banking</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1">
+                  {bankDeal.bank_account_holder_name && <div><span className={labelClass}>Account Holder</span><p className={valueClass}>{bankDeal.bank_account_holder_name}</p></div>}
+                  <div><span className={labelClass}>Routing</span><p className={valueClass}>{val(bankDeal.bank_routing)}</p></div>
+                  <div><span className={labelClass}>Account</span><p className={valueClass}>{val(bankDeal.bank_account)}</p></div>
+                  {bankDeal.bank_account_type && <div><span className={labelClass}>Type</span><p className={valueClass}>{titleCase(bankDeal.bank_account_type)}</p></div>}
+                </div>
               </div>
-            )}
-          </div>
+            );
+          })()}
 
-          {/* Banking */}
-          {(deal?.bank_routing || deal?.bank_account) && (
-            <div className="mb-4 pb-4 border-b border-slate-100">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Banking</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1">
-                {deal.bank_account_holder_name && <div><span className={labelClass}>Account Holder</span><p className={valueClass}>{deal.bank_account_holder_name}</p></div>}
-                <div><span className={labelClass}>Routing</span><p className={valueClass}>{val(deal.bank_routing)}</p></div>
-                <div><span className={labelClass}>Account</span><p className={valueClass}>{val(deal.bank_account)}</p></div>
-                {deal.bank_account_type && <div><span className={labelClass}>Type</span><p className={valueClass}>{titleCase(deal.bank_account_type)}</p></div>}
+          {/* ── Per-location sections (multi-location) ── */}
+          {deals.length > 1 ? (
+            <>
+              {deals.map((d: any, idx: number) => (
+                <div key={d.id} className="mb-4 pb-4 border-b border-slate-100">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold flex items-center justify-center">{idx + 1}</span>
+                    <h3 className="text-xs font-semibold text-slate-900 uppercase tracking-wider">{d.location_name || d.dba_name || `Location ${idx + 1}`}</h3>
+                  </div>
+                  {/* Address */}
+                  {d.location_street && (
+                    <div className="mb-2">
+                      <span className={labelClass}>Address</span>
+                      <p className={valueClass}>{[d.location_street, d.location_city, d.location_state, d.location_zip].filter(Boolean).join(", ")}</p>
+                    </div>
+                  )}
+                  {/* Processing */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 mb-2">
+                    <div><span className={labelClass}>Monthly Volume</span><p className={valueClass}>{fmt(d.monthly_volume)}</p></div>
+                    <div><span className={labelClass}>Avg Ticket</span><p className={valueClass}>{fmt(d.average_ticket)}</p></div>
+                    <div><span className={labelClass}>Card Present</span><p className={valueClass}>{pct(d.cp_pct)}</p></div>
+                    <div><span className={labelClass}>Card Not Present</span><p className={valueClass}>{pct(d.cnp_pct)}</p></div>
+                  </div>
+                  {/* Pricing */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 mb-2">
+                    <div><span className={labelClass}>Pricing</span><p className={valueClass}>{titleCase(d.pricing_type)}</p></div>
+                    {d.pricing_type === "interchange_plus" && d.ic_plus_visa_pct && (
+                      <div><span className={labelClass}>Visa Rate</span><p className={valueClass}>{d.ic_plus_visa_pct}% + ${d.ic_plus_visa_txn || "0"}</p></div>
+                    )}
+                    {d.pricing_type === "dual_pricing" && d.dual_pricing_rate && (
+                      <div><span className={labelClass}>Rate</span><p className={valueClass}>{d.dual_pricing_rate}%</p></div>
+                    )}
+                    {d.pricing_type === "flat_rate" && d.flat_rate_pct && (
+                      <div><span className={labelClass}>Rate</span><p className={valueClass}>{d.flat_rate_pct}%</p></div>
+                    )}
+                  </div>
+                  {/* Equipment */}
+                  {((d.hardware_items || []).length > 0 || (d.software_items || []).length > 0) && (
+                    <div>
+                      {(d.hardware_items || []).map((hw: any, i: number) => (
+                        <p key={"hw" + i} className="text-xs text-slate-600">{hw.quantity || 1}x {hw.model || hw.type || "Hardware"}{hw.free === "yes" ? " (Free)" : ""}</p>
+                      ))}
+                      {(d.software_items || []).map((sw: any, i: number) => (
+                        <p key={"sw" + i} className="text-xs text-slate-600">{sw.name || "Software"}{sw.monthly_cost ? ` — $${sw.monthly_cost}/mo` : ""}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </>
+          ) : (
+            <>
+              {/* Single-location: Processing, Pricing, Equipment inline */}
+              <div className="mb-4 pb-4 border-b border-slate-100">
+                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Processing</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1">
+                  <div><span className={labelClass}>Monthly Volume</span><p className={valueClass}>{fmt(deal?.monthly_volume || lead?.monthly_volume)}</p></div>
+                  <div><span className={labelClass}>Avg Ticket</span><p className={valueClass}>{fmt(deal?.average_ticket)}</p></div>
+                  <div><span className={labelClass}>Card Present</span><p className={valueClass}>{pct(deal?.cp_pct)}</p></div>
+                  <div><span className={labelClass}>Card Not Present</span><p className={valueClass}>{pct(deal?.cnp_pct)}</p></div>
+                </div>
               </div>
-            </div>
-          )}
 
-          {/* Equipment */}
-          {((deal?.hardware_items || []).length > 0 || (deal?.software_items || []).length > 0) && (
-            <div className="mb-4 pb-4 border-b border-slate-100">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Equipment & Software</h3>
-              {(deal.hardware_items || []).map((hw: any, i: number) => (
-                <p key={"hw" + i} className="text-sm text-slate-700">{hw.quantity || 1}x {hw.model || hw.type || "Hardware"}{hw.free === "yes" ? " (Free placement)" : hw.cost ? ` ($${hw.cost})` : ""}</p>
-              ))}
-              {(deal.software_items || []).map((sw: any, i: number) => (
-                <p key={"sw" + i} className="text-sm text-slate-700">{sw.name || "Software"}{sw.type ? ` (${sw.type})` : ""}{sw.monthly_cost ? ` \u2014 $${sw.monthly_cost}/mo` : ""}{sw.per_txn ? ` + $${sw.per_txn}/txn` : ""}</p>
-              ))}
-            </div>
-          )}
+              <div className="mb-4 pb-4 border-b border-slate-100">
+                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Pricing</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1">
+                  <div><span className={labelClass}>Type</span><p className={valueClass}>{titleCase(deal?.pricing_type)}</p></div>
+                  {deal?.pricing_type === "interchange_plus" && (
+                    <>
+                      <div><span className={labelClass}>Visa Rate</span><p className={valueClass}>{deal.ic_plus_visa_pct ? `${deal.ic_plus_visa_pct}% + $${deal.ic_plus_visa_txn || "0"}` : "\u2014"}</p></div>
+                      <div><span className={labelClass}>MC Rate</span><p className={valueClass}>{deal.ic_plus_mc_pct ? `${deal.ic_plus_mc_pct}% + $${deal.ic_plus_mc_txn || "0"}` : "\u2014"}</p></div>
+                      <div><span className={labelClass}>AMEX Rate</span><p className={valueClass}>{deal.ic_plus_amex_pct ? `${deal.ic_plus_amex_pct}% + $${deal.ic_plus_amex_txn || "0"}` : "\u2014"}</p></div>
+                      <div><span className={labelClass}>Disc Rate</span><p className={valueClass}>{deal.ic_plus_disc_pct ? `${deal.ic_plus_disc_pct}% + $${deal.ic_plus_disc_txn || "0"}` : "\u2014"}</p></div>
+                    </>
+                  )}
+                  {deal?.pricing_type === "dual_pricing" && (
+                    <>
+                      <div><span className={labelClass}>Rate</span><p className={valueClass}>{pct(deal.dual_pricing_rate)}</p></div>
+                      <div><span className={labelClass}>Per Txn</span><p className={valueClass}>{deal.dual_pricing_txn_fee ? `$${deal.dual_pricing_txn_fee}` : "\u2014"}</p></div>
+                    </>
+                  )}
+                  {deal?.pricing_type === "flat_rate" && (
+                    <>
+                      <div><span className={labelClass}>Rate</span><p className={valueClass}>{pct(deal.flat_rate_pct)}</p></div>
+                      <div><span className={labelClass}>Per Txn</span><p className={valueClass}>{deal.flat_rate_txn_cost ? `$${deal.flat_rate_txn_cost}` : "\u2014"}</p></div>
+                    </>
+                  )}
+                </div>
+                {(deal?.fee_chargeback || deal?.monthly_fee_statement || deal?.pci_compliance_monthly) && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 mt-2 pt-2 border-t border-slate-50">
+                    {deal.fee_chargeback && <div><span className={labelClass}>Chargeback Fee</span><p className={valueClass}>${deal.fee_chargeback}</p></div>}
+                    {deal.fee_retrieval && <div><span className={labelClass}>Retrieval Fee</span><p className={valueClass}>${deal.fee_retrieval}</p></div>}
+                    {deal.monthly_fee_statement && <div><span className={labelClass}>Statement Fee</span><p className={valueClass}>${deal.monthly_fee_statement}/mo</p></div>}
+                    {deal.pci_compliance_monthly && <div><span className={labelClass}>PCI Monthly</span><p className={valueClass}>${deal.pci_compliance_monthly}/mo</p></div>}
+                    {deal.pci_compliance_annual && <div><span className={labelClass}>PCI Annual</span><p className={valueClass}>${deal.pci_compliance_annual}/yr</p></div>}
+                  </div>
+                )}
+              </div>
 
-          {/* Partner & Bank — hidden from merchant (internal ISO info) */}
+              {((deal?.hardware_items || []).length > 0 || (deal?.software_items || []).length > 0) && (
+                <div className="mb-4 pb-4 border-b border-slate-100">
+                  <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Equipment & Software</h3>
+                  {(deal.hardware_items || []).map((hw: any, i: number) => (
+                    <p key={"hw" + i} className="text-sm text-slate-700">{hw.quantity || 1}x {hw.model || hw.type || "Hardware"}{hw.free === "yes" ? " (Free placement)" : hw.cost ? ` ($${hw.cost})` : ""}</p>
+                  ))}
+                  {(deal.software_items || []).map((sw: any, i: number) => (
+                    <p key={"sw" + i} className="text-sm text-slate-700">{sw.name || "Software"}{sw.type ? ` (${sw.type})` : ""}{sw.monthly_cost ? ` \u2014 $${sw.monthly_cost}/mo` : ""}{sw.per_txn ? ` + $${sw.per_txn}/txn` : ""}</p>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {/* Section 2: Terms & Consent */}
@@ -389,7 +451,9 @@ export default function SignPage() {
               className="mt-1 w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
             />
             <span className="text-sm text-slate-600 leading-relaxed">
-              I agree to conduct this transaction electronically and understand this constitutes a legally binding signature under the ESIGN Act.
+              {deals.length > 1
+                ? `I authorize submission of merchant applications for all ${deals.length} locations listed above. I agree to conduct this transaction electronically and understand this constitutes a legally binding signature under the ESIGN Act.`
+                : "I agree to conduct this transaction electronically and understand this constitutes a legally binding signature under the ESIGN Act."}
             </span>
           </label>
         </div>
