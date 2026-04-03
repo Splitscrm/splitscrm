@@ -2467,12 +2467,12 @@ export default function LeadDetailPage() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                     <div><label className={labelClass}>Currently Takes Cards?</label><select value={deal.currently_takes_cards || ""} onChange={(e) => updateDealField("currently_takes_cards", e.target.value)} className={inputClass}><option value="">Select...</option><option value="yes">Yes</option><option value="no">No</option></select></div>
-                    <div><label className={labelClass}>Monthly Volume</label><input type="number" value={deal.monthly_volume || ""} onChange={(e) => updateDealField("monthly_volume", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Average Ticket</label><input type="number" step="0.01" value={deal.average_ticket || ""} onChange={(e) => updateDealField("average_ticket", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Monthly Card Volume ($)</label><input type="number" value={deal.monthly_volume || ""} onChange={(e) => updateDealField("monthly_volume", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Average Ticket ($)</label><input type="number" step="0.01" value={deal.average_ticket || ""} onChange={(e) => updateDealField("average_ticket", e.target.value)} className={inputClass} /></div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-                    <div><label className={labelClass}>High Ticket</label><input type="number" step="0.01" value={deal.high_ticket || ""} onChange={(e) => updateDealField("high_ticket", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Amex Volume</label><input type="number" value={deal.amex_volume || ""} onChange={(e) => updateDealField("amex_volume", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>High Ticket ($)</label><input type="number" step="0.01" value={deal.high_ticket || ""} onChange={(e) => updateDealField("high_ticket", e.target.value)} className={inputClass} /></div>
+                    <div><label className={labelClass}>Amex Monthly Volume ($)</label><input type="number" value={deal.amex_volume || ""} onChange={(e) => updateDealField("amex_volume", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>Amex ESA #</label><input type="text" value={deal.amex_esa || ""} onChange={(e) => updateDealField("amex_esa", e.target.value)} className={inputClass} /></div>
                   </div>
                   <div className="grid grid-cols-4 gap-4">
@@ -2498,7 +2498,7 @@ export default function LeadDetailPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                     <div><label className={labelClass}>Current Processor MID</label><input type="text" value={deal.current_mid || ""} onChange={(e) => updateDealField("current_mid", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>Monthly Transactions</label><input type="number" value={deal.monthly_transactions ?? ""} onChange={(e) => updateDealField("monthly_transactions", e.target.value)} className={inputClass} /></div>
-                    <div><label className={labelClass}>Annual Card Volume</label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span><input type="number" value={deal.annual_card_volume ?? ""} onChange={(e) => updateDealField("annual_card_volume", e.target.value)} className={inputClass + " pl-7"} /></div></div>
+                    <div><label className={labelClass}>Annual Card Volume ($)</label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span><input type="number" value={deal.annual_card_volume ?? ""} onChange={(e) => updateDealField("annual_card_volume", e.target.value)} className={inputClass + " pl-7"} /></div></div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                     <div><label className={labelClass}>Amex SE Number</label><input type="text" value={deal.amex_se_number || ""} onChange={(e) => updateDealField("amex_se_number", e.target.value)} className={inputClass} /></div>
