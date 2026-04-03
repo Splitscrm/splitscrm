@@ -433,62 +433,97 @@ export default function LeadDetailPage() {
     setSaving(true);
     // Re-fetch this specific deal fresh
     const { data: dealData } = await supabase.from("deals").select("*").eq("id", deal.id).single();
+    const d = dealData as Record<string, any> | null;
+
+    // Build insert payload using ONLY valid merchant columns
     const merchantInsert: Record<string, any> = {
       user_id: userId,
       lead_id: lead.id,
-      business_name: dealData?.dba_name || dealData?.location_name || lead.business_name,
+      org_id: member?.org_id || null,
+      assigned_to: lead.assigned_to || userId,
+      business_name: d?.business_legal_name || d?.dba_name || d?.location_name || lead.business_name,
+      dba_name: d?.dba_name || null,
       contact_name: lead.contact_name,
       email: lead.email,
       phone: lead.phone,
-      monthly_volume: lead.monthly_volume,
       status: "pending",
+      boarding_date: new Date().toISOString().split("T")[0],
     };
-    if (dealData) {
-      const dealToMerchant: Record<string, string> = {
-        dba_name: "dba_name",
-        legal_street: "business_street", legal_city: "business_city", legal_state: "business_state", legal_zip: "business_zip",
-        location_name: "location_name", location_street: "location_street", location_city: "location_city", location_state: "location_state", location_zip: "location_zip",
+
+    if (d) {
+      // deal field → merchant column (only columns that exist on merchants table)
+      const fieldMap: Record<string, string> = {
+        legal_street: "business_street", legal_city: "business_city",
+        legal_state: "business_state", legal_zip: "business_zip",
         pricing_type: "pricing_type",
-        ic_plus_visa_pct: "ic_plus_visa_pct", ic_plus_mc_pct: "ic_plus_mc_pct", ic_plus_amex_pct: "ic_plus_amex_pct", ic_plus_disc_pct: "ic_plus_disc_pct",
-        ic_plus_visa_txn: "ic_plus_visa_txn", ic_plus_mc_txn: "ic_plus_mc_txn", ic_plus_amex_txn: "ic_plus_amex_txn", ic_plus_disc_txn: "ic_plus_disc_txn",
+        ic_plus_visa_pct: "ic_plus_visa_pct", ic_plus_mc_pct: "ic_plus_mc_pct",
+        ic_plus_amex_pct: "ic_plus_amex_pct", ic_plus_disc_pct: "ic_plus_disc_pct",
+        ic_plus_visa_txn: "ic_plus_visa_txn", ic_plus_mc_txn: "ic_plus_mc_txn",
+        ic_plus_amex_txn: "ic_plus_amex_txn", ic_plus_disc_txn: "ic_plus_disc_txn",
         dual_pricing_rate: "dual_pricing_rate", dual_pricing_txn_fee: "dual_pricing_txn_fee",
         flat_rate_pct: "flat_rate_pct", flat_rate_txn_cost: "flat_rate_txn_cost",
-        fee_chargeback: "fee_chargeback", fee_retrieval: "fee_retrieval", fee_arbitration: "fee_arbitration", fee_voice_auth: "fee_voice_auth", fee_ebt_auth: "fee_ebt_auth", fee_ach_reject: "fee_ach_reject",
-        monthly_fee_statement: "monthly_fee_statement", monthly_fee_custom_name: "monthly_fee_custom_name", monthly_fee_custom_amount: "monthly_fee_custom_amount",
-        pci_compliance_monthly: "pci_compliance_monthly", pci_compliance_annual: "pci_compliance_annual", interchange_remittance: "interchange_remittance",
-        terminal_type: "terminal_type", terminal_cost: "equipment_cost", monthly_volume: "monthly_volume",
-        high_ticket_limit: "high_ticket_limit", reserve_type: "reserve_type", funding_delay: "funding_delay",
+        fee_chargeback: "fee_chargeback", fee_retrieval: "fee_retrieval",
+        fee_arbitration: "fee_arbitration", fee_voice_auth: "fee_voice_auth",
+        fee_ebt_auth: "fee_ebt_auth", fee_ach_reject: "fee_ach_reject",
+        monthly_fee_statement: "monthly_fee_statement",
+        monthly_fee_custom_name: "monthly_fee_custom_name",
+        monthly_fee_custom_amount: "monthly_fee_custom_amount",
+        pci_compliance_monthly: "pci_compliance_monthly",
+        pci_compliance_annual: "pci_compliance_annual",
+        interchange_remittance: "interchange_remittance",
+        terminal_type: "terminal_type", terminal_cost: "equipment_cost",
+        monthly_volume: "monthly_volume",
+        high_ticket: "high_ticket_limit",
+        current_mid: "mid",
+        reserve_type: "reserve_type", funding_delay: "funding_delay",
       };
-      for (const [dealField, merchantField] of Object.entries(dealToMerchant)) {
-        const val = (dealData as Record<string, any>)[dealField];
-        if (val != null && val !== "") merchantInsert[merchantField] = val;
+      for (const [dealField, merchantCol] of Object.entries(fieldMap)) {
+        const val = d[dealField];
+        if (val != null && val !== "" && !(merchantCol in merchantInsert)) {
+          merchantInsert[merchantCol] = val;
+        }
       }
-      if (dealData.free_hardware === "yes") merchantInsert.free_equipment = "yes";
-      else if (dealData.free_hardware === "no") merchantInsert.free_equipment = "no";
-      if (dealData.hardware_items) merchantInsert.hardware_items = dealData.hardware_items;
-      if (dealData.software_items) merchantInsert.software_items = dealData.software_items;
-      if (dealData.partner_id) merchantInsert.partner_id = dealData.partner_id;
+      // Free equipment
+      if (d.free_hardware === "yes") merchantInsert.free_equipment = "yes";
+      else if (d.free_hardware === "no") merchantInsert.free_equipment = "no";
+      // Processor from partner name
+      if (d.partner_id) {
+        const p = partners.find((pt: any) => pt.id === d.partner_id);
+        if (p) merchantInsert.processor = p.name;
+      }
+      // Risk category from deal if present
+      if (d.risk_category) merchantInsert.risk_category = d.risk_category;
     }
+
     // Auto-populate summary pricing fields
     if (merchantInsert.ic_plus_visa_pct) merchantInsert.pricing_rate = merchantInsert.ic_plus_visa_pct;
     if (merchantInsert.ic_plus_visa_txn) merchantInsert.per_transaction_fee = merchantInsert.ic_plus_visa_txn;
-    const statementFee = parseFloat(merchantInsert.monthly_fee_statement) || 0;
-    const customFee = parseFloat(merchantInsert.monthly_fee_custom_amount) || 0;
-    const pciFee = parseFloat(merchantInsert.pci_compliance_monthly) || (merchantInsert.pci_compliance_annual ? parseFloat(merchantInsert.pci_compliance_annual) / 12 : 0) || 0;
-    merchantInsert.monthly_fees = statementFee + customFee + pciFee;
-    const { data: merchant, error: merchantError } = await supabase.from("merchants").insert(merchantInsert).select().single();
-    if (merchantError) { setSaving(false); return; }
+    const sf = parseFloat(merchantInsert.monthly_fee_statement) || 0;
+    const cf = parseFloat(merchantInsert.monthly_fee_custom_amount) || 0;
+    const pci = parseFloat(merchantInsert.pci_compliance_monthly) || (merchantInsert.pci_compliance_annual ? parseFloat(merchantInsert.pci_compliance_annual) / 12 : 0) || 0;
+    if (sf + cf + pci > 0) merchantInsert.monthly_fees = Math.round((sf + cf + pci) * 100) / 100;
+
+    console.log("[convertToMerchant] insert payload:", JSON.stringify(merchantInsert, null, 2));
+    const { data: merchant, error: merchantError } = await supabase.from("merchants").insert(merchantInsert).select("id, business_name").single();
+    if (merchantError) {
+      console.error("[convertToMerchant] insert error:", JSON.stringify(merchantError));
+      setDealMsg("Merchant creation failed: " + merchantError.message);
+      setSaving(false);
+      return;
+    }
+    console.log("[convertToMerchant] created merchant:", merchant.id, merchant.business_name);
     // Check if ALL deals for this lead are now converted (have merchants)
     const { data: allMerchants } = await supabase.from("merchants").select("id").eq("lead_id", lead.id);
     const { data: allDeals } = await supabase.from("deals").select("id").eq("lead_id", lead.id);
-    const allConverted = allDeals && allMerchants && allMerchants.length >= allDeals.length;
-    if (allConverted) {
+    const allDone = allDeals && allMerchants && allMerchants.length >= allDeals.length;
+    if (allDone) {
       await supabase.from("leads").update({ status: "merchant", updated_at: new Date().toISOString() }).eq("id", params.id);
       await logActivity("stage_change", "status", statusLabel(lead.status), "Merchant", "All locations converted to merchants");
       setLead((prev: any) => ({ ...prev, status: "merchant", updated_at: new Date().toISOString() }));
     } else {
       await logActivity("deal_updated", null, null, null, `Location "${deal.location_name || deal.dba_name || 'Primary'}" converted to merchant`);
     }
+    setDealMsg(`Merchant created: ${merchant.business_name}`);
     setShowModal("");
     setSaving(false);
     router.push("/dashboard/merchants/" + merchant.id);
