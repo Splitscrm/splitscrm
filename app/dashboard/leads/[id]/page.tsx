@@ -12,6 +12,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import { authFetch } from "@/lib/api-client";
 import { getSignedUrl, extractStoragePath } from "@/lib/storage";
 import { checkMpaCompleteness, getTabStatus, type MpaCompletenessResult } from "@/lib/mpa-completeness";
+import MCCCodeSelect from "@/components/MCCCodeSelect";
 
 const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC"];
 
@@ -2343,7 +2344,7 @@ export default function LeadDetailPage() {
                     <div><label className={labelClass}>Number of Employees</label><input type="number" value={deal.number_of_employees ?? ""} onChange={(e) => updateDealField("number_of_employees", e.target.value)} className={inputClass} /></div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
-                    <div><label className={labelClass}>MCC Code</label><input type="text" value={deal.mcc_code || ""} onChange={(e) => updateDealField("mcc_code", e.target.value)} className={inputClass} placeholder="e.g. 5812 - Eating Places, Restaurants" /></div>
+                    <div><label className={labelClass}>MCC Code</label><MCCCodeSelect value={deal.mcc_code || ""} onChange={(code) => updateDealField("mcc_code", code)} className={inputClass} /></div>
                     <div><label className={labelClass}>SIC Code</label><input type="text" value={deal.sic_code || ""} onChange={(e) => updateDealField("sic_code", e.target.value)} className={inputClass} /></div>
                     <div><label className={labelClass}>Annual Revenue</label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span><input type="number" value={deal.annual_revenue ?? ""} onChange={(e) => updateDealField("annual_revenue", e.target.value)} className={inputClass + " pl-7"} /></div></div>
                   </div>
