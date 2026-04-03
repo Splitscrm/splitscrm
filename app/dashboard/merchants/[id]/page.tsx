@@ -263,10 +263,10 @@ export default function MerchantDetailPage() {
         setMerchant(data)
         const { data: taskData } = await supabase.from('tasks').select('id, title, due_date, priority, status').eq('merchant_id', params.id).eq('status', 'pending').order('due_date', { ascending: true })
         if (taskData) setMerchantTasks(taskData)
-        // Fetch related merchants (other locations from same lead)
+        // Fetch all locations from same lead (including current)
         if (data.lead_id) {
-          const { data: related } = await supabase.from('merchants').select('id, business_name, dba_name, mid, status, monthly_volume, location_name').eq('lead_id', data.lead_id).neq('id', data.id)
-          if (related && related.length > 0) setRelatedMerchants(related)
+          const { data: related } = await supabase.from('merchants').select('id, business_name, dba_name, mid, status, monthly_volume, location_name, last_month_residual').eq('lead_id', data.lead_id).order('created_at')
+          if (related && related.length > 1) setRelatedMerchants(related)
           // Fetch signed documents via deals for this lead
           const { data: leadDeals } = await supabase.from('deals').select('id').eq('lead_id', data.lead_id)
           if (leadDeals && leadDeals.length > 0) {
@@ -504,6 +504,57 @@ export default function MerchantDetailPage() {
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm mt-4">{error}</div>
+        )}
+
+        {/* Multi-Location Summary */}
+        {relatedMerchants.length > 1 && (
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mt-4 mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">{merchant.business_name}</h3>
+                <p className="text-xs text-slate-500">{relatedMerchants.length} Locations</p>
+              </div>
+              <div className="flex items-center gap-6 text-sm">
+                <div className="text-right">
+                  <p className="text-xs text-slate-400">Combined Volume</p>
+                  <p className="font-semibold text-slate-900">${relatedMerchants.reduce((s: number, m: any) => s + (Number(m.monthly_volume) || 0), 0).toLocaleString()}<span className="text-xs text-slate-400 font-normal">/mo</span></p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-slate-400">Combined Residual</p>
+                  <p className="font-semibold text-slate-900">
+                    {relatedMerchants.some((m: any) => m.last_month_residual != null)
+                      ? '$' + relatedMerchants.reduce((s: number, m: any) => s + (Number(m.last_month_residual) || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                      : '—'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="divide-y divide-slate-200">
+              {relatedMerchants.map((rm: any) => {
+                const isCurrent = rm.id === merchant.id;
+                return (
+                  <div key={rm.id} className={`flex items-center justify-between py-2 px-2 rounded ${isCurrent ? 'bg-emerald-50 border-l-2 border-emerald-500' : 'hover:bg-white cursor-pointer'}`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {isCurrent && <span className="text-emerald-600 text-xs flex-shrink-0">★</span>}
+                      {isCurrent ? (
+                        <span className="text-sm font-medium text-emerald-700 truncate">{rm.location_name || rm.dba_name || rm.business_name} <span className="text-xs font-normal text-emerald-500">(viewing)</span></span>
+                      ) : (
+                        <Link href={`/dashboard/merchants/${rm.id}`} className="text-sm font-medium text-slate-700 hover:text-emerald-600 truncate">{rm.location_name || rm.dba_name || rm.business_name}</Link>
+                      )}
+                      {rm.mid && <span className="text-xs text-slate-400 flex-shrink-0">MID: {rm.mid}</span>}
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0 ml-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${rm.status === 'active' ? 'bg-emerald-50 text-emerald-700' : rm.status === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                        {(rm.status || 'active').charAt(0).toUpperCase() + (rm.status || 'active').slice(1)}
+                      </span>
+                      <span className="text-xs text-slate-500 w-20 text-right">{rm.monthly_volume ? '$' + Number(rm.monthly_volume).toLocaleString() : '—'}</span>
+                      <span className="text-xs text-slate-500 w-20 text-right">{rm.last_month_residual != null ? '$' + Number(rm.last_month_residual).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '—'}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
 
         {/* STEP 1 — MERCHANT SNAPSHOT HEADER */}
@@ -1168,30 +1219,7 @@ export default function MerchantDetailPage() {
             </div>
           </div>
 
-          {/* Related Locations */}
-          {relatedMerchants.length > 0 && (
-            <div className="lg:col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-2">
-              <h3 className="text-base font-semibold text-slate-900 mb-3">Related Locations</h3>
-              <div className="divide-y divide-slate-100">
-                {relatedMerchants.map(rm => (
-                  <div key={rm.id} className="flex items-center justify-between py-2.5">
-                    <div className="flex items-center gap-3">
-                      <Link href={`/dashboard/merchants/${rm.id}`} className="text-sm text-emerald-600 hover:text-emerald-700 font-medium">
-                        {rm.location_name || rm.dba_name || rm.business_name}
-                      </Link>
-                      {rm.mid && <span className="text-xs text-slate-400">MID: {rm.mid}</span>}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${rm.status === 'active' ? 'bg-emerald-50 text-emerald-700' : rm.status === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
-                        {(rm.status || 'active').charAt(0).toUpperCase() + (rm.status || 'active').slice(1)}
-                      </span>
-                      {rm.monthly_volume && <span className="text-xs text-slate-500">${Number(rm.monthly_volume).toLocaleString()}/mo</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* Related Locations — moved to multi-location summary card above header */}
 
           {/* Signed Documents */}
           {signedSessions.length > 0 && (
