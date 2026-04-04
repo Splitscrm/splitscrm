@@ -1217,39 +1217,36 @@ export default function MerchantDetailPage() {
                 </div>
               </div>
             </div>
-          </div>
-
-          {/* Related Locations — moved to multi-location summary card above header */}
-
-          {/* Signed Documents */}
-          {signedSessions.length > 0 && (
-            <div className="lg:col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-2">
-              <h3 className="text-base font-semibold text-slate-900 mb-3">Signed Documents</h3>
-              <div className="divide-y divide-slate-50">
-                {signedSessions.map((s: any) => (
-                  <div key={s.id} className="flex flex-col sm:flex-row sm:items-center justify-between py-3 gap-2">
-                    <div>
-                      <p className="text-sm font-medium text-slate-900">{s.signer_name}</p>
-                      <p className="text-xs text-slate-500">{s.signer_email}</p>
+            {/* Signed Documents */}
+            {signedSessions.length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-2">
+                <h3 className="text-base font-semibold text-slate-900 mb-3">Signed Documents</h3>
+                <div className="divide-y divide-slate-50">
+                  {signedSessions.map((s: any) => (
+                    <div key={s.id} className="flex flex-col sm:flex-row sm:items-center justify-between py-3 gap-2">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{s.signer_name}</p>
+                        <p className="text-xs text-slate-500">{s.signer_email}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-slate-400">{new Date(s.signed_at).toLocaleString()}</span>
+                        {s.signer_ip && <span className="text-xs text-slate-300">IP: {s.signer_ip}</span>}
+                        <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-medium">Signed</span>
+                        {s.signature_data && (
+                          <button onClick={() => {
+                            const a = document.createElement('a')
+                            a.href = s.signature_data
+                            a.download = `signature-${s.signer_name.replace(/\s+/g, '-')}.png`
+                            a.click()
+                          }} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">Download</button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-slate-400">{new Date(s.signed_at).toLocaleString()}</span>
-                      {s.signer_ip && <span className="text-xs text-slate-300">IP: {s.signer_ip}</span>}
-                      <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-medium">Signed</span>
-                      {s.signature_data && (
-                        <button onClick={() => {
-                          const a = document.createElement('a')
-                          a.href = s.signature_data
-                          a.download = `signature-${s.signer_name.replace(/\s+/g, '-')}.png`
-                          a.click()
-                        }} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">Download</button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* RIGHT COLUMN (40%) — sticky on desktop */}
           <div className="lg:col-span-2 space-y-6 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
