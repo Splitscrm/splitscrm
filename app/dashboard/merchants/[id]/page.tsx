@@ -1251,8 +1251,8 @@ export default function MerchantDetailPage() {
             </div>
           )}
 
-          {/* RIGHT COLUMN (40%) */}
-          <div className="lg:col-span-2 space-y-6">
+          {/* RIGHT COLUMN (40%) — sticky on desktop */}
+          <div className="lg:col-span-2 space-y-6 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto">
 
             {/* Action Bar */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
@@ -1421,9 +1421,9 @@ export default function MerchantDetailPage() {
                   <p className="text-slate-400 text-sm">Loading residual history...</p>
                 </div>
               ) : chartData.length === 0 ? (
-                <div>
-                  <p className="text-slate-400 text-sm mb-3">No residual data yet</p>
-                  <Link href="/dashboard/residuals" className="text-emerald-600 text-sm hover:underline">Import Residuals →</Link>
+                <div className="flex items-center justify-between max-h-[60px]">
+                  <p className="text-slate-400 text-sm">No residual data yet</p>
+                  <Link href="/dashboard/residuals" className="text-emerald-600 text-sm hover:underline whitespace-nowrap">Import →</Link>
                 </div>
               ) : (
                 <div>
